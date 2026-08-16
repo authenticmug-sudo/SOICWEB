@@ -1,0 +1,125 @@
+{
+  "entities": {
+    "Store": {
+      "title": "Store",
+      "description": "Master data toko retail",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "name": { "type": "string" },
+        "region": { "type": "string" },
+        "address": { "type": "string" },
+        "city": { "type": "string" },
+        "district": { "type": "string" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "storeType": { "type": "string" },
+        "managerName": { "type": "string" },
+        "phone": { "type": "string" },
+        "assignedTeamId": { "type": "string" },
+        "lastSODate": { "type": "string" },
+        "lastAccuracyRate": { "type": "number" },
+        "totalSKUCount": { "type": "number" },
+        "riskLevel": { "type": "string" }
+      },
+      "required": ["id", "code", "name", "region", "address", "city", "storeType", "managerName", "phone", "totalSKUCount", "riskLevel"]
+    },
+    "SOSchedule": {
+      "title": "SOSchedule",
+      "description": "Jadwal Stock Opname",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "storeId": { "type": "string" },
+        "storeCode": { "type": "string" },
+        "storeName": { "type": "string" },
+        "region": { "type": "string" },
+        "scheduledDate": { "type": "string" },
+        "scheduledTime": { "type": "string" },
+        "teamId": { "type": "string" },
+        "teamName": { "type": "string" },
+        "spvInCharge": { "type": "string" },
+        "officerInCharge": { "type": "string" },
+        "status": { "type": "string" },
+        "notes": { "type": "string" },
+        "troubleNote": { "type": "string" },
+        "isRescheduled": { "type": "boolean" },
+        "originalDate": { "type": "string" },
+        "targetSKUCount": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "storeId", "storeCode", "storeName", "region", "scheduledDate", "scheduledTime", "status", "targetSKUCount", "createdAt"]
+    },
+    "SOResult": {
+      "title": "SOResult",
+      "description": "Hasil Stock Opname dan Berita Acara",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "scheduleId": { "type": "string" },
+        "storeId": { "type": "string" },
+        "storeCode": { "type": "string" },
+        "storeName": { "type": "string" },
+        "region": { "type": "string" },
+        "soDate": { "type": "string" },
+        "executedByTeam": { "type": "string" },
+        "spvApprover": { "type": "string" },
+        "totalSKUChecked": { "type": "number" },
+        "systemQtyTotal": { "type": "number" },
+        "physicalQtyTotal": { "type": "number" },
+        "varianceQtyTotal": { "type": "number" },
+        "systemValueTotalRp": { "type": "number" },
+        "physicalValueTotalRp": { "type": "number" },
+        "varianceValueTotalRp": { "type": "number" },
+        "accuracyRatePercentage": { "type": "number" },
+        "approvalStatus": { "type": "string" },
+        "categoryBreakdown": { "type": "array" },
+        "notesAndActionPlan": { "type": "string" },
+        "baNumber": { "type": "string" },
+        "submittedAt": { "type": "string" },
+        "approvedAt": { "type": "string" },
+        "evidencePhotoUrl": { "type": "string" }
+      },
+      "required": ["id", "scheduleId", "storeId", "storeCode", "storeName", "soDate", "accuracyRatePercentage", "approvalStatus", "baNumber", "submittedAt"]
+    },
+    "AuditorPersonnel": {
+      "title": "AuditorPersonnel",
+      "description": "Tim Korlap / Personel Auditor",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "nik": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "joinDate": { "type": "string" },
+        "role": { "type": "string" },
+        "teamId": { "type": "string" },
+        "teamName": { "type": "string" },
+        "status": { "type": "string" },
+        "photoUrl": { "type": "string" }
+      },
+      "required": ["id", "nik", "name", "phone", "role", "status"]
+    },
+    "EquipmentRepairLog": {
+      "title": "EquipmentRepairLog",
+      "description": "Log Perbaikan Perangkat Audit",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "equipmentId": { "type": "string" },
+        "assetId": { "type": "string" },
+        "equipmentName": { "type": "string" },
+        "repairStatus": { "type": "string" },
+        "reportedDate": { "type": "string" },
+        "damageDescription": { "type": "string" },
+        "startDate": { "type": "string" },
+        "completionDate": { "type": "string" },
+        "technicianName": { "type": "string" },
+        "repairCostRp": { "type": "number" },
+        "notes": { "type": "string" }
+      },
+      "required": ["id", "equipmentId", "assetId", "equipmentName", "repairStatus", "reportedDate", "damageDescription"]
+    }
+  }
+}

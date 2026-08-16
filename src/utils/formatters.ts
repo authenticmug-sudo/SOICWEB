@@ -1,0 +1,278 @@
+export function formatRupiah(value: number): string {
+  const isNegative = value < 0;
+  const absValue = Math.abs(value);
+  const formatted = new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    maximumFractionDigits: 0
+  }).format(absValue);
+
+  return isNegative ? `-${formatted}` : formatted;
+}
+
+export function formatNumber(value: number): string {
+  return new Intl.NumberFormat('id-ID').format(value);
+}
+
+export function formatDateIndo(dateStr: string): string {
+  if (!dateStr) return '-';
+  try {
+    const d = parseSmartDate(dateStr);
+    if (!d) return dateStr;
+    return new Intl.DateTimeFormat('id-ID', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric'
+    }).format(d);
+  } catch {
+    return dateStr;
+  }
+}
+
+export function formatDateISO(dateStr: any): string {
+  const d = parseSmartDate(dateStr);
+  if (!d) return new Date().toISOString().split('T')[0];
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+export function getStatusBadgeClass(status: string): string {
+  switch (status) {
+    case 'Selesai':
+    case 'Disetujui':
+      return 'bg-emerald-100 text-emerald-800 border-emerald-300';
+    case 'Proses SO':
+    case 'Menunggu Approval SPV':
+    case 'Menunggu Rekapan':
+      return 'bg-amber-100 text-amber-800 border-amber-300';
+    case 'Terjadwal':
+      return 'bg-blue-100 text-blue-800 border-blue-300';
+    case 'Perlu Audit Ulang':
+    case 'Ditolak':
+    case 'Dibatalkan':
+      return 'bg-rose-100 text-rose-800 border-rose-300';
+    default:
+      return 'bg-slate-100 text-slate-800 border-slate-300';
+  }
+}
+
+export function getRiskBadgeClass(risk: string): string {
+  switch (risk) {
+    case 'Tinggi':
+      return 'bg-rose-50 text-rose-700 border-rose-200 font-medium';
+    case 'Sedang':
+      return 'bg-amber-50 text-amber-700 border-amber-200 font-medium';
+    case 'Rendah':
+      return 'bg-emerald-50 text-emerald-700 border-emerald-200 font-medium';
+    default:
+      return 'bg-slate-50 text-slate-700 border-slate-200';
+  }
+}
+
+const INDO_MONTHS: Record<string, number> = {
+  jan: 0, januari: 0, january: 0,
+  feb: 1, februari: 1, february: 1,
+  mar: 2, maret: 2, march: 2,
+  apr: 3, april: 3,
+  mei: 4, may: 4,
+  jun: 5, juni: 5, june: 5,
+  jul: 6, juli: 6, july: 6,
+  ags: 7, agt: 7, agus: 7, agustus: 7, aug: 7, august: 7,
+  sep: 8, sept: 8, september: 8,
+  okt: 9, oct: 9, oktober: 9, october: 9,
+  nov: 10, nop: 10, november: 10,
+  des: 11, dec: 11, desember: 11, december: 11
+};
+
+const ID_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
+
+/**
+ * Utility parse date secara cerdas untuk format YYYY-MM-DD, DD/MM/YYYY, DD-MMM-YY, Excel serial number, dll.
+ * Otomatis menangani desimal Excel (misal 46177.0 / 46177 -> 3 Jun 2026), string kosong, '0-Jan-00', dsb.
+ */
+export function parseSmartDate(dateStr: any): Date | null {
+  if (dateStr === null || dateStr === undefined || dateStr === '') return null;
+
+  if (dateStr instanceof Date) {
+    return isNaN(dateStr.getTime()) ? null : dateStr;
+  }
+
+  const rawStr = String(dateStr).trim();
+  if (
+    !rawStr || 
+    rawStr === '-' || 
+    rawStr === '0' || 
+    rawStr === '0.0' || 
+    rawStr.toLowerCase() === '0-jan-00' || 
+    rawStr.toLowerCase() === '00-jan-00' || 
+    rawStr === '0/0/0' || 
+    rawStr.toLowerCase() === 'belum so' ||
+    rawStr.toLowerCase() === 'null' ||
+    rawStr.toLowerCase() === 'undefined'
+  ) {
+    return null;
+  }
+
+  // Handle Excel Serial Date Number (misal: 42717 = 13 Dec 2016, 46177 = 3 Jun 2026, 46177.0, etc.)
+  const numericVal = typeof dateStr === 'number' 
+    ? dateStr 
+    : (!rawStr.includes('-') && !rawStr.includes('/') && /^\d+(\.\d+)?$/.test(rawStr) ? parseFloat(rawStr) : NaN);
+
+  if (!isNaN(numericVal) && numericVal > 20000 && numericVal < 80000) {
+    // Excel 1900 date system leap year offset: 25569 days from 1970-01-01
+    const utcMs = Math.round((numericVal - 25569) * 86400000);
+    const d = new Date(utcMs);
+    if (!isNaN(d.getTime())) {
+      return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+    }
+  }
+
+  const str = rawStr;
+
+  // 1. Format YYYY-MM-DD, YYYY/MM/DD, YYYY.MM.DD
+  const isoMatch = str.match(/^(\d{4})[\-/\.](\d{1,2})[\-/\.](\d{1,2})/);
+  if (isoMatch) {
+    const y = parseInt(isoMatch[1], 10);
+    const m = parseInt(isoMatch[2], 10) - 1;
+    const d = parseInt(isoMatch[3], 10);
+    const dt = new Date(y, m, d);
+    if (!isNaN(dt.getTime())) return dt;
+  }
+
+  // 2. Format dengan Nama Bulan: "13-Dec-16", "13-Des-16", "13 Dec 2016", "10-Agus-18", "26-Mei-23", "9-May-26"
+  const textMonthMatch = str.match(/^(\d{1,2})[\s\-/\.]+([a-zA-Z]+)[\s\-/\.]+(\d{2,4})$/);
+  if (textMonthMatch) {
+    const day = parseInt(textMonthMatch[1], 10);
+    const monthKey = textMonthMatch[2].toLowerCase();
+    let year = parseInt(textMonthMatch[3], 10);
+
+    if (monthKey in INDO_MONTHS) {
+      const month = INDO_MONTHS[monthKey];
+      if (year < 100) {
+        const cur2DigitYear = new Date().getFullYear() % 100;
+        year = year <= cur2DigitYear + 10 ? 2000 + year : 1900 + year;
+      }
+      const dt = new Date(year, month, day);
+      if (!isNaN(dt.getTime())) return dt;
+    }
+  }
+
+  // 2b. Format Nama Bulan Di Depan: "Dec 13, 2016", "Desember 13, 2016"
+  const textMonthFirstMatch = str.match(/^([a-zA-Z]+)[\s\-/\.]+(\d{1,2})[\s\-/\.]+(\d{2,4})$/);
+  if (textMonthFirstMatch) {
+    const monthKey = textMonthFirstMatch[1].toLowerCase();
+    const day = parseInt(textMonthFirstMatch[2], 10);
+    let year = parseInt(textMonthFirstMatch[3], 10);
+
+    if (monthKey in INDO_MONTHS) {
+      const month = INDO_MONTHS[monthKey];
+      if (year < 100) {
+        const cur2DigitYear = new Date().getFullYear() % 100;
+        year = year <= cur2DigitYear + 10 ? 2000 + year : 1900 + year;
+      }
+      const dt = new Date(year, month, day);
+      if (!isNaN(dt.getTime())) return dt;
+    }
+  }
+
+  // 3. Format Angka DD-MM-YYYY, DD/MM/YYYY, DD.MM.YYYY, DD-MM-YY, DD/MM/YY
+  const numMatch = str.match(/^(\d{1,2})[\-/\.](\d{1,2})[\-/\.](\d{2,4})$/);
+  if (numMatch) {
+    const day = parseInt(numMatch[1], 10);
+    const month = parseInt(numMatch[2], 10) - 1;
+    let year = parseInt(numMatch[3], 10);
+
+    if (year < 100) {
+      const cur2DigitYear = new Date().getFullYear() % 100;
+      year = year <= cur2DigitYear + 10 ? 2000 + year : 1900 + year;
+    }
+
+    const dt = new Date(year, month, day);
+    if (!isNaN(dt.getTime())) return dt;
+  }
+
+  // 4. Fallback ke Date JS
+  const stdDate = new Date(str);
+  if (!isNaN(stdDate.getTime())) {
+    if (stdDate.getFullYear() < 1980) {
+      stdDate.setFullYear(stdDate.getFullYear() + 100);
+    }
+    return stdDate;
+  }
+
+  return null;
+}
+
+/**
+ * Format tanggal jadwal SO master toko secara cerdas & manusiawi (misal: "3 Jun 2026", "13 Ags 2026").
+ * Menghilangkan angka desimal serial excel (46177.0 -> 3 Jun 2026) dan '0-Jan-00' -> '-'.
+ */
+export function formatSmartSODate(val: any, fallback: string = '-'): string {
+  if (val === null || val === undefined || val === '') return fallback;
+  const rawStr = String(val).trim();
+  if (
+    !rawStr || 
+    rawStr === '-' || 
+    rawStr === '0' || 
+    rawStr === '0.0' || 
+    rawStr.toLowerCase() === '0-jan-00' || 
+    rawStr.toLowerCase() === '00-jan-00' || 
+    rawStr === '0/0/0' || 
+    rawStr.toLowerCase() === 'belum so' ||
+    rawStr.toLowerCase() === 'null' ||
+    rawStr.toLowerCase() === 'undefined'
+  ) {
+    return fallback;
+  }
+
+  const parsed = parseSmartDate(val);
+  if (parsed && !isNaN(parsed.getTime())) {
+    const d = parsed.getDate();
+    const m = ID_MONTH_NAMES[parsed.getMonth()];
+    const y = parsed.getFullYear();
+    return `${d} ${m} ${y}`;
+  }
+
+  // If already a readable non-decimal string, return trimmed
+  return rawStr;
+}
+
+/**
+ * Logika hitung Lama Bekerja: (Tanggal Hari Ini / Hari H) dikurangi (Tanggal Masuk Bekerja)
+ */
+export function calculateLamaBekerja(joinDateStr: string, refDateStr?: string): string {
+  if (!joinDateStr) return '-';
+  try {
+    const start = parseSmartDate(joinDateStr);
+    const ref = refDateStr ? parseSmartDate(refDateStr) : new Date();
+    
+    if (!start || !ref || isNaN(start.getTime()) || isNaN(ref.getTime())) return '-';
+    if (start > ref) return '0 Hr (Baru)';
+
+    let years = ref.getFullYear() - start.getFullYear();
+    let months = ref.getMonth() - start.getMonth();
+    let days = ref.getDate() - start.getDate();
+
+    if (days < 0) {
+      months -= 1;
+      const prevMonthLastDay = new Date(ref.getFullYear(), ref.getMonth(), 0).getDate();
+      days += prevMonthLastDay;
+    }
+
+    if (months < 0) {
+      years -= 1;
+      months += 12;
+    }
+
+    const parts: string[] = [];
+    if (years > 0) parts.push(`${years} Thn`);
+    if (months > 0) parts.push(`${months} Bln`);
+    if (days > 0 || parts.length === 0) parts.push(`${days} Hr`);
+
+    return parts.join(' ');
+  } catch {
+    return '-';
+  }
+}

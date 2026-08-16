@@ -1,0 +1,6 @@
+{
+  "name": "SO IC Bali Web",
+  "description": "Aplikasi Manajemen Penjadwalan, Tim, dan Rekapan Stock Opname Toko Ritel Bali (Created by Gean Pratama)",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
