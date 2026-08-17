@@ -36,13 +36,19 @@ export const ToastNotification: React.FC<ToastProps> = ({
     info: <Info className="w-5 h-5 text-blue-400 shrink-0" />,
   }[type];
 
+  const titleColor = {
+    success: 'text-emerald-300',
+    error: 'text-rose-300',
+    info: 'text-sky-300',
+  }[type];
+
   return (
     <div className="fixed top-16 right-4 sm:right-6 z-[10000] max-w-sm w-full animate-in slide-in-from-top-4 fade-in duration-200">
       <div className={`p-3.5 rounded-2xl border shadow-xl backdrop-blur-md flex items-start gap-3 relative ${bgStyles}`}>
         {icon}
         <div className="flex-1 pr-2">
           {title && (
-            <h4 className="text-xs font-black uppercase tracking-wider text-emerald-300">
+            <h4 className={`text-xs font-black uppercase tracking-wider mb-0.5 ${titleColor}`}>
               {title}
             </h4>
           )}
@@ -52,7 +58,7 @@ export const ToastNotification: React.FC<ToastProps> = ({
         </div>
         <button
           onClick={onClose}
-          className="p-1 text-white/60 hover:text-white rounded-lg hover:bg-white/10 transition"
+          className="p-1 text-white/60 hover:text-white rounded-lg hover:bg-white/10 transition shrink-0"
         >
           <X className="w-4 h-4" />
         </button>

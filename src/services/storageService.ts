@@ -166,24 +166,24 @@ export function notifyDataChanged(storageKey: string, data: any) {
 
 // Deterministic ID generators to ensure 100% idempotent documents across imports and syncs
 export function getDeterministicEquipmentId(item: Partial<SOEquipment>): string {
-  const cleanUser = (item.assignedUser || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
   const cleanSerial = (item.serialNumber || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-  const isFullSerial = cleanSerial && cleanSerial.length >= 10 && !cleanSerial.startsWith('000000') && !cleanSerial.startsWith('0023a7');
+  const isFullSerial = cleanSerial && cleanSerial.length >= 6 && !cleanSerial.startsWith('000000');
 
-  if (cleanUser) {
-    return `eq_usr_${cleanUser}`.slice(0, 45);
-  }
+  const cleanAsset = (item.assetId || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  const isCustomAsset = cleanAsset && cleanAsset.length >= 6 && !cleanAsset.startsWith('wdcp-00');
+
   if (isFullSerial) {
     return `eq_sn_${cleanSerial}`.slice(0, 45);
   }
-
-  const cleanAsset = (item.assetId || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-  if (cleanAsset && cleanAsset.length >= 6 && !cleanAsset.startsWith('wdcp-00')) {
+  if (isCustomAsset) {
     return `eq_ast_${cleanAsset}`.slice(0, 45);
   }
 
+  const cleanUser = (item.assignedUser || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
   const cleanName = (item.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-  if (cleanName) return `eq_${cleanName}`.slice(0, 45);
+  if (cleanUser && cleanName) {
+    return `eq_${cleanUser}_${cleanName}`.slice(0, 45);
+  }
   return item.id && !item.id.startsWith('equip_imp_') && !item.id.startsWith('eq_imp_') ? item.id : `eq_${Date.now()}`;
 }
 
@@ -237,16 +237,18 @@ export function deduplicateEntityList<T extends { id: string }>(
 
   const getEntityKey = (it: any): string => {
     if (collectionName === 'equipment') {
-      const usr = (it.assignedUser || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
       const sn = (it.serialNumber || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-      const isFullSerial = sn && sn.length >= 10 && !sn.startsWith('000000') && !sn.startsWith('0023a7');
+      const isFullSerial = sn && sn.length >= 6 && !sn.startsWith('000000');
 
-      if (usr) return `usr_${usr}`;
-      if (isFullSerial) return `sn_${sn}`;
       const ast = (it.assetId || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-      if (ast && ast.length >= 6 && !ast.startsWith('wdcp-00')) return `ast_${ast}`;
+      const isCustomAsset = ast && ast.length >= 6 && !ast.startsWith('wdcp-00');
+
+      if (isFullSerial) return `sn_${sn}`;
+      if (isCustomAsset) return `ast_${ast}`;
+
+      const usr = (it.assignedUser || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
       const nm = (it.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-      if (nm) return `nm_${nm}`;
+      if (usr && nm) return `usr_${usr}_${nm}`;
       return `id_${it.id}`;
     }
     if (collectionName === 'personnel') {

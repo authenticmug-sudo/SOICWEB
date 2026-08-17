@@ -93,8 +93,19 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
 
   const [equipToDelete, setEquipToDelete] = useState<SOEquipment | null>(null);
   const [repairLogToDelete, setRepairLogToDelete] = useState<EquipmentRepairLog | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info'; title?: string } | null>(null);
   const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success', title?: string) => {
+    let defaultTitle = 'Informasi';
+    if (type === 'success') defaultTitle = 'Berhasil Disimpan';
+    if (type === 'error') defaultTitle = 'Gagal';
+    setToast({
+      message,
+      type,
+      title: title || defaultTitle
+    });
+  };
 
   const [isCleaningDuplicates, setIsCleaningDuplicates] = useState(false);
 
@@ -109,9 +120,9 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
           onBatchUpdateEquipment(refreshed, true);
         }
       }
-      setToastMessage(result.message);
+      showToast(result.message, 'success', 'Deduplikasi Selesai');
     } catch (err: any) {
-      setToastMessage(`⚠️ Gagal membersihkan duplikat: ${err?.message || err}`);
+      showToast(`Gagal membersihkan duplikat: ${err?.message || err}`, 'error', 'Pembersihan Gagal');
     } finally {
       setIsCleaningDuplicates(false);
     }
@@ -138,18 +149,18 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
         } else {
           resolvedData.forEach(item => onUpdateEquipment(item));
         }
-        setToastMessage(`✅ Berhasil Sinkron Cloud! ${resolvedData.length} data unit alat unik & terbebas dari duplikasi.`);
+        showToast(`Berhasil Sinkron Cloud! ${resolvedData.length} unit alat unik & terbebas dari duplikasi.`, 'success', 'Sinkronisasi Cloud Berhasil');
       } else {
         // If cloud empty but we have local data, push local data to cloud
         if (equipmentList.length > 0) {
           await saveEquipment(equipmentList);
-          setToastMessage(`ℹ️ Data lokal (${equipmentList.length} unit) berhasil di-push ke Cloud Database!`);
+          showToast(`Data lokal (${equipmentList.length} unit) berhasil di-push ke Cloud Database!`, 'info', 'Sinkronisasi Data Lokal');
         } else {
-          setToastMessage('ℹ️ Data Cloud sudah sinkron dengan data lokal.');
+          showToast('Data Cloud sudah sinkron dengan data lokal.', 'info', 'Sinkronisasi Cloud');
         }
       }
     } catch (err: any) {
-      setToastMessage(`⚠️ Sync Cloud: ${err?.message || err}`);
+      showToast(`Sync Cloud: ${err?.message || err}`, 'error', 'Sinkronisasi Gagal');
     } finally {
       setIsSyncingCloud(false);
     }
@@ -157,7 +168,7 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
 
   // Form states - Equipment
   const [equipAssetId, setEquipAssetId] = useState('');
-  const [equipName, setEquipName] = useState('');
+  const [equipName, setEquipName] = useState('Scanner WDCP');
   const [equipCategory, setEquipCategory] = useState<SOEquipment['category']>('WDCP');
   const [equipAssignedUser, setEquipAssignedUser] = useState('');
   const [equipStatus, setEquipStatus] = useState<EquipmentCondition>('Baik');
@@ -210,7 +221,7 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
   const openAddEquipModal = () => {
     setEditingEquip(null);
     setEquipAssetId(`WDCP-MAC-${Math.floor(100 + Math.random() * 900)}`);
-    setEquipName('');
+    setEquipName('Scanner WDCP');
     setEquipCategory('WDCP');
     setEquipAssignedUser('');
     setEquipStatus('Baik');
@@ -224,10 +235,10 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
   const openEditEquipModal = (equip: SOEquipment) => {
     setEditingEquip(equip);
     setEquipAssetId(equip.assetId);
-    setEquipName(equip.name);
-    setEquipCategory(equip.category);
-    setEquipAssignedUser(equip.assignedUser);
-    setEquipStatus(equip.status);
+    setEquipName(equip.name || `Scanner ${equip.category || 'WDCP'}`);
+    setEquipCategory(equip.category || 'WDCP');
+    setEquipAssignedUser(equip.assignedUser || '');
+    setEquipStatus(equip.status || 'Baik');
     setEquipSerialNumber(equip.serialNumber || '');
     setEquipScannerColor(equip.scannerColor || 'Merah');
     setEquipCanScanQr(equip.canScanQr || 'Bisa');
@@ -237,42 +248,58 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
 
   const handleSaveEquipment = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!equipAssetId || !equipName || !equipAssignedUser) {
-      setToastMessage('Mohon lengkapi nama user, nama alat/WDCP, dan ID Asset!');
+    
+    const finalUser = equipAssignedUser.trim();
+    const finalCategory = equipCategory || 'WDCP';
+    const finalName = equipName.trim() || `Scanner ${finalCategory}`;
+    const finalSerial = equipSerialNumber.trim();
+    const finalAssetId = equipAssetId.trim() || (finalSerial ? `WDCP-MAC-${finalSerial.replace(/[^a-zA-Z0-9]/g, '').slice(-6).toUpperCase()}` : `WDCP-MAC-${Math.floor(100 + Math.random() * 900)}`);
+
+    if (!finalUser) {
+      showToast('Mohon lengkapi Nama User penanggung jawab alat!', 'error', 'Validasi Gagal');
       return;
     }
 
-    if (editingEquip) {
-      onUpdateEquipment({
-        ...editingEquip,
-        assetId: equipAssetId,
-        name: equipName,
-        category: equipCategory,
-        assignedUser: equipAssignedUser,
-        status: equipStatus,
-        serialNumber: equipSerialNumber,
-        scannerColor: equipScannerColor,
-        canScanQr: equipCanScanQr,
-        notes: equipNotes,
-        updatedAt: new Date().toISOString()
-      });
-      setToastMessage(`Data Alat & WDCP [${equipAssetId}] berhasil diperbarui!`);
-    } else {
-      onAddEquipment({
-        assetId: equipAssetId,
-        name: equipName,
-        category: equipCategory,
-        assignedUser: equipAssignedUser,
-        status: equipStatus,
-        serialNumber: equipSerialNumber,
-        scannerColor: equipScannerColor,
-        canScanQr: equipCanScanQr,
-        notes: equipNotes,
-        updatedAt: new Date().toISOString()
-      });
-      setToastMessage(`Data Alat & WDCP [${equipAssetId}] berhasil disimpan!`);
+    if (!finalSerial) {
+      showToast('Mohon lengkapi Serial Number (MAC) alat!', 'error', 'Validasi Gagal');
+      return;
     }
-    setIsAddEquipModalOpen(false);
+
+    try {
+      if (editingEquip) {
+        onUpdateEquipment({
+          ...editingEquip,
+          assetId: finalAssetId,
+          name: finalName,
+          category: finalCategory,
+          assignedUser: finalUser,
+          status: equipStatus,
+          serialNumber: finalSerial,
+          scannerColor: equipScannerColor,
+          canScanQr: equipCanScanQr,
+          notes: equipNotes.trim(),
+          updatedAt: new Date().toISOString()
+        });
+        showToast(`Data Alat & WDCP [${finalAssetId}] untuk ${finalUser} berhasil diperbarui!`, 'success', 'Perubahan Disimpan');
+      } else {
+        onAddEquipment({
+          assetId: finalAssetId,
+          name: finalName,
+          category: finalCategory,
+          assignedUser: finalUser,
+          status: equipStatus,
+          serialNumber: finalSerial,
+          scannerColor: equipScannerColor,
+          canScanQr: equipCanScanQr,
+          notes: equipNotes.trim(),
+          updatedAt: new Date().toISOString()
+        });
+        showToast(`Data Alat & WDCP [${finalAssetId}] untuk ${finalUser} berhasil tersimpan ke sistem & Cloud!`, 'success', 'Berhasil Disimpan');
+      }
+      setIsAddEquipModalOpen(false);
+    } catch (err: any) {
+      showToast(`Gagal menyimpan data alat: ${err?.message || err}`, 'error', 'Gagal Tersimpan');
+    }
   };
 
   // Handlers for Repair Logs
@@ -320,6 +347,7 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
       status: newEquipStatus
     });
 
+    showToast(`Log perbaikan untuk ${selectedEquipForRepair.name} (${selectedEquipForRepair.assetId}) berhasil dibuat!`, 'success', 'Log Disimpan');
     setIsNewRepairModalOpen(false);
   };
 
@@ -364,6 +392,7 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
       });
     }
 
+    showToast(`Status perbaikan [${editingRepairLog.assetId}] berhasil diperbarui menjadi "${repStatusTarget}"!`, 'success', 'Status Diperbarui');
     setIsUpdateRepairStatusModalOpen(false);
   };
 
@@ -406,7 +435,7 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Master_Alat');
     XLSX.writeFile(wb, `Template_Master_Pendataan_Alat_dan_WDCP_${getFormattedDateSuffix()}.xlsx`);
-    setToastMessage('Template Master Excel berhasil diunduh!');
+    showToast('Template Master Excel berhasil diunduh!', 'success', 'Download Berhasil');
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -507,7 +536,7 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
 
   const handleExecuteImport = async () => {
     if (parsedImportData.length === 0) {
-      setToastMessage('Tidak ada data valid yang dapat diimpor.');
+      showToast('Tidak ada data valid yang dapat diimpor.', 'error', 'Impor Gagal');
       return;
     }
 
@@ -525,12 +554,15 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
       } else {
         // Append / Merge mode
         const getItemKey = (e: SOEquipment) => {
-          const usr = (e.assignedUser || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
           const sn = (e.serialNumber || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-          const isFullSerial = sn && sn.length >= 10 && !sn.startsWith('000000') && !sn.startsWith('0023a7');
-          if (usr) return `usr_${usr}`;
+          const isFullSerial = sn && sn.length >= 6 && !sn.startsWith('000000');
           if (isFullSerial) return `sn_${sn}`;
-          return (e.assetId || e.id).toLowerCase();
+          const ast = (e.assetId || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+          if (ast && ast.length >= 6 && !ast.startsWith('wdcp-00')) return `ast_${ast}`;
+          const usr = (e.assignedUser || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+          const nm = (e.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+          if (usr && nm) return `usr_${usr}_${nm}`;
+          return (e.id || '').toLowerCase();
         };
         const existingMap = new Map<string, SOEquipment>();
         equipmentList.forEach(e => {
@@ -554,12 +586,12 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
         cleanFinalList.forEach(item => onUpdateEquipment(item));
       }
 
-      setToastMessage(`🎉 Berhasil mengimpor ${cleanFinalList.length} data Master Alat & WDCP! Tersimpan ke Firestore & Cloudinary (${isReplace ? 'Ganti Semua' : 'Gabungkan'})`);
+      showToast(`Berhasil mengimpor ${cleanFinalList.length} data Master Alat & WDCP! Tersimpan ke Firestore & Cloudinary (${isReplace ? 'Ganti Semua' : 'Gabungkan'}).`, 'success', 'Impor Berhasil');
       setIsImportModalOpen(false);
       setImportFile(null);
       setParsedImportData([]);
     } catch (err: any) {
-      setToastMessage(`⚠️ Gagal impor: ${err?.message || err}`);
+      showToast(`Gagal impor: ${err?.message || err}`, 'error', 'Impor Gagal');
     } finally {
       setIsProcessingImport(false);
     }
@@ -579,7 +611,7 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
     }));
 
     exportToExcelWithBackup(`Pendataan_Alat_dan_WDCP_Korlap_${getFormattedDateSuffix()}.xlsx`, 'Pendataan_Alat_dan_WDCP', exportData);
-    setToastMessage('Export Excel Master Alat berhasil diunduh!');
+    showToast('Export Excel Master Alat berhasil diunduh!', 'success', 'Download Berhasil');
   };
 
   const handleExportEquipmentCSV = async () => {
@@ -596,9 +628,9 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
 
     const result = await exportToCSV(`Pendataan_Alat_dan_WDCP_Korlap_${getFormattedDateSuffix()}.csv`, exportData);
     if (result.success) {
-      setToastMessage('Data CSV Alat & WDCP berhasil diunduh & otomatis ter-backup ke Cloudinary!');
+      showToast('Data CSV Alat & WDCP berhasil diunduh & otomatis ter-backup ke Cloudinary!', 'success', 'Export CSV Berhasil');
     } else if (result.error) {
-      setToastMessage(result.error);
+      showToast(result.error, 'error', 'Export CSV Gagal');
     }
   };
 
@@ -619,10 +651,10 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
     }));
 
     exportToExcelWithBackup(`Log_Perbaikan_Peralatan_SO_${getFormattedDateSuffix()}.xlsx`, 'Log_Perbaikan_Peralatan', exportData);
-    setToastMessage('Export Excel Log Perbaikan berhasil diunduh!');
+    showToast('Export Excel Log Perbaikan berhasil diunduh!', 'success', 'Download Berhasil');
   };
 
-  const handleExportRepairLogsCSV = () => {
+  const handleExportRepairLogsCSV = async () => {
     const exportData = filteredRepairLogs.map((r, idx) => ({
       'No': idx + 1,
       'ID Asset': r.assetId,
@@ -636,7 +668,12 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
       'Deskripsi Kerusakan': r.damageDescription,
       'Catatan': r.notes || '-'
     }));
-    exportToCSV(`Log_Perbaikan_Peralatan_SO_${getFormattedDateSuffix()}.csv`, exportData);
+    const result = await exportToCSV(`Log_Perbaikan_Peralatan_SO_${getFormattedDateSuffix()}.csv`, exportData);
+    if (result.success) {
+      showToast('Data CSV Log Perbaikan berhasil diunduh!', 'success', 'Export CSV Berhasil');
+    } else if (result.error) {
+      showToast(result.error, 'error', 'Export CSV Gagal');
+    }
   };
 
   return (
@@ -1267,13 +1304,19 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
                 </div>
               </div>
 
-              {/* 6. Kategori */}
+              {/* 6. Kategori & Nama/Tipe Alat */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Kategori *</label>
                   <select
                     value={equipCategory}
-                    onChange={(e) => setEquipCategory(e.target.value as any)}
+                    onChange={(e) => {
+                      const newCat = e.target.value as SOEquipment['category'];
+                      setEquipCategory(newCat);
+                      if (!equipName || equipName.startsWith('Scanner ')) {
+                        setEquipName(`Scanner ${newCat}`);
+                      }
+                    }}
                     className="w-full border border-slate-300 rounded p-2 text-xs font-semibold focus:outline-none focus:border-indigo-500"
                   >
                     <option value="WDCP">WDCP</option>
@@ -1290,10 +1333,10 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
                   <label className="block font-semibold text-slate-700 mb-1">Nama / Tipe Alat</label>
                   <input
                     type="text"
-                    value={equipName || `Scanner ${equipCategory}`}
+                    value={equipName}
                     onChange={(e) => setEquipName(e.target.value)}
                     placeholder={`misal: Scanner ${equipCategory}`}
-                    className="w-full border border-slate-300 rounded p-2 text-xs focus:outline-none focus:border-indigo-500"
+                    className="w-full border border-slate-300 rounded p-2 text-xs focus:outline-none focus:border-indigo-500 font-medium"
                   />
                 </div>
               </div>
@@ -1310,19 +1353,19 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
                 />
               </div>
 
-              <div className="pt-3 border-t border-slate-200 flex items-center justify-between gap-2">
+              <div className="pt-3 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <span className="text-[11px] text-slate-500">Otomatis ter-sync ke Firestore & Cloudinary Backup</span>
-                <div className="flex gap-2">
+                <div className="grid grid-cols-2 sm:flex sm:items-center gap-2">
                   <button
                     type="button"
                     onClick={() => setIsAddEquipModalOpen(false)}
-                    className="px-3.5 py-1.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium"
+                    className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition active:scale-95 text-center"
                   >
                     Batal
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-1.5 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-xs flex items-center gap-1.5"
+                    className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs flex items-center justify-center gap-1.5 transition active:scale-95"
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     <span>Simpan Perangkat</span>
@@ -1784,7 +1827,7 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
         onConfirm={() => {
           if (equipToDelete) {
             onDeleteEquipment(equipToDelete.id);
-            setToastMessage(`Perangkat ${equipToDelete.name} (${equipToDelete.assetId}) berhasil dihapus!`);
+            showToast(`Perangkat ${equipToDelete.name} (${equipToDelete.assetId}) berhasil dihapus dari sistem!`, 'success', 'Berhasil Dihapus');
             setEquipToDelete(null);
           }
         }}
@@ -1793,9 +1836,9 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
         itemName={equipToDelete ? `${equipToDelete.assetId} - ${equipToDelete.name}` : undefined}
         itemDetails={equipToDelete ? [
           { label: 'Kategori', value: equipToDelete.category },
-          { label: 'Merk / Tipe', value: `${equipToDelete.brand || ''} ${equipToDelete.model || ''}` },
-          { label: 'Kondisi Perangkat', value: equipToDelete.condition },
-          { label: 'Lokasi / Posisi', value: equipToDelete.assignedToPerson || equipToDelete.location || '-' }
+          { label: 'Serial Number (MAC)', value: equipToDelete.serialNumber || '-' },
+          { label: 'Kondisi', value: equipToDelete.status },
+          { label: 'User / Penanggung Jawab', value: equipToDelete.assignedUser || '-' }
         ] : []}
         confirmText="Ya, Hapus Perangkat"
         dangerBadgeText="Data aset & perangkat ini akan dihapus dari inventaris."
@@ -1808,29 +1851,29 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
         onConfirm={() => {
           if (repairLogToDelete) {
             onDeleteRepairLog(repairLogToDelete.id);
-            setToastMessage(`Log perbaikan untuk ${repairLogToDelete.equipAssetId} berhasil dihapus!`);
+            showToast(`Log perbaikan untuk ${repairLogToDelete.assetId} berhasil dihapus!`, 'success', 'Berhasil Dihapus');
             setRepairLogToDelete(null);
           }
         }}
         title="Hapus Log Perbaikan"
         subtitle="Apakah Anda yakin ingin menghapus catatan log perbaikan ini?"
-        itemName={repairLogToDelete ? `${repairLogToDelete.equipAssetId} - ${repairLogToDelete.equipName}` : undefined}
+        itemName={repairLogToDelete ? `${repairLogToDelete.assetId} - ${repairLogToDelete.equipmentName}` : undefined}
         itemDetails={repairLogToDelete ? [
-          { label: 'Tgl Masuk Servis', value: repairLogToDelete.startDate },
-          { label: 'Keluhan / Kerusakan', value: repairLogToDelete.issueDescription },
-          { label: 'Status Perbaikan', value: repairLogToDelete.status }
+          { label: 'Tgl Lapor', value: repairLogToDelete.reportedDate },
+          { label: 'Kerusakan', value: repairLogToDelete.damageDescription },
+          { label: 'Status', value: repairLogToDelete.repairStatus }
         ] : []}
         confirmText="Ya, Hapus Log"
         dangerBadgeText="Catatan histori perbaikan ini akan dihapus permanen."
       />
 
-      {/* Success Toast Feedback */}
-      {toastMessage && (
+      {/* Dynamic Toast Feedback */}
+      {toast && (
         <ToastNotification
-          type="success"
-          title="Berhasil Dihapus"
-          message={toastMessage}
-          onClose={() => setToastMessage(null)}
+          type={toast.type}
+          title={toast.title}
+          message={toast.message}
+          onClose={() => setToast(null)}
         />
       )}
 
