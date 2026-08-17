@@ -245,20 +245,20 @@ export const GagalAtauPindahTokoModal: React.FC<GagalAtauPindahTokoModalProps> =
           )}
 
           {/* Submit Actions */}
-          <div className="pt-2 flex items-center justify-between gap-3">
+          <div className="pt-2 grid grid-cols-2 sm:flex sm:items-center sm:justify-between gap-2.5">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition"
+              className="w-full sm:w-auto px-4 py-2.5 bg-slate-100 hover:bg-slate-200 active:scale-98 text-slate-700 font-bold text-xs rounded-xl border border-slate-300 transition flex items-center justify-center"
             >
               Batal
             </button>
             <button
               type="submit"
-              className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-extrabold rounded-xl shadow-md transition flex items-center gap-2"
+              className="w-full sm:w-auto px-5 py-2.5 bg-amber-600 hover:bg-amber-700 active:scale-98 text-white font-extrabold text-xs rounded-xl shadow-sm hover:shadow transition flex items-center justify-center gap-2"
             >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Submit & Sync Ke SPV / Admin</span>
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span className="truncate">Submit & Sync ke SPV</span>
             </button>
           </div>
 

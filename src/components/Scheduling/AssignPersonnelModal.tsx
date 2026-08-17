@@ -243,21 +243,21 @@ export const AssignPersonnelModal: React.FC<AssignPersonnelModalProps> = ({
         </div>
 
         {/* Footer Actions */}
-        <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
+        <div className="p-4 border-t border-slate-200 bg-slate-50 grid grid-cols-2 sm:flex sm:items-center sm:justify-between gap-2 shrink-0">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold transition"
+            className="w-full sm:w-auto px-4 py-2.5 bg-white border border-slate-300 hover:bg-slate-100 active:scale-98 text-slate-700 rounded-xl text-xs font-bold transition flex items-center justify-center shadow-2xs"
           >
             Batal
           </button>
           <button
             type="button"
             onClick={handleSave}
-            className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-sm transition flex items-center gap-1.5"
+            className="w-full sm:w-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white rounded-xl text-xs font-black shadow-sm hover:shadow transition flex items-center justify-center gap-1.5"
           >
-            <UserCheck className="w-4 h-4" />
-            <span>Simpan Personil Toko ({selectedIds.length})</span>
+            <UserCheck className="w-4 h-4 shrink-0" />
+            <span className="truncate">Simpan ({selectedIds.length})</span>
           </button>
         </div>
 

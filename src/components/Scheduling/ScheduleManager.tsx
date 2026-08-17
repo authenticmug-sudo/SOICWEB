@@ -194,51 +194,55 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
             </p>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Action Buttons (2-column on mobile, inline on desktop) */}
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full md:w-auto">
             {activeRoleContext !== 'OFFICER' && viewMode !== 'officer' && (
               <>
                 {onOpenKorlapImageModal && (
                   <button
                     onClick={onOpenKorlapImageModal}
-                    className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5"
+                    className="w-full sm:w-auto px-3 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white rounded-xl text-xs font-bold shadow-xs hover:shadow transition flex items-center justify-center gap-1.5"
+                    title="Buat rute toko & gambar jadwal Excel Korlap"
                   >
-                    <FileSpreadsheet className="w-3.5 h-3.5" />
-                    Input Korlap & Auto Image Excel
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-200 shrink-0" />
+                    <span className="truncate">Input Korlap & Image</span>
                   </button>
                 )}
 
                 <button
                   onClick={onOpenAutoGenerator}
-                  className="px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl text-xs font-extrabold shadow-xs transition flex items-center gap-1.5"
+                  className="w-full sm:w-auto px-3 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 active:scale-98 text-white rounded-xl text-xs font-black shadow-xs hover:shadow transition flex items-center justify-center gap-1.5"
+                  title="Generate otomatis jadwal dari 737 toko"
                 >
-                  <Wand2 className="w-3.5 h-3.5" />
-                  Auto-Schedule (700+ Toko)
+                  <Wand2 className="w-4 h-4 text-purple-200 shrink-0" />
+                  <span className="truncate">Auto-Schedule (700+)</span>
                 </button>
 
                 <button
                   onClick={onOpenCreateModal}
-                  className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold shadow-xs transition flex items-center gap-1.5"
+                  className="w-full sm:w-auto px-3 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white rounded-xl text-xs font-black shadow-xs hover:shadow transition flex items-center justify-center gap-1.5"
+                  title="Tambah 1 jadwal audit toko manual"
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  Tambah Jadwal Manual
+                  <Plus className="w-4 h-4 text-indigo-200 shrink-0" />
+                  <span className="truncate">+ Tambah Manual</span>
                 </button>
               </>
             )}
 
             <button
               onClick={handleExportSchedules}
-              className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold border border-slate-300 transition flex items-center gap-1.5"
+              className="w-full sm:w-auto px-3 py-2.5 bg-slate-100 hover:bg-slate-200 active:scale-98 text-slate-700 hover:text-slate-900 rounded-xl text-xs font-bold border border-slate-300 transition flex items-center justify-center gap-1.5 shadow-2xs"
+              title="Download rekap data jadwal ke file CSV"
             >
-              <Download className="w-3.5 h-3.5" />
-              Export CSV
+              <Download className="w-4 h-4 text-slate-500 shrink-0" />
+              <span className="truncate">Export CSV</span>
             </button>
           </div>
         </div>
 
         {/* Super Account Dedicated Mode Switcher Toggle Bar */}
         {currentRole === 'ALL' && (
-          <div className="p-2 bg-gradient-to-r from-purple-900/10 via-indigo-900/10 to-slate-900/10 rounded-xl border border-purple-200/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+          <div className="p-2.5 bg-gradient-to-r from-purple-900/10 via-indigo-900/10 to-slate-900/10 rounded-2xl border border-purple-200/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
             <div className="flex items-center gap-2">
               <span className="text-xs font-black text-purple-950 uppercase tracking-wider flex items-center gap-1">
                 ⚡ Mode Switcher Super Account:
@@ -248,13 +252,13 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
               </span>
             </div>
 
-            <div className="flex items-center gap-1.5 bg-white p-1 rounded-lg border border-purple-200 shadow-2xs">
+            <div className="grid grid-cols-2 sm:flex sm:items-center gap-1.5 bg-white p-1 rounded-xl border border-purple-200 shadow-2xs">
               <button
                 onClick={() => {
                   setSuperAdminRoleMode('SUPERVISOR');
                   setViewMode('list');
                 }}
-                className={`px-3 py-1.5 text-xs font-extrabold rounded-md transition flex items-center gap-1.5 ${
+                className={`w-full sm:w-auto px-3 py-2 text-xs font-black rounded-lg transition flex items-center justify-center gap-1.5 ${
                   superAdminRoleMode === 'SUPERVISOR'
                     ? 'bg-indigo-600 text-white shadow-xs'
                     : 'text-slate-600 hover:text-indigo-600 hover:bg-indigo-50'
@@ -268,7 +272,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                   setSuperAdminRoleMode('OFFICER');
                   setViewMode('officer');
                 }}
-                className={`px-3 py-1.5 text-xs font-extrabold rounded-md transition flex items-center gap-1.5 ${
+                className={`w-full sm:w-auto px-3 py-2 text-xs font-black rounded-lg transition flex items-center justify-center gap-1.5 ${
                   superAdminRoleMode === 'OFFICER'
                     ? 'bg-emerald-600 text-white shadow-xs'
                     : 'text-slate-600 hover:text-emerald-700 hover:bg-emerald-50'

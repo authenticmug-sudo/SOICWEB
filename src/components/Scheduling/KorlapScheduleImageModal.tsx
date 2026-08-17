@@ -23,6 +23,7 @@ import html2canvas from 'html2canvas';
 import { Store, SOSchedule, SOTeam, AuditorPersonnel } from '../../types/stockOpname';
 import { calculateHaversineDistance } from '../../utils/geoUtils';
 import { openWAShareUrl } from '../../utils/whatsappFormatter';
+import { SearchableStoreSelect } from '../Common/SearchableStoreSelect';
 
 interface KorlapScheduleItem {
   id: string;
@@ -376,84 +377,89 @@ export const KorlapScheduleImageModal: React.FC<KorlapScheduleImageModalProps> =
           </div>
 
           {/* Form Step 2: Tambah Toko Ke List Korlap */}
-          <div className="bg-emerald-50/50 p-4 rounded-xl border border-emerald-200/80 space-y-3">
-            <h3 className="text-xs font-bold text-emerald-900 uppercase tracking-wider flex items-center gap-1.5">
-              <Plus className="w-4 h-4 text-emerald-700" />
-              Tambah Toko Ke Rute SO Korlap
-            </h3>
+          <div className="bg-emerald-50/70 p-4 sm:p-5 rounded-2xl border border-emerald-200/90 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold text-emerald-950 uppercase tracking-wider flex items-center gap-1.5">
+                <Plus className="w-4 h-4 text-emerald-700" />
+                Tambah Toko Ke Rute SO Korlap
+              </h3>
+              <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-100/80 px-2 py-0.5 rounded-md border border-emerald-200">
+                Smart Search & Rekomendasi
+              </span>
+            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-              {/* Dropdown Toko */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-start">
+              {/* Dropdown Toko Smart Search */}
               <div className="md:col-span-5">
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Pilih Toko ({stores.length} Toko Master)
-                </label>
-                <select
-                  value={selectedStoreId}
-                  onChange={(e) => setSelectedStoreId(e.target.value)}
-                  className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs font-medium text-slate-800 focus:ring-2 focus:ring-emerald-500"
-                >
-                  <option value="">-- Pilih Toko --</option>
-                  {stores.map(s => (
-                    <option key={s.id} value={s.id}>
-                      {s.code} - {s.name} ({s.city})
-                    </option>
-                  ))}
-                </select>
+                <SearchableStoreSelect
+                  stores={stores}
+                  selectedStoreId={selectedStoreId}
+                  onSelectStore={(store) => setSelectedStoreId(store.id)}
+                  label="Pilih Toko Master"
+                  placeholder="Ketik kode (F010), nama toko, atau wilayah..."
+                  required
+                />
               </div>
 
               {/* Jam SO */}
-              <div className="md:col-span-2">
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Jam SO
-                </label>
-                <input
-                  type="time"
-                  value={selectedTime}
-                  onChange={(e) => setSelectedTime(e.target.value)}
-                  className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs font-medium text-slate-800 focus:ring-2 focus:ring-emerald-500"
-                />
-              </div>
+              <div className="grid grid-cols-2 md:grid-cols-7 md:col-span-7 gap-3">
+                <div className="col-span-1 md:col-span-2">
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-emerald-600" />
+                    Jam SO
+                  </label>
+                  <input
+                    type="time"
+                    value={selectedTime}
+                    onChange={(e) => setSelectedTime(e.target.value)}
+                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-emerald-500 shadow-2xs"
+                  />
+                </div>
 
-              {/* Status Cluster */}
-              <div className="md:col-span-2">
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Opsi Cluster
-                </label>
-                <select
-                  value={isCluster ? 'true' : 'false'}
-                  onChange={(e) => setIsCluster(e.target.value === 'true')}
-                  className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-emerald-500"
-                >
-                  <option value="true">Ya (Berdekatan)</option>
-                  <option value="false">Tidak (Non-Cluster)</option>
-                </select>
-              </div>
+                {/* Status Cluster */}
+                <div className="col-span-1 md:col-span-2">
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                    <Layers className="w-3 h-3 text-emerald-600" />
+                    Opsi Cluster
+                  </label>
+                  <select
+                    value={isCluster ? 'true' : 'false'}
+                    onChange={(e) => setIsCluster(e.target.value === 'true')}
+                    className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-emerald-500 shadow-2xs cursor-pointer"
+                  >
+                    <option value="true">Ya (Berdekatan)</option>
+                    <option value="false">Tidak (Non-Cluster)</option>
+                  </select>
+                </div>
 
-              {/* Catatan / Keterangan */}
-              <div className="md:col-span-3">
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Keterangan Toko
-                </label>
-                <input
-                  type="text"
-                  placeholder="Catatan khusus..."
-                  value={itemNotes}
-                  onChange={(e) => setItemNotes(e.target.value)}
-                  className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-emerald-500"
-                />
+                {/* Catatan / Keterangan */}
+                <div className="col-span-2 md:col-span-3">
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Keterangan Toko
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Catatan rute / audit..."
+                    value={itemNotes}
+                    onChange={(e) => setItemNotes(e.target.value)}
+                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-emerald-500 shadow-2xs"
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="flex justify-end pt-1">
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-[11px] text-slate-500 hidden sm:inline">
+                {selectedStoreId ? 'Toko terpilih siap ditambahkan ke urutan rute' : 'Pilih toko terlebih dahulu untuk menambahkan'}
+              </span>
               <button
                 type="button"
                 onClick={handleAddItem}
                 disabled={!selectedStoreId}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded-lg text-xs font-bold shadow transition flex items-center gap-1.5"
+                className="w-full sm:w-auto px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-98 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center justify-center gap-2"
               >
                 <Plus className="w-4 h-4" />
-                Tambahkan Toko Ini Ke List
+                <span>Tambahkan Toko Ke List Rute</span>
               </button>
             </div>
           </div>
@@ -647,75 +653,78 @@ export const KorlapScheduleImageModal: React.FC<KorlapScheduleImageModalProps> =
         </div>
 
         {/* Action Footer */}
-        <div className="bg-slate-50 px-6 py-4 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 shrink-0">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-200 transition"
-          >
-            Tutup
-          </button>
-
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="bg-slate-50 px-4 sm:px-6 py-3 sm:py-4 border-t border-slate-200 shrink-0">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3">
             <button
-              onClick={handleShareWhatsAppDirect}
-              disabled={items.length === 0}
-              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow"
-              title={targetPhone ? `Kirim langsung ke WA ${targetPhone}` : 'Kirim via WhatsApp'}
+              onClick={onClose}
+              className="order-last sm:order-first w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-100 active:scale-98 border border-slate-300 transition flex items-center justify-center gap-1.5 shadow-2xs"
             >
-              <Share2 className="w-4 h-4 text-emerald-100" />
-              Kirim WA Ke Korlap {targetPhone ? `(${targetPhone})` : ''}
+              <X className="w-4 h-4 text-slate-500" />
+              <span>Tutup</span>
             </button>
 
-            <button
-              onClick={handleCopyWhatsAppText}
-              disabled={items.length === 0}
-              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 disabled:bg-slate-300 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow"
-            >
-              {copiedText ? (
-                <>
-                  <Check className="w-4 h-4 text-emerald-400" />
-                  Teks Tersalin!
-                </>
-              ) : (
-                <>
-                  <Copy className="w-4 h-4" />
-                  Salin Teks (WhatsApp)
-                </>
-              )}
-            </button>
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 sm:gap-2 flex-1 sm:justify-end">
+              <button
+                onClick={handleShareWhatsAppDirect}
+                disabled={items.length === 0}
+                className="w-full sm:w-auto px-3 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-98 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm"
+                title={targetPhone ? `Kirim langsung ke WA ${targetPhone}` : 'Kirim via WhatsApp'}
+              >
+                <Share2 className="w-4 h-4 text-emerald-100 shrink-0" />
+                <span className="truncate">Kirim WA {targetPhone ? `(${targetPhone})` : 'Korlap'}</span>
+              </button>
 
-            <button
-              onClick={handleDownloadExcelImage}
-              disabled={items.length === 0 || isGeneratingImage}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded-xl text-xs font-bold shadow-md transition flex items-center gap-1.5"
-            >
-              {isGeneratingImage ? (
-                <span>Membuat Gambar...</span>
-              ) : (
-                <>
-                  <Download className="w-4 h-4" />
-                  Download Gambar Excel (PNG)
-                </>
-              )}
-            </button>
+              <button
+                onClick={handleCopyWhatsAppText}
+                disabled={items.length === 0}
+                className="w-full sm:w-auto px-3 py-2.5 bg-teal-700 hover:bg-teal-800 active:scale-98 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm"
+              >
+                {copiedText ? (
+                  <>
+                    <Check className="w-4 h-4 text-emerald-300 shrink-0" />
+                    <span className="truncate">Tersalin!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4 text-teal-200 shrink-0" />
+                    <span className="truncate">Salin WA</span>
+                  </>
+                )}
+              </button>
 
-            <button
-              onClick={handleSaveToMainSchedule}
-              disabled={items.length === 0 || successSaved}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded-xl text-xs font-bold shadow-md transition flex items-center gap-1.5"
-            >
-              {successSaved ? (
-                <>
-                  <Check className="w-4 h-4 text-emerald-300" />
-                  Berhasil Disimpan!
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4" />
-                  Simpan Ke Penjadwalan Utama
-                </>
-              )}
-            </button>
+              <button
+                onClick={handleDownloadExcelImage}
+                disabled={items.length === 0 || isGeneratingImage}
+                className="w-full sm:w-auto px-3 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-98 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center justify-center gap-1.5"
+              >
+                {isGeneratingImage ? (
+                  <span className="truncate">Membuat...</span>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4 text-blue-200 shrink-0" />
+                    <span className="truncate">Download PNG</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                onClick={handleSaveToMainSchedule}
+                disabled={items.length === 0 || successSaved}
+                className="w-full sm:w-auto px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-98 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-xs font-black shadow-sm transition flex items-center justify-center gap-1.5"
+              >
+                {successSaved ? (
+                  <>
+                    <Check className="w-4 h-4 text-emerald-300 shrink-0" />
+                    <span className="truncate">Tersimpan!</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4 text-indigo-200 shrink-0" />
+                    <span className="truncate">Simpan Jadwal</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
 

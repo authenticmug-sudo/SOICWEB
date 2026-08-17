@@ -206,7 +206,7 @@ export const SearchablePersonnelSelect: React.FC<SearchablePersonnelSelectProps>
   };
 
   return (
-    <div className={`space-y-1.5 ${className}`} ref={containerRef}>
+    <div className={`relative space-y-1.5 ${className}`} ref={containerRef}>
       {label && (
         <label className="block text-xs font-bold text-indigo-900 flex items-center justify-between">
           <span className="flex items-center gap-1.5">

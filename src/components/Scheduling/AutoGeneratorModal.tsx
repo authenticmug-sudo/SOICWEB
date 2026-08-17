@@ -196,11 +196,11 @@ export const AutoGeneratorModal: React.FC<AutoGeneratorModalProps> = ({
           ) : null}
 
           {/* Buttons */}
-          <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+          <div className="pt-3 border-t border-slate-200 grid grid-cols-2 sm:flex sm:items-center sm:justify-end gap-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium transition"
+              className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 active:scale-98 text-slate-700 text-xs font-bold border border-slate-300 transition flex items-center justify-center"
             >
               Tutup
             </button>
@@ -208,10 +208,10 @@ export const AutoGeneratorModal: React.FC<AutoGeneratorModalProps> = ({
               type="button"
               onClick={handleRunGenerator}
               disabled={candidateStores.length === 0}
-              className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-xs font-semibold transition shadow-sm flex items-center gap-1.5"
+              className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 active:scale-98 disabled:opacity-40 text-white text-xs font-black transition shadow-sm hover:shadow flex items-center justify-center gap-1.5"
             >
-              <Wand2 className="w-3.5 h-3.5" />
-              Generate {candidateStores.length} Jadwal Sekarang
+              <Wand2 className="w-4 h-4 shrink-0" />
+              <span className="truncate">Generate ({candidateStores.length})</span>
             </button>
           </div>
 
