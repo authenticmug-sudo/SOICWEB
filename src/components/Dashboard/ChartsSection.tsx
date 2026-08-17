@@ -34,20 +34,19 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({ schedules, results
     { name: 'Menunggu Rekapan', value: statusCounts['Menunggu Rekapan'] || 0, color: '#8b5cf6' }
   ].filter(d => d.value > 0);
 
-  // Chart 2: Regional Accuracy Rate
-  const regionAccuracy = results.reduce((acc, r) => {
-    const shortRegion = r.region.split(' ')[0]; // e.g. Jabodetabek, Jawa, Sumatera
+  // Chart 2: Regional SO Completion Count
+  const regionResults = results.reduce((acc, r) => {
+    const shortRegion = r.region.split(' ')[0] || 'Bali'; // e.g. Denpasar, Badung, Tabanan, dll.
     if (!acc[shortRegion]) {
-      acc[shortRegion] = { total: 0, count: 0 };
+      acc[shortRegion] = { completed: 0 };
     }
-    acc[shortRegion].total += r.accuracyRatePercentage;
-    acc[shortRegion].count += 1;
+    acc[shortRegion].completed += 1;
     return acc;
-  }, {} as Record<string, { total: number; count: number }>);
+  }, {} as Record<string, { completed: number }>);
 
-  const regionBarData = (Object.entries(regionAccuracy) as [string, { total: number; count: number }][]).map(([region, data]) => ({
+  const regionBarData = (Object.entries(regionResults) as [string, { completed: number }][]).map(([region, data]) => ({
     region,
-    accuracy: +(data.total / data.count).toFixed(2)
+    completed: data.completed
   }));
 
   // Chart 3: Selisih Nominal per Category
@@ -112,10 +111,10 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({ schedules, results
         </div>
       </div>
 
-      {/* Chart 2: Akurasi per Wilayah */}
+      {/* Chart 2: Toko Selesai SO per Wilayah */}
       <div className="bg-white p-3.5 rounded border border-slate-200 shadow-xs">
         <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
-          Avg. Accuracy per Region (%)
+          Toko Selesai SO per Wilayah
         </h3>
         <div className="h-56 w-full">
           {regionBarData.length > 0 ? (
@@ -123,16 +122,16 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({ schedules, results
               <BarChart data={regionBarData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="region" tick={{ fontSize: 9 }} interval={0} angle={-15} textAnchor="end" />
-                <YAxis domain={[90, 100]} tick={{ fontSize: 9 }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 9 }} />
                 <Tooltip 
-                  formatter={(val: number) => [`${val}%`, 'Akurasi']}
+                  formatter={(val: number) => [`${val} Toko`, 'Selesai SO']}
                   contentStyle={{ borderRadius: '6px', fontSize: '11px', padding: '6px 10px' }}
                 />
-                <Bar dataKey="accuracy" fill="#6366f1" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="completed" fill="#6366f1" radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <p className="text-xs text-slate-400 text-center pt-20">Belum ada data akurasi</p>
+            <p className="text-xs text-slate-400 text-center pt-20">Belum ada data toko selesai</p>
           )}
         </div>
       </div>

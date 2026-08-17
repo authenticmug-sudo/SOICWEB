@@ -72,25 +72,25 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({ summary, onNavigateT
         </div>
       </div>
 
-      {/* Rata-Rata Akurasi Stok */}
+      {/* Progress Penyelesaian SO */}
       <div 
-        onClick={() => onNavigateTab('results')}
+        onClick={() => onNavigateTab('schedules')}
         className="bg-white p-2.5 sm:p-3.5 rounded-xl border border-slate-200 shadow-xs hover:border-slate-300 transition cursor-pointer group"
       >
         <div className="flex items-center justify-between">
           <p className="text-slate-500 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider">
-            Avg. Accuracy
+            Progress SO Toko
           </p>
           <div className="p-1 rounded bg-blue-50 text-indigo-600">
             <Percent className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </div>
         </div>
         <p className="text-lg sm:text-2xl font-extrabold text-slate-800 mt-0.5">
-          {summary.avgAccuracyRate}%
+          {summary.scheduledThisMonth > 0 ? Math.round((summary.completedThisMonth / summary.scheduledThisMonth) * 100) : 0}%
         </p>
         <div className="flex items-center justify-between text-[9px] sm:text-[10px] mt-1">
-          <span className="text-emerald-600 font-medium">Tgt: &gt;98%</span>
-          <span className="text-slate-500 hidden sm:inline">Achieved</span>
+          <span className="text-indigo-600 font-medium">{summary.completedThisMonth} dari {summary.scheduledThisMonth} Toko</span>
+          <span className="text-slate-500 hidden sm:inline">Bulan Ini</span>
         </div>
       </div>
 

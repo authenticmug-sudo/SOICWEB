@@ -133,14 +133,12 @@ export const ResultsManager: React.FC<ResultsManagerProps> = ({
         'Pimpinan Shift': r.namaPimpinanShift || '-',
         'Tim Auditor': r.executedByTeam,
         'Personil SO Ditugaskan': r.assignedPersonnelNames && r.assignedPersonnelNames.length > 0 ? r.assignedPersonnelNames.join('; ') : 'Belum Dialokasikan',
-        'Total SKU Checked': r.totalSKUChecked,
         'Qty System': r.systemQtyTotal,
         'Qty Fisik': r.physicalQtyTotal,
         'Qty Selisih': r.varianceQtyTotal,
         'Nominal System (Rp)': r.systemValueTotalRp,
         'Nominal Fisik (Rp)': r.physicalValueTotalRp,
         'Nominal Selisih (Rp)': r.varianceValueTotalRp,
-        'Akurasi (%)': r.accuracyRatePercentage,
 
         // NKL
         'Nota Kurang (NK) Rp': r.notaKurangNKValRp || 0,
@@ -149,6 +147,7 @@ export const ResultsManager: React.FC<ResultsManagerProps> = ({
 
         // Brankas - Target Tutup Shift Breakdown
         'Target Sales Komp Induk Rp': b?.salesKompIndukRp || 0,
+        'Target Sales Kemarin Rp': b?.salesKemarinRp || 0,
         'Target Sales Anak 1 Rp': b?.salesAnak1Rp || 0,
         'Target Sales Anak 2 Rp': b?.salesAnak2Rp || 0,
         'Target Sales Anak 3 Rp': b?.salesAnak3Rp || 0,

@@ -84,17 +84,10 @@ export function generateWAShareText(data: WAFORMATTERINPUT): string {
 
   // Include system/physical values ONLY if provided and > 0
   if (data.systemValueTotalRp && data.systemValueTotalRp > 0) {
-    if (data.totalSKUChecked) {
-      text += `• Total SKU Diperiksa: ${(data.totalSKUChecked ?? 0).toLocaleString('id-ID')} SKU\n`;
-    }
     text += `• Total Value Sistem: ${formatRupiah(data.systemValueTotalRp)}\n`;
     text += `• Total Value Fisik: ${formatRupiah(data.physicalValueTotalRp || 0)}\n`;
     const variance = data.varianceValueTotalRp || 0;
     text += `• Net Variance: ${formatRupiah(variance)} ${variance < 0 ? '🔻 (MINUS)' : '🟢 (PLUS)'}\n`;
-    if (data.accuracyRatePercentage !== undefined) {
-      const statusEmoji = data.accuracyRatePercentage >= 98.0 ? '✅ *AMAN (AKURAT)*' : '⚠️ *PERLU PERHATIAN*';
-      text += `• Akurasi Stok: *${data.accuracyRatePercentage}%* ${statusEmoji}\n`;
-    }
   }
 
   if (data.top5Plus && data.top5Plus.some(i => i.plu)) {

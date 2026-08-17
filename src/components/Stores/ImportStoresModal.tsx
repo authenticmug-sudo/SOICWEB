@@ -160,8 +160,15 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
       const managerName = korlap;
       const phone = getVal(['notelp', 'no telp', 'phone', 'telepon'], '');
       
-      const riskVal = getVal(['risklevel', 'risk level', 'tingkatrisiko', 'risiko'], '');
-      const riskLevel = riskVal ? (riskVal as RiskLevel) : undefined;
+      const riskVal = getVal(['kriteria zona', 'kriteria_zona', 'zona', 'zona toko', 'kriteria', 'risklevel', 'risk level', 'tingkatrisiko', 'risiko'], '');
+      let riskLevel: RiskLevel | undefined = undefined;
+      if (riskVal) {
+        const rLower = riskVal.toLowerCase();
+        if (rLower.includes('tinggi') || rLower.includes('high') || rLower.includes('merah')) riskLevel = 'Tinggi';
+        else if (rLower.includes('sedang') || rLower.includes('medium') || rLower.includes('kuning')) riskLevel = 'Sedang';
+        else if (rLower.includes('rendah') || rLower.includes('low') || rLower.includes('hijau')) riskLevel = 'Rendah';
+        else riskLevel = riskVal as RiskLevel;
+      }
       
       const skuVal = getVal(['totalsku', 'total sku', 'sku'], '');
       const totalSKUCount = skuVal && !isNaN(Number(skuVal.replace(/[^0-9]/g, ''))) ? Number(skuVal.replace(/[^0-9]/g, '')) : undefined;

@@ -58,17 +58,32 @@ export function getStatusBadgeClass(status: string): string {
   }
 }
 
-export function getRiskBadgeClass(risk: string): string {
-  switch (risk) {
-    case 'Tinggi':
-      return 'bg-rose-50 text-rose-700 border-rose-200 font-medium';
-    case 'Sedang':
-      return 'bg-amber-50 text-amber-700 border-amber-200 font-medium';
-    case 'Rendah':
-      return 'bg-emerald-50 text-emerald-700 border-emerald-200 font-medium';
-    default:
-      return 'bg-slate-50 text-slate-700 border-slate-200';
+export function getRiskBadgeClass(risk: string = ''): string {
+  return getZoneBadgeClass(risk);
+}
+
+export function getZoneBadgeClass(zone: string = ''): string {
+  const z = (zone || '').toLowerCase();
+  if (z.includes('tinggi') || z.includes('high') || z.includes('merah') || z === 'a' || z.includes('zona a') || z.includes('khusus')) {
+    return 'bg-rose-50 text-rose-700 border-rose-200 font-bold';
   }
+  if (z.includes('sedang') || z.includes('medium') || z.includes('kuning') || z === 'b' || z.includes('zona b')) {
+    return 'bg-amber-50 text-amber-800 border-amber-200 font-bold';
+  }
+  if (z.includes('rendah') || z.includes('low') || z.includes('hijau') || z === 'c' || z.includes('zona c') || z.includes('reguler')) {
+    return 'bg-emerald-50 text-emerald-800 border-emerald-200 font-bold';
+  }
+  return 'bg-slate-50 text-slate-700 border-slate-200 font-medium';
+}
+
+export function formatZoneText(zone?: string): string {
+  if (!zone) return 'Zona Medium';
+  const clean = zone.trim();
+  if (clean.toLowerCase().startsWith('zona')) return clean;
+  if (clean === 'Tinggi') return 'Zona High';
+  if (clean === 'Sedang') return 'Zona Medium';
+  if (clean === 'Rendah') return 'Zona Low';
+  return `Zona ${clean}`;
 }
 
 const INDO_MONTHS: Record<string, number> = {

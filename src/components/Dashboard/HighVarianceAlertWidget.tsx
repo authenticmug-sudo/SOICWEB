@@ -58,12 +58,16 @@ export const HighVarianceAlertWidget: React.FC<HighVarianceAlertWidgetProps> = (
                 
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-600">
                   <span>BA: <strong className="font-mono">{res.baNumber}</strong></span>
-                  <span>Accuracy: <strong className={res.accuracyRatePercentage < 98 ? 'text-rose-600 font-bold' : 'text-emerald-600 font-bold'}>{res.accuracyRatePercentage}%</strong></span>
                   <span>
-                    Variance: <strong className={res.varianceValueTotalRp < 0 ? 'text-rose-600 font-bold font-mono' : 'text-emerald-600 font-bold font-mono'}>
+                    Selisih: <strong className={res.varianceValueTotalRp < 0 ? 'text-rose-600 font-bold font-mono' : 'text-emerald-600 font-bold font-mono'}>
                       {formatRupiah(res.varianceValueTotalRp)}
                     </strong>
                   </span>
+                  {res.nettNKLValRp !== undefined && (
+                    <span>
+                      Nett NKL: <strong className="font-mono text-indigo-700">{formatRupiah(res.nettNKLValRp)}</strong>
+                    </span>
+                  )}
                 </div>
               </div>
 

@@ -19,12 +19,30 @@ import {
   Sparkles,
   ExternalLink,
   Shirt,
-  Database
+  Database,
+  PhoneCall,
+  CheckSquare
 } from 'lucide-react';
 import { UserRole } from '../types/stockOpname';
 import { ROLE_CONFIGS } from './Role/RoleAuthModal';
 
-export type ActiveTab = 'dashboard' | 'schedules' | 'map' | 'results' | 'stores' | 'master_toko_files' | 'teams' | 'equipment' | 'leave_recap' | 'uniform_tracking' | 'company_portals' | 'reports' | 'settings';
+export type ActiveTab = 
+  | 'dashboard' 
+  | 'schedules' 
+  | 'map' 
+  | 'results' 
+  | 'stores' 
+  | 'master_toko_files' 
+  | 'checklist_toko_zona'
+  | 'teams' 
+  | 'oncall_personnel'
+  | 'equipment' 
+  | 'leave_recap' 
+  | 'uniform_tracking' 
+  | 'admin_rekap_so'
+  | 'company_portals' 
+  | 'reports' 
+  | 'settings';
 
 interface SidebarProps {
   activeTab: ActiveTab;
@@ -69,9 +87,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       // Only SPV and Super Admin (ALL) can access Pengaturan & Utilities
       return currentRole === 'SUPERVISOR';
     }
-    if (currentRole === 'SUPERVISOR' && (tab === 'schedules' || tab === 'stores' || tab === 'master_toko_files')) return true;
-    if (currentRole === 'OFFICER' && (tab === 'schedules' || tab === 'results' || tab === 'teams' || tab === 'equipment')) return true;
-    if (currentRole === 'ADMIN' && (tab === 'teams' || tab === 'equipment' || tab === 'leave_recap' || tab === 'uniform_tracking' || tab === 'reports')) return true;
+    if (currentRole === 'SUPERVISOR' && (tab === 'schedules' || tab === 'stores' || tab === 'master_toko_files' || tab === 'checklist_toko_zona' || tab === 'oncall_personnel' || tab === 'admin_rekap_so')) return true;
+    if (currentRole === 'OFFICER' && (tab === 'schedules' || tab === 'results' || tab === 'teams' || tab === 'oncall_personnel' || tab === 'equipment')) return true;
+    if (currentRole === 'ADMIN' && (tab === 'teams' || tab === 'equipment' || tab === 'leave_recap' || tab === 'uniform_tracking' || tab === 'admin_rekap_so' || tab === 'oncall_personnel' || tab === 'reports')) return true;
     return false;
   };
 
@@ -364,6 +382,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {storesCount}
                 </span>
               </button>
+
+              <button
+                onClick={() => handleTabClick('checklist_toko_zona', 'SUPERVISOR')}
+                className={`w-full flex items-center justify-between px-3 py-2.5 text-xs rounded-xl transition ${
+                  activeTab === 'checklist_toko_zona'
+                    ? 'bg-indigo-600 text-white font-black shadow-md shadow-indigo-900/30'
+                    : !isTabAllowed('checklist_toko_zona')
+                    ? 'text-slate-400 opacity-75 hover:bg-slate-800/60'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <CheckSquare className={`w-4 h-4 ${activeTab === 'checklist_toko_zona' ? 'text-white' : 'text-emerald-400'}`} />
+                  <span>Ceklist SO Toko Zona</span>
+                </div>
+                <span className="px-1.5 py-0.5 text-[9px] rounded-md bg-emerald-500/20 text-emerald-300 font-extrabold border border-emerald-500/30">
+                  Ceklist
+                </span>
+              </button>
             </div>
           </div>
 
@@ -431,6 +468,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </button>
 
               <button
+                onClick={() => handleTabClick('oncall_personnel', 'OFFICER')}
+                className={`w-full flex items-center justify-between px-3 py-2.5 text-xs rounded-xl transition ${
+                  activeTab === 'oncall_personnel'
+                    ? 'bg-emerald-600 text-white font-black shadow-md shadow-emerald-900/30'
+                    : !isTabAllowed('oncall_personnel')
+                    ? 'text-slate-400 opacity-75 hover:bg-slate-800/60'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <PhoneCall className={`w-4 h-4 ${activeTab === 'oncall_personnel' ? 'text-white' : 'text-emerald-400'}`} />
+                  <span>List Personil On-Call</span>
+                </div>
+                <span className="px-1.5 py-0.5 text-[9px] rounded-md bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+                  Standby
+                </span>
+              </button>
+
+              <button
                 onClick={() => handleTabClick('equipment', 'OFFICER')}
                 className={`w-full flex items-center justify-between px-3 py-2.5 text-xs rounded-xl transition ${
                   activeTab === 'equipment' && currentRole === 'OFFICER'
@@ -480,6 +536,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
 
             <div className="space-y-1 mt-1">
+              <button
+                onClick={() => handleTabClick('admin_rekap_so', 'ADMIN')}
+                className={`w-full flex items-center justify-between px-3 py-2.5 text-xs rounded-xl transition ${
+                  activeTab === 'admin_rekap_so'
+                    ? 'bg-amber-600 text-white font-black shadow-md shadow-amber-900/30'
+                    : !isTabAllowed('admin_rekap_so')
+                    ? 'text-slate-400 opacity-75 hover:bg-slate-800/60'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <FileSpreadsheet className={`w-4 h-4 ${activeTab === 'admin_rekap_so' ? 'text-white' : 'text-amber-400'}`} />
+                  <span>Penarikan Rekap Hasil SO</span>
+                </div>
+                <span className="px-1.5 py-0.5 text-[9px] rounded-md bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
+                  NK/NL/Kasir
+                </span>
+              </button>
+
+              <button
+                onClick={() => handleTabClick('oncall_personnel', 'ADMIN')}
+                className={`w-full flex items-center justify-between px-3 py-2.5 text-xs rounded-xl transition ${
+                  activeTab === 'oncall_personnel'
+                    ? 'bg-amber-600 text-white font-black shadow-md shadow-amber-900/30'
+                    : !isTabAllowed('oncall_personnel')
+                    ? 'text-slate-400 opacity-75 hover:bg-slate-800/60'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <PhoneCall className={`w-4 h-4 ${activeTab === 'oncall_personnel' ? 'text-white' : 'text-amber-400'}`} />
+                  <span>List Personil On-Call</span>
+                </div>
+              </button>
+
               <button
                 onClick={() => handleTabClick('equipment', 'ADMIN')}
                 className={`w-full flex items-center justify-between px-3 py-2.5 text-xs rounded-xl transition ${

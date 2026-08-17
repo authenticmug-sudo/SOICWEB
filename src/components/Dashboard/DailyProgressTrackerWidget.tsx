@@ -146,7 +146,7 @@ export const DailyProgressTrackerWidget: React.FC<DailyProgressTrackerWidgetProp
                 </span>
               </h2>
               <p className="text-xs text-slate-500">
-                Pilih tanggal spesifik untuk memantau detail target, penyelesaian toko, akurasi, & variansi per hari.
+                Pilih tanggal spesifik untuk memantau detail target, penyelesaian toko, & variansi per hari.
               </p>
             </div>
           </div>
@@ -269,12 +269,6 @@ export const DailyProgressTrackerWidget: React.FC<DailyProgressTrackerWidgetProp
               <span className="block text-[10px] text-blue-200 uppercase">Terjadwal</span>
               <span className="text-base font-bold text-blue-200">{activeGroup.scheduledCount} Toko</span>
             </div>
-            {activeGroup.results.length > 0 && (
-              <div className="bg-amber-500/20 px-3 py-2 rounded-lg border border-amber-400/30 text-center">
-                <span className="block text-[10px] text-amber-200 uppercase">Akurasi Rata-rata</span>
-                <span className="text-base font-bold text-amber-300">{activeGroup.avgAccuracy}%</span>
-              </div>
-            )}
           </div>
         </div>
       )}

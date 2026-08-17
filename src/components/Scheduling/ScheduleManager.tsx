@@ -152,7 +152,6 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
       'Tim SO': s.teamName,
       'SPV In Charge': s.spvInCharge,
       'Korlap / Officer': s.officerInCharge || 'I GEDE PASEK SANTIKA',
-      'Target SKU': s.targetSKUCount,
       'Status': s.status,
       'Personil Alokasi Korlap': s.assignedPersonnelNames && s.assignedPersonnelNames.length > 0 ? s.assignedPersonnelNames.join('; ') : 'Belum Dialokasikan',
       'Catatan': s.notes || ''

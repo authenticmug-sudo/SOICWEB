@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { X, Calendar, Building2, Users, FileText, UserCheck, AlertTriangle } from 'lucide-react';
 import { Store, SOTeam, SOSchedule, AuditorPersonnel } from '../../types/stockOpname';
 import { formatDateISO } from '../../utils/formatters';
+import { SearchableStoreSelect } from '../Common/SearchableStoreSelect';
+import { SearchablePersonnelSelect } from '../Common/SearchablePersonnelSelect';
 
 interface CreateScheduleModalProps {
   isOpen: boolean;
@@ -226,25 +228,14 @@ export const CreateScheduleModal: React.FC<CreateScheduleModalProps> = ({
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           
-          {/* Select Store */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
-              <Building2 className="w-3.5 h-3.5 text-indigo-600" />
-              Pilih Toko ({stores.length} Master Toko)
-            </label>
-            <select
-              value={selectedStoreId}
-              onChange={(e) => setSelectedStoreId(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-300 rounded-lg text-xs p-2.5 text-slate-800 focus:outline-none focus:border-indigo-500 font-medium"
-              required
-            >
-              {stores.map(s => (
-                <option key={s.id} value={s.id}>
-                  [{s.code}] {s.name} - {s.region}
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* Select Store (Smart Search & Recommendations) */}
+          <SearchableStoreSelect
+            stores={stores}
+            selectedStoreId={selectedStoreId}
+            onSelectStore={(store) => setSelectedStoreId(store.id)}
+            label="Pilih Toko"
+            required
+          />
 
           {/* Date & Time */}
           <div className="grid grid-cols-2 gap-3">
@@ -274,56 +265,25 @@ export const CreateScheduleModal: React.FC<CreateScheduleModalProps> = ({
             </div>
           </div>
 
-          {/* Select Officer / Korlap from Personnel Database */}
+          {/* Select Officer / Korlap from Personnel Database (Smart Search & Recommendations) */}
           <div className="bg-indigo-50/60 p-3 rounded-xl border border-indigo-100 space-y-2">
-            <label className="block text-xs font-bold text-indigo-900 flex items-center justify-between">
-              <span className="flex items-center gap-1.5">
-                <UserCheck className="w-4 h-4 text-indigo-600" />
-                Officer / Korlap Penanggung Jawab
-              </span>
-              <span className="text-[10px] text-indigo-600 font-normal">
-                ({personnel.length} Personil Terdaftar)
-              </span>
-            </label>
-            
-            <select
-              value={selectedPersonnelId}
-              onChange={(e) => handlePersonnelChange(e.target.value)}
-              className="w-full bg-white border border-indigo-200 rounded-lg text-xs p-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <optgroup label="Officer / Korlap Active">
-                {personnel
-                  .filter(p => p.role === 'Officer / Korlap')
-                  .map(p => (
-                    <option key={p.id} value={p.id}>
-                      [{p.nik}] {p.name} - {p.role} ({p.status})
-                    </option>
-                  ))}
-              </optgroup>
-              <option value="CUSTOM">+ Input Nama Custom Manual</option>
-            </select>
-
-            {selectedPersonnelId === 'CUSTOM' && (
-              <input
-                type="text"
-                placeholder="Masukkan Nama Korlap Custom..."
-                value={customOfficerName}
-                onChange={(e) => setCustomOfficerName(e.target.value)}
-                className="w-full bg-white border border-indigo-300 rounded-lg text-xs p-2 text-slate-800 focus:outline-none mt-1"
-                required
-              />
-            )}
-
-            {/* Selected Person Status Warning if Sakit / Cuti */}
-            {selectedPerson && selectedPerson.status !== 'Aktif' && (
-              <div className="p-2 bg-amber-100 border border-amber-300 rounded-lg text-[11px] text-amber-900 flex items-center gap-1.5">
-                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                <span>
-                  <strong>Perhatian:</strong> {selectedPerson.name} sedang berstatus <strong>{selectedPerson.status}</strong> 
-                  {selectedPerson.statusStartDate && ` (${selectedPerson.statusStartDate} s/d ${selectedPerson.statusEndDate || 'selesai'})`}.
-                </span>
-              </div>
-            )}
+            <SearchablePersonnelSelect
+              personnel={personnel}
+              selectedPersonnelId={selectedPersonnelId}
+              onSelectPersonnel={(person, isCustom, cName) => {
+                if (isCustom) {
+                  setSelectedPersonnelId('CUSTOM');
+                  if (cName) setCustomOfficerName(cName);
+                } else if (person) {
+                  handlePersonnelChange(person.id);
+                }
+              }}
+              allowCustom={true}
+              customName={customOfficerName}
+              onCustomNameChange={setCustomOfficerName}
+              label="Officer / Korlap Penanggung Jawab"
+              required
+            />
           </div>
 
           {/* Select Team & Personnel Allocation Checklist */}

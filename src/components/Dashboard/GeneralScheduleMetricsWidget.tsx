@@ -435,8 +435,8 @@ export const GeneralScheduleMetricsWidget: React.FC<GeneralScheduleMetricsWidget
                         <strong className="text-slate-800 font-mono">{s.scheduledDate} ({s.scheduledTime || '21:00'} WIB)</strong>
                       </div>
                       <div>
-                        <span className="text-slate-400 block text-[10px]">Target SKU:</span>
-                        <strong className="text-indigo-700 font-mono">{(s.targetSKUCount ?? 0).toLocaleString('id-ID')} SKU</strong>
+                        <span className="text-slate-400 block text-[10px]">SPV Penanggung Jawab:</span>
+                        <strong className="text-indigo-700 font-medium">{s.spvInCharge || 'Gean Pratama'}</strong>
                       </div>
                     </div>
 

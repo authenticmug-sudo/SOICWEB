@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { Store, SOSchedule, RegionArea, StoreType } from '../../types/stockOpname';
 import { REGIONS } from '../../data/initialData';
-import { getRiskBadgeClass, formatDateIndo, formatSmartSODate } from '../../utils/formatters';
+import { getRiskBadgeClass, formatDateIndo, formatSmartSODate, formatZoneText } from '../../utils/formatters';
 import { exportToCSV } from '../../services/storageService';
 import { autoSyncStoreRegionAndKabupaten } from '../../utils/geoUtils';
 import { ConfirmDeleteModal } from '../Common/ConfirmDeleteModal';
@@ -68,9 +68,9 @@ export const ALL_STORE_COLUMNS: ColumnDef[] = [
   { id: 'smartClassification', label: 'KRITERIA CERDAS', category: 'Identitas', defaultVisible: true },
   { id: 'keterangan', label: 'KETERANGAN', category: 'Status & Keuangan', defaultVisible: false },
   { id: 'jenisToko', label: 'JENIS TOKO', category: 'Identitas', defaultVisible: true },
+  { id: 'riskLevel', label: 'KRITERIA ZONA', category: 'Status & Keuangan', defaultVisible: true },
   { id: 'jop', label: 'JOP', category: 'Status & Keuangan', defaultVisible: false },
-  { id: 'storeType', label: 'TIPE TOKO (RITEL)', category: 'Identitas', defaultVisible: false },
-  { id: 'riskLevel', label: 'LEVEL RISIKO', category: 'Status & Keuangan', defaultVisible: false }
+  { id: 'storeType', label: 'TIPE TOKO (RITEL)', category: 'Identitas', defaultVisible: false }
 ];
 
 const PRESETS = [
@@ -78,13 +78,13 @@ const PRESETS = [
     id: 'ringkas',
     name: 'Ringkas (Default)',
     desc: 'Tampilan esensial & bersih',
-    cols: ['code', 'name', 'kabupaten', 'korlap', 'saldoToko', 'jenisToko']
+    cols: ['code', 'name', 'kabupaten', 'korlap', 'riskLevel', 'saldoToko', 'jenisToko']
   },
   {
     id: 'jadwal',
     name: 'Jadwal SO Mei - Agt',
     desc: 'Monitoring tanggal SO per bulan',
-    cols: ['code', 'name', 'qm', 'tglSoMei', 'tglSoJuni', 'tglSoJuli', 'soAgustus', 'korlap', 'keterangan']
+    cols: ['code', 'name', 'qm', 'tglSoMei', 'tglSoJuni', 'tglSoJuli', 'soAgustus', 'riskLevel', 'korlap', 'keterangan']
   },
   {
     id: 'lokasi',
@@ -95,7 +95,7 @@ const PRESETS = [
   {
     id: 'keuangan',
     name: 'Finansial & Status',
-    desc: 'Saldo Toko, Jenis Toko & Level Risiko',
+    desc: 'Saldo Toko, Jenis Toko & Kriteria Zona',
     cols: ['code', 'name', 'saldoToko', 'jenisToko', 'riskLevel']
   },
   {
@@ -470,6 +470,20 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
             <option value="Distribution Hub Center">Distribution Hub Center</option>
           </select>
 
+          <select
+            value={selectedRisk}
+            onChange={(e) => {
+              setSelectedRisk(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="bg-slate-50 border border-slate-200 text-xs rounded-lg px-2.5 py-2 text-slate-700 font-semibold focus:outline-none focus:border-amber-500"
+          >
+            <option value="ALL">Semua Kriteria Zona</option>
+            <option value="Tinggi">🔴 Zona High (Tinggi)</option>
+            <option value="Sedang">🟡 Zona Medium (Sedang)</option>
+            <option value="Rendah">🟢 Zona Low (Rendah)</option>
+          </select>
+
         </div>
 
       </div>
@@ -534,7 +548,7 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
                 {isColVisible('jop') && <th className="py-3 px-3 text-center min-w-[60px]">JOP</th>}
                 
                 {isColVisible('storeType') && <th className="py-3 px-3 min-w-[140px]">TIPE RITEL</th>}
-                {isColVisible('riskLevel') && <th className="py-3 px-3 min-w-[100px]">RISIKO</th>}
+                {isColVisible('riskLevel') && <th className="py-3 px-3 min-w-[120px]">KRITERIA ZONA</th>}
                 
                 <th className="py-3 px-3 text-right min-w-[100px] sticky right-0 bg-slate-100/90 shadow-2xs">AKSI</th>
               </tr>
@@ -738,12 +752,12 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
                         </td>
                       )}
 
-                      {/* LEVEL RISIKO */}
+                      {/* KRITERIA ZONA */}
                       {isColVisible('riskLevel') && (
                         <td className="py-2.5 px-3">
                           {s.riskLevel ? (
                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${getRiskBadgeClass(s.riskLevel)}`}>
-                              {s.riskLevel}
+                              {formatZoneText(s.riskLevel)}
                             </span>
                           ) : (
                             <span className="text-slate-300 font-mono text-[11px] select-none">-</span>
@@ -965,7 +979,7 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
                 <Sparkles className="w-6 h-6 text-purple-600 animate-pulse" />
                 <div>
                   <h3 className="font-black text-base text-slate-900">Klasifikasi Cerdas Kriteria Toko</h3>
-                  <p className="text-xs text-slate-500">Mesin Analisis Otomatis Nilai Saldo, SKU & Jenis Toko</p>
+                  <p className="text-xs text-slate-500">Mesin Analisis Otomatis Nilai Saldo, Risiko & Jenis Toko</p>
                 </div>
               </div>
               <button
@@ -1053,7 +1067,7 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
         itemDetails={storeToDelete ? [
           { label: 'Kabupaten/Wilayah', value: storeToDelete.region || storeToDelete.kabupaten || storeToDelete.city || '-' },
           { label: 'Tipe Toko', value: storeToDelete.storeType },
-          { label: 'Total SKU', value: `${storeToDelete.totalSKUCount} SKU` },
+          { label: 'Tingkat Risiko', value: storeToDelete.riskLevel || 'MEDIUM' },
           { label: 'Korlap Assigned', value: storeToDelete.assignedOfficerName || '-' }
         ] : []}
         confirmText="Ya, Hapus Toko"

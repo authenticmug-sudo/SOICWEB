@@ -126,10 +126,11 @@ export const ReportsAnalytics: React.FC<ReportsAnalyticsProps> = ({
       'Wilayah': r.region,
       'Tanggal Exec': r.soDate,
       'Tim Auditor': r.executedByTeam,
-      'Akurasi (%)': r.accuracyRatePercentage,
       'System Value (Rp)': r.systemValueTotalRp,
       'Physical Value (Rp)': r.physicalValueTotalRp,
       'Selisih Value (Rp)': r.varianceValueTotalRp,
+      'Nett NKL (Rp)': r.nettNKLValRp || 0,
+      'Selisih Brankas (Rp)': r.brankasReport?.selisihBrankasRp || 0,
       'Status Approval SPV': r.approvalStatus
     }));
     exportToCSV('Laporan_Eksekutif_SO.csv', data);
@@ -235,7 +236,7 @@ export const ReportsAnalytics: React.FC<ReportsAnalyticsProps> = ({
               Progres Laporan Rekapan SO per Korlap / Team Officer
             </h3>
             <p className="text-xs text-slate-500">
-              Rincian jumlah toko dihandle, rekapan terlapor, dan tingkat akurasi stok per Korlap.
+              Rincian jumlah toko dihandle, rekapan terlapor, dan progres penyelesaian SO per Korlap.
             </p>
           </div>
         </div>
@@ -318,9 +319,11 @@ export const ReportsAnalytics: React.FC<ReportsAnalyticsProps> = ({
           </div>
 
           <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
-            <span className="text-[10px] uppercase font-bold text-slate-400">Rata2 Akurasi Stok</span>
-            <p className="text-2xl font-extrabold text-indigo-700 mt-1">{summary.avgAccuracyRate}%</p>
-            <p className="text-[11px] text-emerald-600 mt-1">Di Atas KPI Min (98.0%)</p>
+            <span className="text-[10px] uppercase font-bold text-slate-400">Persentase Selesai SO</span>
+            <p className="text-2xl font-extrabold text-indigo-700 mt-1">
+              {summary.scheduledThisMonth > 0 ? Math.round((summary.completedThisMonth / summary.scheduledThisMonth) * 100) : 100}%
+            </p>
+            <p className="text-[11px] text-emerald-600 mt-1">{summary.completedThisMonth} dari {summary.scheduledThisMonth} Toko Terjadwal</p>
           </div>
 
           <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">

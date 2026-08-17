@@ -194,13 +194,6 @@ export const ResultDetailModal: React.FC<ResultDetailModalProps> = ({
           {/* High level KPI Comparison Box */}
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
             
-            <div className="p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl">
-              <span className="text-[10px] font-bold text-indigo-900 uppercase">Total SKU Diperiksa</span>
-              <p className="text-lg font-extrabold text-indigo-900 mt-1">
-                {(result.totalSKUChecked ?? 0).toLocaleString('id-ID')} SKU
-              </p>
-            </div>
-
             <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
               <span className="text-[10px] font-bold text-slate-600 uppercase">Nilai System (Rp)</span>
               <p className="text-sm font-bold text-slate-900 mt-1 font-mono">
@@ -216,17 +209,23 @@ export const ResultDetailModal: React.FC<ResultDetailModalProps> = ({
             </div>
 
             <div className={`p-3 rounded-xl border ${
-              result.accuracyRatePercentage < 98 ? 'bg-rose-50 border-rose-200' : 'bg-emerald-50 border-emerald-200'
+              result.varianceValueTotalRp < 0 ? 'bg-rose-50 border-rose-200' : 'bg-emerald-50 border-emerald-200'
             }`}>
-              <span className="text-[10px] font-bold uppercase text-slate-700">Tingkat Akurasi & Selisih</span>
-              <div className="flex items-baseline justify-between mt-1">
-                <span className={`text-base font-extrabold ${result.accuracyRatePercentage < 98 ? 'text-rose-700' : 'text-emerald-700'}`}>
-                  {result.accuracyRatePercentage}%
-                </span>
-                <span className={`font-mono text-xs font-bold ${result.varianceValueTotalRp < 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
-                  {formatRupiah(result.varianceValueTotalRp)}
-                </span>
-              </div>
+              <span className="text-[10px] font-bold uppercase text-slate-700">Selisih Fisik vs System</span>
+              <p className={`text-sm font-extrabold mt-1 font-mono ${
+                result.varianceValueTotalRp < 0 ? 'text-rose-700' : 'text-emerald-700'
+              }`}>
+                {result.varianceValueTotalRp > 0 ? '+' : ''}{formatRupiah(result.varianceValueTotalRp)}
+              </p>
+            </div>
+
+            <div className="p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl">
+              <span className="text-[10px] font-bold text-indigo-900 uppercase">Nett NKL (Rp)</span>
+              <p className={`text-sm font-extrabold mt-1 font-mono ${
+                (result.nettNKLValRp || 0) < 0 ? 'text-rose-700' : 'text-indigo-900'
+              }`}>
+                {formatRupiah(result.nettNKLValRp || 0)}
+              </p>
             </div>
 
           </div>
@@ -280,7 +279,7 @@ export const ResultDetailModal: React.FC<ResultDetailModalProps> = ({
           {/* Category Breakdown Table */}
           <div>
             <h4 className="font-bold text-slate-900 mb-2 uppercase tracking-wider text-[11px] flex items-center justify-between">
-              <span>Rincian Selisih per Kategori Barcode / SKU</span>
+              <span>Rincian Selisih per Kategori Barang</span>
               <span className="text-[10px] text-slate-400 font-normal">Auto-calculated System vs Physical</span>
             </h4>
 

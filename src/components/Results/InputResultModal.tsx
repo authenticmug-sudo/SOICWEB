@@ -38,6 +38,7 @@ import {
 import { formatRupiah } from '../../utils/formatters';
 import { uploadToCloudinary } from '../../services/cloudinaryService';
 import { generateWAShareText, openWAShareUrl, copyToClipboard } from '../../utils/whatsappFormatter';
+import { SearchableScheduleSelect } from '../Common/SearchableScheduleSelect';
 import { RupiahInput } from '../Common/RupiahInput';
 
 interface InputResultModalProps {
@@ -880,21 +881,13 @@ export const InputResultModal: React.FC<InputResultModalProps> = ({
           )}
 
           <div className="space-y-2">
-            <label className="block text-[11px] font-extrabold text-slate-800 uppercase tracking-wide">
-              Pilih Toko & Jadwal SO <span className="text-rose-500">*</span>
-            </label>
-            <select
-              value={selectedScheduleId}
-              onChange={(e) => setSelectedScheduleId(e.target.value)}
-              className="w-full bg-white border border-slate-300 rounded-xl text-xs sm:text-sm p-2.5 text-slate-900 font-extrabold shadow-2xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            <SearchableScheduleSelect
+              schedules={schedules}
+              selectedScheduleId={selectedScheduleId}
+              onSelectSchedule={(sch) => setSelectedScheduleId(sch.id)}
+              label="Pilih Toko & Jadwal SO"
               required
-            >
-              {schedules.map(s => (
-                <option key={s.id} value={s.id}>
-                  [{s.storeCode}] {s.storeName} • Tgl: {s.scheduledDate} ({s.status}) {s.officerInCharge ? `• ${s.officerInCharge}` : ''}
-                </option>
-              ))}
-            </select>
+            />
 
             {selectedSchedule && (
               <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-2.5 flex items-center justify-between text-indigo-950 text-xs">

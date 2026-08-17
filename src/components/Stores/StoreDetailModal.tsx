@@ -1,7 +1,7 @@
 import React from 'react';
 import { X, Building2, MapPin, Phone, User, Calendar, ShieldAlert, BarChart, History } from 'lucide-react';
 import { Store, SOSchedule, SOResult } from '../../types/stockOpname';
-import { formatDateIndo, getRiskBadgeClass } from '../../utils/formatters';
+import { formatDateIndo, getRiskBadgeClass, formatRupiah, formatZoneText } from '../../utils/formatters';
 
 interface StoreDetailModalProps {
   store: Store | null;
@@ -61,11 +61,11 @@ export const StoreDetailModal: React.FC<StoreDetailModalProps> = ({
             </div>
 
             <div>
-              <span className="text-[10px] uppercase font-bold text-slate-400">Tingkat Risiko Shrinkage</span>
+              <span className="text-[10px] uppercase font-bold text-slate-400">Kriteria Zona</span>
               <p className="mt-0.5">
                 {store.riskLevel ? (
                   <span className={`px-2 py-0.5 rounded text-[10px] border ${getRiskBadgeClass(store.riskLevel)}`}>
-                    {store.riskLevel}
+                    {formatZoneText(store.riskLevel)}
                   </span>
                 ) : (
                   <span className="text-slate-400 font-mono text-xs select-none">-</span>
@@ -74,11 +74,9 @@ export const StoreDetailModal: React.FC<StoreDetailModalProps> = ({
             </div>
 
             <div>
-              <span className="text-[10px] uppercase font-bold text-slate-400">Total SKU Aktif</span>
-              <p className="font-bold text-slate-900 font-mono mt-0.5">
-                {store.totalSKUCount !== undefined && store.totalSKUCount !== null && !isNaN(store.totalSKUCount) 
-                  ? `${store.totalSKUCount.toLocaleString('id-ID')} SKU` 
-                  : '-'}
+              <span className="text-[10px] uppercase font-bold text-slate-400">Area / Wilayah</span>
+              <p className="font-bold text-indigo-700 mt-0.5">
+                {store.region || store.city || '-'}
               </p>
             </div>
 
@@ -93,11 +91,9 @@ export const StoreDetailModal: React.FC<StoreDetailModalProps> = ({
             </div>
 
             <div>
-              <span className="text-[10px] uppercase font-bold text-slate-400">Akurasi Last SO</span>
+              <span className="text-[10px] uppercase font-bold text-slate-400">Status Toko</span>
               <p className="font-bold text-emerald-700 text-sm mt-0.5">
-                {store.lastAccuracyRate !== undefined && store.lastAccuracyRate !== null && !isNaN(store.lastAccuracyRate) 
-                  ? `${store.lastAccuracyRate}%` 
-                  : '-'}
+                {store.status || 'Aktif Operasional'}
               </p>
             </div>
           </div>
@@ -125,7 +121,7 @@ export const StoreDetailModal: React.FC<StoreDetailModalProps> = ({
                     <th className="py-2 px-3">Tanggal SO</th>
                     <th className="py-2 px-3">Tim SO</th>
                     <th className="py-2 px-3">No. BA</th>
-                    <th className="py-2 px-3 text-right">Akurasi</th>
+                    <th className="py-2 px-3 text-right">Selisih Fisik vs System</th>
                     <th className="py-2 px-3">Status</th>
                   </tr>
                 </thead>
@@ -136,7 +132,9 @@ export const StoreDetailModal: React.FC<StoreDetailModalProps> = ({
                         <td className="py-2 px-3 font-medium text-slate-900">{formatDateIndo(r.soDate)}</td>
                         <td className="py-2 px-3 text-slate-700">{r.executedByTeam}</td>
                         <td className="py-2 px-3 font-mono text-indigo-600 font-bold">{r.baNumber}</td>
-                        <td className="py-2 px-3 text-right font-bold text-emerald-600">{r.accuracyRatePercentage}%</td>
+                        <td className={`py-2 px-3 text-right font-mono font-bold ${r.varianceValueTotalRp < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                          {r.varianceValueTotalRp > 0 ? '+' : ''}{formatRupiah(r.varianceValueTotalRp)}
+                        </td>
                         <td className="py-2 px-3 font-medium text-slate-800">{r.approvalStatus}</td>
                       </tr>
                     ))

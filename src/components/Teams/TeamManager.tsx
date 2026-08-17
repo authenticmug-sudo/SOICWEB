@@ -1251,7 +1251,7 @@ export const TeamManager: React.FC<TeamManagerProps> = ({
                       <span className="text-[10px] text-slate-500 font-mono">Leader: {t.leaderName}</span>
                     </div>
                     <span className="px-2 py-1 bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold text-xs rounded-lg">
-                      {t.avgAccuracyAchieved}% Avg Akurasi
+                      {t.members?.length || 0} Anggota
                     </span>
                   </div>
 

@@ -23,6 +23,8 @@ import {
   saveRepairLogs,
   getStoredMasterTokoDatasets,
   saveMasterTokoDatasets,
+  getStoredOnCallPersonnel,
+  saveOnCallPersonnel,
   clearAllData,
   exportToCSV,
   syncAllDataFromCloudinary,
@@ -36,7 +38,18 @@ import {
 } from './services/storageService';
 import { ensureStoreCoordinates, autoSyncStoreRegionAndKabupaten } from './utils/geoUtils';
 import { formatSmartSODate } from './utils/formatters';
-import { Store, SOSchedule, SOResult, SOTeam, AuditorPersonnel, SOEquipment, EquipmentRepairLog, UserRole, MasterTokoDataset } from './types/stockOpname';
+import { 
+  Store, 
+  SOSchedule, 
+  SOResult, 
+  SOTeam, 
+  AuditorPersonnel, 
+  SOEquipment, 
+  EquipmentRepairLog, 
+  UserRole, 
+  MasterTokoDataset,
+  OnCallPersonnelRecord 
+} from './types/stockOpname';
 
 import { Navbar } from './components/Navbar';
 import { Sidebar, ActiveTab } from './components/Sidebar';
@@ -61,6 +74,7 @@ import { InputResultModal } from './components/Results/InputResultModal';
 
 import { StoreDirectory } from './components/Stores/StoreDirectory';
 import { MasterTokoManager } from './components/Stores/MasterTokoManager';
+import { ZoneStoreChecklist } from './components/Supervisor/ZoneStoreChecklist';
 import { StoreDetailModal } from './components/Stores/StoreDetailModal';
 import { AddEditStoreModal } from './components/Stores/AddEditStoreModal';
 import { ImportStoresModal } from './components/Stores/ImportStoresModal';
@@ -69,8 +83,10 @@ import { AssignPersonnelModal } from './components/Scheduling/AssignPersonnelMod
 import { GagalAtauPindahTokoModal } from './components/Scheduling/GagalAtauPindahTokoModal';
 
 import { TeamManager } from './components/Teams/TeamManager';
+import { OnCallPersonnelManager } from './components/Teams/OnCallPersonnelManager';
 import { EquipmentManager } from './components/Equipment/EquipmentManager';
 import { LeaveRecapManager } from './components/Admin/LeaveRecapManager';
+import { AdminSORecapExtractor } from './components/Admin/AdminSORecapExtractor';
 import { CompanyPortals } from './components/Portals/CompanyPortals';
 import { UniformTracker } from './components/Uniforms/UniformTracker';
 import { ReportsAnalytics } from './components/Reports/ReportsAnalytics';
@@ -85,6 +101,7 @@ export default function App() {
   const [results, setResults] = useState<SOResult[]>([]);
   const [teams, setTeams] = useState<SOTeam[]>([]);
   const [personnel, setPersonnel] = useState<AuditorPersonnel[]>([]);
+  const [onCallRecords, setOnCallRecords] = useState<OnCallPersonnelRecord[]>([]);
   const [equipment, setEquipment] = useState<SOEquipment[]>([]);
   const [repairLogs, setRepairLogs] = useState<EquipmentRepairLog[]>([]);
   const [datasets, setDatasets] = useState<MasterTokoDataset[]>([]);
@@ -309,6 +326,7 @@ export default function App() {
     const loadedResults = getStoredResults();
     const loadedTeams = getStoredTeams();
     const loadedPersonnel = getStoredPersonnel();
+    const loadedOnCallPersonnel = getStoredOnCallPersonnel();
     const loadedEquipment = getStoredEquipment();
     const loadedRepairLogs = getStoredRepairLogs();
     const loadedDatasets = getStoredMasterTokoDatasets();
@@ -322,6 +340,7 @@ export default function App() {
     setResults(loadedResults);
     setTeams(loadedTeams);
     setPersonnel(loadedPersonnel);
+    setOnCallRecords(loadedOnCallPersonnel);
     setEquipment(loadedEquipment);
     setRepairLogs(loadedRepairLogs);
     setDatasets(syncedDatasets);
@@ -336,6 +355,7 @@ export default function App() {
       }
       if (synced.equipment && Array.isArray(synced.equipment)) setEquipment(synced.equipment);
       if (synced.personnel && Array.isArray(synced.personnel)) setPersonnel(synced.personnel);
+      if (synced.onCallPersonnel && Array.isArray(synced.onCallPersonnel)) setOnCallRecords(synced.onCallPersonnel);
       if (synced.schedules && Array.isArray(synced.schedules)) {
         setSchedules(prev => syncScheduleRegionsWithStores(synced.schedules, storesRef.current));
       }
@@ -433,6 +453,8 @@ export default function App() {
         setEquipment(data as SOEquipment[]);
       } else if (key === STORAGE_KEYS.REPAIR_LOGS) {
         setRepairLogs(data as EquipmentRepairLog[]);
+      } else if (key === STORAGE_KEYS.ONCALL_PERSONNEL) {
+        setOnCallRecords(data as OnCallPersonnelRecord[]);
       }
     };
     window.addEventListener('spv_data_updated', handleDataUpdated);
@@ -1140,6 +1162,20 @@ export default function App() {
             />
           )}
 
+          {/* TAB 4.5: CEKLIST SO TOKO ZONA (PORTAL SPV) */}
+          {activeTab === 'checklist_toko_zona' && (
+            <ZoneStoreChecklist
+              stores={stores}
+              schedules={schedules}
+              results={results}
+              personnel={personnel}
+              onOpenInputResultModal={(sch) => {
+                handleOpenInputResultModal(sch);
+              }}
+              onSelectStore={(st) => setSelectedStoreDetail(st)}
+            />
+          )}
+
           {/* TAB 5: TIM SO & AUDITOR */}
           {activeTab === 'teams' && (
             <TeamManager
@@ -1150,6 +1186,33 @@ export default function App() {
               onDeletePersonnel={handleDeletePersonnel}
               onBatchImportPersonnel={handleBatchImportPersonnel}
               currentRole={currentRole}
+            />
+          )}
+
+          {/* TAB 5.5: LIST PERSONIL ON-CALL */}
+          {activeTab === 'oncall_personnel' && (
+            <OnCallPersonnelManager
+              personnelList={personnel}
+              onCallRecords={onCallRecords}
+              onUpdateOnCallRecords={(newRecords) => {
+                setOnCallRecords(newRecords);
+                saveOnCallPersonnel(newRecords, true);
+              }}
+              onSaveRecords={async (newRecords) => {
+                setOnCallRecords(newRecords);
+                await saveOnCallPersonnel(newRecords, true);
+              }}
+              currentRole={currentRole}
+            />
+          )}
+
+          {/* TAB: PENARIKAN REKAP HASIL SO (ADMIN) */}
+          {activeTab === 'admin_rekap_so' && (
+            <AdminSORecapExtractor
+              results={results}
+              schedules={schedules}
+              stores={stores}
+              personnel={personnel}
             />
           )}
 

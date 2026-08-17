@@ -98,7 +98,7 @@ export const KorlapScheduleImageModal: React.FC<KorlapScheduleImageModalProps> =
   const [selectedStoreId, setSelectedStoreId] = useState<string>('');
   const [selectedTime, setSelectedTime] = useState<string>('21:00');
   const [isCluster, setIsCluster] = useState<boolean>(true);
-  const [itemNotes, setItemNotes] = useState<string>('Fokus audit SKU utama & Fresh Food');
+  const [itemNotes, setItemNotes] = useState<string>('Fokus audit kategori utama & Fresh Food');
 
   // UI state
   const [copiedText, setCopiedText] = useState(false);

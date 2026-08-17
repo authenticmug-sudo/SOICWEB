@@ -74,8 +74,6 @@ export const Navbar: React.FC<NavbarProps> = ({
       'Kepala Toko': s.managerName,
       'No Telp': s.phone,
       'Tingkat Risiko': s.riskLevel,
-      'Total SKU': s.totalSKUCount,
-      'Akurasi Last SO (%)': s.lastAccuracyRate || '-',
       'Tanggal SO Terakhir': s.lastSODate || '-'
     }));
     exportToCSV('Master_Data_700Toko.csv', exportData);

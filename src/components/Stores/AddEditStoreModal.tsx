@@ -271,46 +271,31 @@ export const AddEditStoreModal: React.FC<AddEditStoreModalProps> = ({
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Tingkat Risiko Shrinkage
+                Kriteria Zona Toko
               </label>
               <select
                 value={riskLevel}
                 onChange={(e) => setRiskLevel(e.target.value as any)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs"
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs font-medium"
               >
-                <option value="Rendah">Rendah (Akurasi Tinggi)</option>
-                <option value="Sedang">Sedang (Standar)</option>
-                <option value="Tinggi">Tinggi (Perlu Frequent Audit)</option>
+                <option value="Tinggi">🔴 Zona High (Tinggi - Prioritas)</option>
+                <option value="Sedang">🟡 Zona Medium (Sedang - Reguler)</option>
+                <option value="Rendah">🟢 Zona Low (Rendah - Aman)</option>
               </select>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Nama Kepala Toko
-              </label>
-              <input
-                type="text"
-                value={managerName}
-                onChange={(e) => setManagerName(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Total SKU Barang
-              </label>
-              <input
-                type="number"
-                value={totalSKUCount}
-                onChange={(e) => setTotalSKUCount(Number(e.target.value))}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs font-mono"
-                required
-              />
-            </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Nama Kepala Toko
+            </label>
+            <input
+              type="text"
+              value={managerName}
+              onChange={(e) => setManagerName(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs"
+              required
+            />
           </div>
 
           {/* Buttons */}
