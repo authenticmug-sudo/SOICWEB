@@ -422,7 +422,6 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                   <th className="py-3 px-4">Wilayah</th>
                   <th className="py-3 px-4">Tanggal & Jam</th>
                   <th className="py-3 px-4">Tim SO & SPV</th>
-                  <th className="py-3 px-4">Target SKU</th>
                   <th className="py-3 px-4">Status</th>
                   <th className="py-3 px-4 text-right">Aksi SPV</th>
                 </tr>
@@ -455,10 +454,6 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                           <Users className="w-3 h-3 text-indigo-500" /> {s.teamName}
                         </div>
                         <div className="text-[10px] text-slate-500">SPV: {s.spvInCharge}</div>
-                      </td>
-
-                      <td className="py-3 px-4 text-slate-700 font-mono">
-                        {(s.targetSKUCount ?? 0).toLocaleString('id-ID')} SKU
                       </td>
 
                       <td className="py-3 px-4">

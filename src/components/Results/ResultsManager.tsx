@@ -363,7 +363,6 @@ export const ResultsManager: React.FC<ResultsManagerProps> = ({
                 <th className="py-3 px-4 text-right">Selisih Barang (Rp)</th>
                 <th className="py-3 px-4 text-right">Nett NKL (Rp)</th>
                 <th className="py-3 px-4 text-right">Nett Brankas (Rp)</th>
-                <th className="py-3 px-4 text-center">Akurasi</th>
                 <th className="py-3 px-4">Status Approval</th>
                 <th className="py-3 px-4 text-right">Aksi SPV</th>
               </tr>
@@ -402,14 +401,6 @@ export const ResultsManager: React.FC<ResultsManagerProps> = ({
                     <td className="py-3 px-4 text-right font-mono font-bold">
                       <span className={(r.brankasReport?.nettSOBrankasRp || 0) < 0 ? 'text-rose-600' : 'text-emerald-600'}>
                         {formatRupiah(r.brankasReport?.nettSOBrankasRp || 0)}
-                      </span>
-                    </td>
-
-                    <td className="py-3 px-4 text-center">
-                      <span className={`px-2 py-0.5 rounded-full font-bold text-[11px] ${
-                        r.accuracyRatePercentage < 98 ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
-                      }`}>
-                        {r.accuracyRatePercentage}%
                       </span>
                     </td>
 

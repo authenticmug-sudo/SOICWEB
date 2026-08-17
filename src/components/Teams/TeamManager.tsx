@@ -466,14 +466,16 @@ export const TeamManager: React.FC<TeamManagerProps> = ({
                 </>
               )}
 
-              <button
-                onClick={() => setIsResetModalOpen(true)}
-                className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 rounded text-xs font-semibold transition flex items-center gap-1.5 shadow-2xs"
-                title="Reset Seluruh Database Personel"
-              >
-                <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
-                <span>Reset Personel</span>
-              </button>
+              {currentRole === 'ALL' && (
+                <button
+                  onClick={() => setIsResetModalOpen(true)}
+                  className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 rounded text-xs font-semibold transition flex items-center gap-1.5 shadow-2xs"
+                  title="Reset Seluruh Database Personel (Super Admin Only)"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Reset Personel</span>
+                </button>
+              )}
 
               <button
                 onClick={() => setIsImportModalOpen(true)}

@@ -211,12 +211,17 @@ export function parseSmartDate(dateStr: any): Date | null {
  */
 export function formatSmartSODate(val: any, fallback: string = '-'): string {
   if (val === null || val === undefined || val === '') return fallback;
-  const rawStr = String(val).trim();
+  let rawStr = String(val).trim();
+  
+  // Strip trailing .0 / .00 decimal artifacts (misal dari import excel: 15.0 -> 15, 46177.0 -> 46177)
+  rawStr = rawStr.replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
+
   if (
     !rawStr || 
     rawStr === '-' || 
     rawStr === '0' || 
     rawStr === '0.0' || 
+    rawStr === '0.00' ||
     rawStr.toLowerCase() === '0-jan-00' || 
     rawStr.toLowerCase() === '00-jan-00' || 
     rawStr === '0/0/0' || 
@@ -227,12 +232,18 @@ export function formatSmartSODate(val: any, fallback: string = '-'): string {
     return fallback;
   }
 
-  const parsed = parseSmartDate(val);
+  const parsed = parseSmartDate(rawStr);
   if (parsed && !isNaN(parsed.getTime())) {
     const d = parsed.getDate();
     const m = ID_MONTH_NAMES[parsed.getMonth()];
     const y = parsed.getFullYear();
     return `${d} ${m} ${y}`;
+  }
+
+  // Jika berupa angka tunggal 1 - 31 (misal tgl jadwal bulan berjalan: 15, 3, 28)
+  const numOnly = Number(rawStr);
+  if (!isNaN(numOnly) && numOnly >= 1 && numOnly <= 31 && Number.isInteger(numOnly)) {
+    return `Tgl ${numOnly}`;
   }
 
   // If already a readable non-decimal string, return trimmed

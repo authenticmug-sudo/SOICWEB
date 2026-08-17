@@ -70,9 +70,7 @@ export const ALL_STORE_COLUMNS: ColumnDef[] = [
   { id: 'jenisToko', label: 'JENIS TOKO', category: 'Identitas', defaultVisible: true },
   { id: 'jop', label: 'JOP', category: 'Status & Keuangan', defaultVisible: false },
   { id: 'storeType', label: 'TIPE TOKO (RITEL)', category: 'Identitas', defaultVisible: false },
-  { id: 'riskLevel', label: 'LEVEL RISIKO', category: 'Status & Keuangan', defaultVisible: false },
-  { id: 'totalSKUCount', label: 'TOTAL SKU', category: 'Status & Keuangan', defaultVisible: false },
-  { id: 'lastAccuracyRate', label: 'AKURASI LAST SO', category: 'Status & Keuangan', defaultVisible: false }
+  { id: 'riskLevel', label: 'LEVEL RISIKO', category: 'Status & Keuangan', defaultVisible: false }
 ];
 
 const PRESETS = [
@@ -96,14 +94,14 @@ const PRESETS = [
   },
   {
     id: 'keuangan',
-    name: 'Finansial & Stok',
-    desc: 'Saldo Toko, SKU, Akurasi & Risiko',
-    cols: ['code', 'name', 'saldoToko', 'jenisToko', 'totalSKUCount', 'riskLevel', 'lastAccuracyRate']
+    name: 'Finansial & Status',
+    desc: 'Saldo Toko, Jenis Toko & Level Risiko',
+    cols: ['code', 'name', 'saldoToko', 'jenisToko', 'riskLevel']
   },
   {
     id: 'semua',
     name: 'Tampilkan Semua Kolom',
-    desc: 'Semua 20+ atribut data lengkap',
+    desc: 'Semua atribut data lengkap',
     cols: ALL_STORE_COLUMNS.map(c => c.id)
   }
 ];
@@ -537,8 +535,6 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
                 
                 {isColVisible('storeType') && <th className="py-3 px-3 min-w-[140px]">TIPE RITEL</th>}
                 {isColVisible('riskLevel') && <th className="py-3 px-3 min-w-[100px]">RISIKO</th>}
-                {isColVisible('totalSKUCount') && <th className="py-3 px-3 min-w-[100px] text-right">TOTAL SKU</th>}
-                {isColVisible('lastAccuracyRate') && <th className="py-3 px-3 min-w-[110px] text-right">AKURASI SO</th>}
                 
                 <th className="py-3 px-3 text-right min-w-[100px] sticky right-0 bg-slate-100/90 shadow-2xs">AKSI</th>
               </tr>
@@ -752,24 +748,6 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
                           ) : (
                             <span className="text-slate-300 font-mono text-[11px] select-none">-</span>
                           )}
-                        </td>
-                      )}
-
-                      {/* TOTAL SKU */}
-                      {isColVisible('totalSKUCount') && (
-                        <td className="py-2.5 px-3 text-right font-mono text-slate-700">
-                          {s.totalSKUCount !== undefined && s.totalSKUCount !== null && !isNaN(s.totalSKUCount) 
-                            ? s.totalSKUCount.toLocaleString('id-ID') 
-                            : '-'}
-                        </td>
-                      )}
-
-                      {/* AKURASI LAST SO */}
-                      {isColVisible('lastAccuracyRate') && (
-                        <td className="py-2.5 px-3 text-right font-bold text-slate-900">
-                          {s.lastAccuracyRate !== undefined && s.lastAccuracyRate !== null && !isNaN(s.lastAccuracyRate) 
-                            ? `${s.lastAccuracyRate}%` 
-                            : '-'}
                         </td>
                       )}
 

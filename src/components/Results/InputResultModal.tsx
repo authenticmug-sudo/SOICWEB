@@ -123,6 +123,7 @@ export const InputResultModal: React.FC<InputResultModalProps> = ({
   const [salesAnak4Rp, setSalesAnak4Rp] = useState<number>(0);
   const [salesPointCoffeeRp, setSalesPointCoffeeRp] = useState<number>(0);
   const [salesKompIndukRp, setSalesKompIndukRp] = useState<number>(0);
+  const [salesKemarinRp, setSalesKemarinRp] = useState<number>(0);
   const [uangSalesTutupShiftRp, setUangSalesTutupShiftRp] = useState<number>(0);
 
   // Fisik Uang Sales Breakdown by Nama Kasir / Shift
@@ -134,11 +135,11 @@ export const InputResultModal: React.FC<InputResultModalProps> = ({
   const [fisikSalesPointCoffeeRp, setFisikSalesPointCoffeeRp] = useState<number>(0);
   const [fisikSalesKemarinRp, setFisikSalesKemarinRp] = useState<number>(0);
 
-  // Auto-calculate total Target Sales from Kasir breakdown
+  // Auto-calculate total Target Sales from Kasir breakdown + Target Sales Kemarin
   useEffect(() => {
-    const totalTarget = (salesAnak1Rp || 0) + (salesAnak2Rp || 0) + (salesAnak3Rp || 0) + (salesAnak4Rp || 0) + (salesPointCoffeeRp || 0) + (salesKompIndukRp || 0);
+    const totalTarget = (salesAnak1Rp || 0) + (salesAnak2Rp || 0) + (salesAnak3Rp || 0) + (salesAnak4Rp || 0) + (salesPointCoffeeRp || 0) + (salesKompIndukRp || 0) + (salesKemarinRp || 0);
     setUangSalesTutupShiftRp(totalTarget);
-  }, [salesAnak1Rp, salesAnak2Rp, salesAnak3Rp, salesAnak4Rp, salesPointCoffeeRp, salesKompIndukRp]);
+  }, [salesAnak1Rp, salesAnak2Rp, salesAnak3Rp, salesAnak4Rp, salesPointCoffeeRp, salesKompIndukRp, salesKemarinRp]);
 
   const [customBrankasItems, setCustomBrankasItems] = useState<CustomBrankasItem[]>([
     { id: '1', label: 'Adanya Nota', type: 'plus', amountRp: 0 },
@@ -229,6 +230,7 @@ export const InputResultModal: React.FC<InputResultModalProps> = ({
           if (d.salesAnak4Rp !== undefined) setSalesAnak4Rp(d.salesAnak4Rp);
           if (d.salesPointCoffeeRp !== undefined) setSalesPointCoffeeRp(d.salesPointCoffeeRp);
           if (d.salesKompIndukRp !== undefined) setSalesKompIndukRp(d.salesKompIndukRp);
+          if (d.salesKemarinRp !== undefined) setSalesKemarinRp(d.salesKemarinRp);
           if (d.uangSalesTutupShiftRp !== undefined) setUangSalesTutupShiftRp(d.uangSalesTutupShiftRp);
           if (d.fisikSalesKompIndukRp !== undefined) setFisikSalesKompIndukRp(d.fisikSalesKompIndukRp);
           else if (d.fisikSalesIndukRp !== undefined) setFisikSalesKompIndukRp(d.fisikSalesIndukRp);
@@ -290,6 +292,7 @@ export const InputResultModal: React.FC<InputResultModalProps> = ({
         salesAnak4Rp,
         salesPointCoffeeRp,
         salesKompIndukRp,
+        salesKemarinRp,
         uangSalesTutupShiftRp,
         fisikSalesKompIndukRp,
         fisikSalesAnak1Rp,
@@ -336,6 +339,7 @@ export const InputResultModal: React.FC<InputResultModalProps> = ({
     salesAnak4Rp,
     salesPointCoffeeRp,
     salesKompIndukRp,
+    salesKemarinRp,
     uangSalesTutupShiftRp,
     fisikSalesKompIndukRp,
     fisikSalesAnak1Rp,
@@ -615,6 +619,7 @@ export const InputResultModal: React.FC<InputResultModalProps> = ({
       salesAnak4Rp,
       salesPointCoffeeRp,
       salesKompIndukRp,
+      salesKemarinRp,
       fisikSalesKompIndukRp,
       fisikSalesAnak1Rp,
       fisikSalesAnak2Rp,
@@ -1375,6 +1380,17 @@ export const InputResultModal: React.FC<InputResultModalProps> = ({
                         />
                       </div>
                     </div>
+
+                    {/* Target Sales Kemarin (Opsional) */}
+                    <div className="pt-2 border-t border-indigo-100">
+                      <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Target Sales Kemarin (Opsional)</label>
+                      <RupiahInput
+                        value={salesKemarinRp}
+                        onChange={(val) => setSalesKemarinRp(val)}
+                        placeholder="0"
+                        className="w-full bg-slate-50 border border-slate-300 rounded-lg p-1.5 text-xs font-mono font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
                   </div>
 
                   {/* Kolom B: FISIK UANG SALES (HITUNGAN FISIK KASIR) */}
@@ -1497,7 +1513,14 @@ export const InputResultModal: React.FC<InputResultModalProps> = ({
 
                     {/* Fisik Sales Kemarin (Opsional) */}
                     <div className="pt-2 border-t border-slate-100">
-                      <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Fisik Uang Sales Kemarin (Opsional)</label>
+                      <div className="flex justify-between items-center mb-0.5">
+                        <label className="text-[10px] font-semibold text-slate-600">Fisik Uang Sales Kemarin (Opsional)</label>
+                        {((fisikSalesKemarinRp || 0) - (salesKemarinRp || 0) !== 0) && (
+                          <span className={`text-[9px] font-mono font-bold ${((fisikSalesKemarinRp || 0) - (salesKemarinRp || 0)) < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                            {((fisikSalesKemarinRp || 0) - (salesKemarinRp || 0)) < 0 ? '-' : '+'}{formatRupiah(Math.abs((fisikSalesKemarinRp || 0) - (salesKemarinRp || 0)))}
+                          </span>
+                        )}
+                      </div>
                       <RupiahInput
                         value={fisikSalesKemarinRp}
                         onChange={(val) => setFisikSalesKemarinRp(val)}

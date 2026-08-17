@@ -251,6 +251,7 @@ export interface BrankasAuditReport {
   salesAnak4Rp?: number;
   salesPointCoffeeRp?: number;
   salesKompIndukRp?: number;
+  salesKemarinRp?: number; // Target Sales Kemarin (Opsional) - Opsi A
 
   // 3. Fisik Uang Sales (Per Shift / Kasir)
   fisikSalesKompIndukRp?: number;
@@ -426,5 +427,27 @@ export interface MasterTokoDataset {
   stores: Store[];
   rawColumns?: string[];
 }
+
+export type StandbyStatus = 'Siap Standby' | 'On-Call Aktif' | 'Terpanggil Tugas' | 'Selesai' | 'Batal / Sakit';
+
+export interface OnCallPersonnelRecord {
+  id: string;
+  date: string; // YYYY-MM-DD (e.g. tanggal libur / tanggal merah)
+  holidayName?: string; // e.g. "Hari Libur Nasional / Minggu / Cuti Bersama"
+  korlapName: string; // Nama Korlap penanggung jawab
+  region?: RegionArea | string; // Wilayah operasional
+  personnelId: string; // ID personil dari master personil aktif
+  personnelName: string;
+  personnelNik?: string;
+  personnelPhone?: string;
+  role?: string; // Leader Tim SO / Auditor Senior / Junior / Data Entry
+  shiftType?: 'Full Day (08:00 - 17:00)' | 'Shift Pagi' | 'Shift Malam' | 'Standby 24 Jam' | string;
+  standbyStatus: StandbyStatus;
+  assignedStoreOrArea?: string; // Area / Toko antisipasi
+  notes?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
 
 

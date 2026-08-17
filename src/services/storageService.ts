@@ -1,4 +1,4 @@
-import { Store, SOSchedule, SOResult, SOTeam, DashboardSummary, AuditorPersonnel, SOEquipment, EquipmentRepairLog, UniformRecord, MasterTokoDataset } from '../types/stockOpname';
+import { Store, SOSchedule, SOResult, SOTeam, DashboardSummary, AuditorPersonnel, SOEquipment, EquipmentRepairLog, UniformRecord, MasterTokoDataset, OnCallPersonnelRecord } from '../types/stockOpname';
 import { ensureStoreCoordinates } from '../utils/geoUtils';
 import { db } from './firebase';
 import { collection, doc, setDoc, deleteDoc, onSnapshot, getDocs, getDoc, setLogLevel, disableNetwork, writeBatch } from 'firebase/firestore';
@@ -16,6 +16,7 @@ export const STORAGE_KEYS = {
   EQUIPMENT: 'spv_so_equipment_v2',
   REPAIR_LOGS: 'spv_so_repair_logs_v2',
   UNIFORMS: 'spv_uniform_records_v2',
+  ONCALL_PERSONNEL: 'spv_oncall_personnel_v1',
   MASTER_TOKO_DATASETS: 'spv_master_toko_datasets_v1',
   CLEARED_SAMPLE_FLAG: 'spv_cleared_sample_data_v1'
 };
@@ -562,6 +563,7 @@ export async function syncFirestoreCollection<T extends { id: string }>(
       equipment: STORAGE_KEYS.EQUIPMENT,
       repairLogs: STORAGE_KEYS.REPAIR_LOGS,
       uniform_records: STORAGE_KEYS.UNIFORMS,
+      oncall_personnel: STORAGE_KEYS.ONCALL_PERSONNEL,
       master_toko_datasets: STORAGE_KEYS.MASTER_TOKO_DATASETS,
     };
     const sKey = storageKeyMap[collectionName];
@@ -1082,6 +1084,33 @@ export async function saveUniformRecords(uniforms: UniformRecord[], isReplaceMod
   }
 }
 
+export function getStoredOnCallPersonnel(): OnCallPersonnelRecord[] {
+  const local = localStorage.getItem(STORAGE_KEYS.ONCALL_PERSONNEL) || localStorage.getItem('spv_oncall_personnel');
+  if (local) {
+    try {
+      const parsed = JSON.parse(local);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      // fallback
+    }
+  }
+  return [];
+}
+
+export async function saveOnCallPersonnel(records: OnCallPersonnelRecord[], isReplaceMode = false): Promise<void> {
+  untrackDeletedIdsForItems(STORAGE_KEYS.ONCALL_PERSONNEL, records.map(r => r.id));
+  localStorage.setItem(STORAGE_KEYS.ONCALL_PERSONNEL, JSON.stringify(records));
+  notifyDataChanged(STORAGE_KEYS.ONCALL_PERSONNEL, records);
+  uploadRawJsonToCloudinary(records, 'Backup_OnCall', 'SO Sistem IC BALI/OnCall_Personnel').catch(() => {});
+  if (!isFirestoreQuotaExceeded) {
+    if (isReplaceMode) {
+      await replaceFirestoreCollection('oncall_personnel', records).catch(() => {});
+    } else {
+      queueSyncFirestoreCollection('oncall_personnel', records, isReplaceMode);
+    }
+  }
+}
+
 export function getStoredMasterTokoDatasets(): MasterTokoDataset[] {
   const local = localStorage.getItem(STORAGE_KEYS.MASTER_TOKO_DATASETS);
   if (local) {
@@ -1174,6 +1203,7 @@ export async function syncAllDataFromFirestore(): Promise<{
   teams?: SOTeam[];
   repairLogs?: EquipmentRepairLog[];
   uniforms?: UniformRecord[];
+  oncall?: OnCallPersonnelRecord[];
   datasets?: MasterTokoDataset[];
 }> {
   if (isFirestoreQuotaExceeded) return {};
@@ -1187,6 +1217,7 @@ export async function syncAllDataFromFirestore(): Promise<{
       teams,
       repairLogs,
       uniforms,
+      oncall,
       datasets
     ] = await Promise.all([
       fetchCollectionFromFirestore<Store>(STORAGE_KEYS.STORES, 'stores'),
@@ -1197,6 +1228,7 @@ export async function syncAllDataFromFirestore(): Promise<{
       fetchCollectionFromFirestore<SOTeam>(STORAGE_KEYS.TEAMS, 'teams'),
       fetchCollectionFromFirestore<EquipmentRepairLog>(STORAGE_KEYS.REPAIR_LOGS, 'repairLogs'),
       fetchCollectionFromFirestore<UniformRecord>(STORAGE_KEYS.UNIFORMS, 'uniform_records'),
+      fetchCollectionFromFirestore<OnCallPersonnelRecord>(STORAGE_KEYS.ONCALL_PERSONNEL, 'oncall_personnel'),
       fetchCollectionFromFirestore<MasterTokoDataset>(STORAGE_KEYS.MASTER_TOKO_DATASETS, 'master_toko_datasets'),
     ]);
 
@@ -1209,6 +1241,7 @@ export async function syncAllDataFromFirestore(): Promise<{
       ...(teams ? { teams } : {}),
       ...(repairLogs ? { repairLogs } : {}),
       ...(uniforms ? { uniforms } : {}),
+      ...(oncall ? { oncall } : {}),
       ...(datasets ? { datasets } : {}),
     };
   } catch (err) {
@@ -1426,6 +1459,7 @@ export async function syncAllDataFromCloudinary(): Promise<{
   teams?: SOTeam[];
   repairLogs?: EquipmentRepairLog[];
   uniforms?: UniformRecord[];
+  oncall?: OnCallPersonnelRecord[];
   datasets?: MasterTokoDataset[];
 }> {
   const [
@@ -1437,6 +1471,7 @@ export async function syncAllDataFromCloudinary(): Promise<{
     teams,
     repairLogs,
     uniforms,
+    oncall,
     datasets
   ] = await Promise.all([
     syncCollectionFromCloudinary<Store>(STORAGE_KEYS.STORES, 'Master_Stores', 'SO Sistem IC BALI/Master Toko', 'stores'),
@@ -1447,6 +1482,7 @@ export async function syncAllDataFromCloudinary(): Promise<{
     syncCollectionFromCloudinary<SOTeam>(STORAGE_KEYS.TEAMS, 'Master_Teams', 'SO Sistem IC BALI/Teams', 'teams'),
     syncCollectionFromCloudinary<EquipmentRepairLog>(STORAGE_KEYS.REPAIR_LOGS, 'Master_RepairLogs', 'SO Sistem IC BALI/Repair Logs', 'repairLogs'),
     syncCollectionFromCloudinary<UniformRecord>(STORAGE_KEYS.UNIFORMS, 'Backup_Seragam', 'SO Sistem IC BALI/Backup_Seragam', 'uniform_records'),
+    syncCollectionFromCloudinary<OnCallPersonnelRecord>(STORAGE_KEYS.ONCALL_PERSONNEL, 'Backup_OnCall', 'SO Sistem IC BALI/OnCall_Personnel', 'oncall_personnel'),
     syncCollectionFromCloudinary<MasterTokoDataset>(STORAGE_KEYS.MASTER_TOKO_DATASETS, 'Master_Toko_Datasets', 'SO Sistem IC BALI/Master Toko', 'master_toko_datasets'),
   ]);
 
@@ -1459,6 +1495,7 @@ export async function syncAllDataFromCloudinary(): Promise<{
     ...(teams ? { teams } : {}),
     ...(repairLogs ? { repairLogs } : {}),
     ...(uniforms ? { uniforms } : {}),
+    ...(oncall ? { oncall } : {}),
     ...(datasets ? { datasets } : {}),
   };
 }
@@ -1488,6 +1525,7 @@ export async function clearAllData(options?: { forceWipeCloudinary?: boolean }):
   await saveEquipment([]);
   await saveRepairLogs([]);
   await saveUniformRecords([]);
+  await saveOnCallPersonnel([]);
   await saveMasterTokoDatasets([]);
 
   // 2. Wipe all collections from Firebase Firestore if connected
@@ -1501,6 +1539,7 @@ export async function clearAllData(options?: { forceWipeCloudinary?: boolean }):
       'equipment',
       'repairLogs',
       'uniform_records',
+      'oncall_personnel',
       'master_toko_datasets',
       'deleted_ids'
     ];

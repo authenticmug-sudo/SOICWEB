@@ -248,7 +248,6 @@ export const ReportsAnalytics: React.FC<ReportsAnalyticsProps> = ({
                 <th className="py-2.5 px-3 text-center">Target Toko SO</th>
                 <th className="py-2.5 px-3 text-center">Rekapan Dilaporkan</th>
                 <th className="py-2.5 px-3 text-center">Progress Laporan</th>
-                <th className="py-2.5 px-3 text-right">Rata2 Akurasi</th>
                 <th className="py-2.5 px-3 text-right">Net Selisih (Rp)</th>
                 <th className="py-2.5 px-3 text-center">Status</th>
               </tr>
@@ -267,7 +266,6 @@ export const ReportsAnalytics: React.FC<ReportsAnalyticsProps> = ({
                       <span className="font-bold text-[11px] font-mono">{item.pct}%</span>
                     </div>
                   </td>
-                  <td className="py-2.5 px-3 text-right font-bold text-indigo-700 font-mono">{item.avgAccuracy}%</td>
                   <td className={`py-2.5 px-3 text-right font-mono font-bold ${item.sumVariance < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
                     {formatRupiah(item.sumVariance)}
                   </td>
@@ -343,7 +341,7 @@ export const ReportsAnalytics: React.FC<ReportsAnalyticsProps> = ({
         {/* Detailed Summary Table */}
         <div>
           <h4 className="font-bold text-slate-900 mb-3 text-xs uppercase tracking-wider">
-            Rincian Top Toko Akurasi Tertinggi & Perlu Perhatian SPV
+            Rincian Toko Hasil Rekapan SO
           </h4>
 
           <div className="border border-slate-200 rounded-xl overflow-hidden">
@@ -355,7 +353,6 @@ export const ReportsAnalytics: React.FC<ReportsAnalyticsProps> = ({
                   <th className="py-2.5 px-3 text-right">System Value (Rp)</th>
                   <th className="py-2.5 px-3 text-right">Physical Value (Rp)</th>
                   <th className="py-2.5 px-3 text-right">Selisih (Rp)</th>
-                  <th className="py-2.5 px-3 text-center">Akurasi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -368,11 +365,6 @@ export const ReportsAnalytics: React.FC<ReportsAnalyticsProps> = ({
                     <td className="py-2.5 px-3 text-right font-mono font-bold">
                       <span className={r.varianceValueTotalRp < 0 ? 'text-rose-600' : 'text-emerald-600'}>
                         {formatRupiah(r.varianceValueTotalRp)}
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-3 text-center font-bold">
-                      <span className={r.accuracyRatePercentage < 98 ? 'text-rose-600' : 'text-emerald-600'}>
-                        {r.accuracyRatePercentage}%
                       </span>
                     </td>
                   </tr>

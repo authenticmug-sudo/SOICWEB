@@ -1149,6 +1149,7 @@ export default function App() {
               onUpdatePersonnel={handleUpdatePersonnel}
               onDeletePersonnel={handleDeletePersonnel}
               onBatchImportPersonnel={handleBatchImportPersonnel}
+              currentRole={currentRole}
             />
           )}
 

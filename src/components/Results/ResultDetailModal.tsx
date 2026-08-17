@@ -472,6 +472,12 @@ export const ResultDetailModal: React.FC<ResultDetailModalProps> = ({
                           <span className="font-mono">Tgt {formatRupiah(result.brankasReport.salesPointCoffeeRp || 0)} / Fsk {formatRupiah(result.brankasReport.fisikSalesPointCoffeeRp || 0)}</span>
                         </div>
                       )}
+                      {(result.brankasReport.salesKemarinRp !== undefined || result.brankasReport.fisikSalesKemarinRp !== undefined) && (
+                        <div className="flex justify-between">
+                          <span>Sales Kemarin:</span>
+                          <span className="font-mono">Tgt {formatRupiah(result.brankasReport.salesKemarinRp || 0)} / Fsk {formatRupiah(result.brankasReport.fisikSalesKemarinRp || 0)}</span>
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex justify-between font-bold text-emerald-950 bg-emerald-50/70 p-1 rounded">
