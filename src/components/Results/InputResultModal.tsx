@@ -22,7 +22,12 @@ import {
   HelpCircle,
   RotateCcw,
   Users,
-  ShieldCheck
+  ShieldCheck,
+  Save,
+  HardDrive,
+  Smartphone,
+  BookmarkCheck,
+  Info
 } from 'lucide-react';
 import { 
   SOSchedule, 
@@ -78,8 +83,11 @@ export const InputResultModal: React.FC<InputResultModalProps> = ({
   const [showSuccessWAScreen, setShowSuccessWAScreen] = useState(false);
   const [submittedWaText, setSubmittedWaText] = useState('');
 
-  // Auto-draft indicator state
+  // Auto-draft indicator & explanation modal state
   const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
+  const [hasExistingDraft, setHasExistingDraft] = useState(false);
+  const [draftSavedTimestamp, setDraftSavedTimestamp] = useState<string | null>(null);
+  const [showDraftExplanationModal, setShowDraftExplanationModal] = useState(false);
 
   // Validation prompt state before saving
   const [showValidationModal, setShowValidationModal] = useState(false);
@@ -198,7 +206,23 @@ export const InputResultModal: React.FC<InputResultModalProps> = ({
   const [evidencePhotoUrl, setEvidencePhotoUrl] = useState('');
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
-  // RESTORE AUTO-DRAFT FROM LOCALSTORAGE (< 30 MINUTES)
+  // Format draft saved date & time
+  const formatDraftDate = (timestamp: number) => {
+    try {
+      const date = new Date(timestamp);
+      return date.toLocaleDateString('id-ID', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }) + ' WIB';
+    } catch {
+      return 'Tersimpan';
+    }
+  };
+
+  // RESTORE DRAFT FROM LOCALSTORAGE
   useEffect(() => {
     if (!selectedScheduleId || !isOpen) return;
     const draftKey = `so_input_draft_${selectedScheduleId}`;
@@ -206,9 +230,7 @@ export const InputResultModal: React.FC<InputResultModalProps> = ({
     if (rawDraft) {
       try {
         const parsed = JSON.parse(rawDraft);
-        const ageInMs = Date.now() - (parsed.timestamp || 0);
-        // 30 minutes threshold
-        if (ageInMs < 30 * 60 * 1000 && parsed.data) {
+        if (parsed && parsed.data) {
           const d = parsed.data;
           if (d.namaAM !== undefined) setNamaAM(d.namaAM);
           if (d.namaAS !== undefined) setNamaAS(d.namaAS);
@@ -252,16 +274,21 @@ export const InputResultModal: React.FC<InputResultModalProps> = ({
           if (d.wdcpBroken !== undefined) setWdcpBroken(d.wdcpBroken);
           if (d.cctvCheck) setCctvCheck(d.cctvCheck);
           if (d.notes !== undefined) setNotes(d.notes);
+          if (d.evidencePhotoUrl) setEvidencePhotoUrl(d.evidencePhotoUrl);
+
           setHasRestoredDraft(true);
-        } else {
-          localStorage.removeItem(draftKey);
-          setHasRestoredDraft(false);
+          setHasExistingDraft(true);
+          if (parsed.timestamp) {
+            setDraftSavedTimestamp(formatDraftDate(parsed.timestamp));
+          }
         }
       } catch (err) {
         console.error('Failed to parse draft from localStorage', err);
       }
     } else {
       setHasRestoredDraft(false);
+      setHasExistingDraft(false);
+      setDraftSavedTimestamp(null);
     }
   }, [selectedScheduleId, isOpen]);
 
@@ -271,6 +298,9 @@ export const InputResultModal: React.FC<InputResultModalProps> = ({
     const draftKey = `so_input_draft_${selectedScheduleId}`;
     const draftPayload = {
       timestamp: Date.now(),
+      scheduleId: selectedScheduleId,
+      storeCode: selectedSchedule?.storeCode,
+      storeName: selectedSchedule?.storeName,
       data: {
         namaAM,
         namaAS,
@@ -312,7 +342,8 @@ export const InputResultModal: React.FC<InputResultModalProps> = ({
         wdcpWorking,
         wdcpBroken,
         cctvCheck,
-        notes
+        notes,
+        evidencePhotoUrl
       }
     };
     localStorage.setItem(draftKey, JSON.stringify(draftPayload));
@@ -359,10 +390,82 @@ export const InputResultModal: React.FC<InputResultModalProps> = ({
     wdcpWorking,
     wdcpBroken,
     cctvCheck,
-    notes
+    notes,
+    evidencePhotoUrl
   ]);
 
-  // RESET DRAFT HANDLER
+  // MANUAL SAVE DRAFT HANDLER
+  const handleManualSaveDraft = (showModal: boolean = true) => {
+    if (!selectedSchedule) {
+      alert('Mohon pilih Toko & Jadwal SO terlebih dahulu sebelum menyimpan draft.');
+      return;
+    }
+    const draftKey = `so_input_draft_${selectedSchedule.id}`;
+    const now = Date.now();
+    const draftPayload = {
+      timestamp: now,
+      scheduleId: selectedSchedule.id,
+      storeCode: selectedSchedule.storeCode,
+      storeName: selectedSchedule.storeName,
+      data: {
+        namaAM,
+        namaAS,
+        namaPimpinanShift,
+        startTime,
+        endTime,
+        systemValueTotalRp,
+        physicalValueTotalRp,
+        systemQtyTotal,
+        physicalQtyTotal,
+        notaKurangNKValRp,
+        notaLebihNLValRp,
+        customNKLItems,
+        kasTokoFinanceRp,
+        fisikKasBrankasRp,
+        fisikKasKasiranRp,
+        salesAnak1Rp,
+        salesAnak2Rp,
+        salesAnak3Rp,
+        salesAnak4Rp,
+        salesPointCoffeeRp,
+        salesKompIndukRp,
+        salesKemarinRp,
+        uangSalesTutupShiftRp,
+        fisikSalesKompIndukRp,
+        fisikSalesAnak1Rp,
+        fisikSalesAnak2Rp,
+        fisikSalesAnak3Rp,
+        fisikSalesAnak4Rp,
+        fisikSalesPointCoffeeRp,
+        fisikSalesKemarinRp,
+        customBrankasItems,
+        top5Plus,
+        top5Minus,
+        storeCondition,
+        opCheck,
+        itemTidakTerdisplayCount,
+        wdcpTotal,
+        wdcpWorking,
+        wdcpBroken,
+        cctvCheck,
+        notes,
+        evidencePhotoUrl
+      }
+    };
+    localStorage.setItem(draftKey, JSON.stringify(draftPayload));
+    const formatted = formatDraftDate(now);
+    setDraftSavedTimestamp(formatted);
+    setHasExistingDraft(true);
+    setHasRestoredDraft(true);
+
+    if (showModal) {
+      setShowDraftExplanationModal(true);
+    } else {
+      triggerToast('💾 Draft tersimpan di browser perangkat ini!');
+    }
+  };
+
+  // RESET / DELETE DRAFT HANDLER
   const handleClearDraft = () => {
     if (selectedScheduleId) {
       localStorage.removeItem(`so_input_draft_${selectedScheduleId}`);
@@ -417,8 +520,11 @@ export const InputResultModal: React.FC<InputResultModalProps> = ({
     setWdcpWorking(0);
     setWdcpBroken(0);
     setNotes('');
+    setEvidencePhotoUrl('');
     setHasRestoredDraft(false);
-    triggerToast('🔄 Draft berhasil di-reset ke data kosong.');
+    setHasExistingDraft(false);
+    setDraftSavedTimestamp(null);
+    triggerToast('🔄 Draft pada perangkat ini berhasil dihapus.');
   };
 
   if (!isOpen) return null;
@@ -785,6 +891,134 @@ export const InputResultModal: React.FC<InputResultModalProps> = ({
         </div>
       )}
 
+      {/* DRAFT EXPLANATION & CONFIRMATION MODAL */}
+      {showDraftExplanationModal && (
+        <div className="fixed inset-0 z-60 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-150">
+            
+            {/* Top Header */}
+            <div className="bg-gradient-to-r from-amber-600 via-amber-500 to-amber-600 text-white p-4 sm:p-5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center text-white shrink-0 shadow-inner">
+                  <BookmarkCheck className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-sm sm:text-base leading-tight">Draft Berhasil Disimpan!</h4>
+                  <p className="text-[11px] text-amber-100 font-medium">Tersimpan di memori browser perangkat ini</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDraftExplanationModal(false)}
+                className="text-white/80 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-4 sm:p-5 space-y-3.5 text-xs text-slate-700">
+              
+              {/* Store & Time Badge */}
+              {selectedSchedule && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-amber-950">
+                  <div>
+                    <span className="text-[10px] font-bold text-amber-700 uppercase block">Toko Draft:</span>
+                    <span className="font-black text-xs">[{selectedSchedule.storeCode}] {selectedSchedule.storeName}</span>
+                  </div>
+                  <div className="text-left sm:text-right">
+                    <span className="text-[10px] font-bold text-amber-700 uppercase block">Waktu Simpan:</span>
+                    <span className="font-bold text-xs">{draftSavedTimestamp || 'Baru Saja'}</span>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <h5 className="font-extrabold text-xs text-slate-900 flex items-center gap-1.5">
+                  <Info className="w-4 h-4 text-indigo-600" />
+                  <span>Cara Kerja & Keamanan Fitur Draft:</span>
+                </h5>
+
+                <div className="grid grid-cols-1 gap-2">
+                  <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-start gap-2.5">
+                    <div className="p-1.5 bg-amber-100 text-amber-800 rounded-lg shrink-0 mt-0.5">
+                      <HardDrive className="w-4 h-4" />
+                    </div>
+                    <div className="space-y-0.5">
+                      <strong className="text-slate-900 text-[11px] block">1. Tersimpan di Memori Browser HP / Laptop Anda</strong>
+                      <p className="text-[11px] text-slate-600 leading-relaxed">
+                        Seluruh angka (inventori, rincian NK/NL, brankas, kasir, kondisi toko, CCTV, dan catatan) tersimpan di penyimpanan internal browser (<em>LocalStorage</em>).
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-start gap-2.5">
+                    <div className="p-1.5 bg-emerald-100 text-emerald-800 rounded-lg shrink-0 mt-0.5">
+                      <Smartphone className="w-4 h-4" />
+                    </div>
+                    <div className="space-y-0.5">
+                      <strong className="text-slate-900 text-[11px] block">2. Sangat Aman Saat Ada Urusan Mendadak di Toko</strong>
+                      <p className="text-[11px] text-slate-600 leading-relaxed">
+                        Jika di sela-sela input SO Anda harus melayani toko, menerima barang datang, atau ada urusan darurat, Anda bisa <strong>menutup form ini atau me-refresh browser dengan tenang</strong>.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-start gap-2.5">
+                    <div className="p-1.5 bg-indigo-100 text-indigo-800 rounded-lg shrink-0 mt-0.5">
+                      <RotateCcw className="w-4 h-4" />
+                    </div>
+                    <div className="space-y-0.5">
+                      <strong className="text-slate-900 text-[11px] block">3. Otomatis Terisi Kembali Kapan Saja</strong>
+                      <p className="text-[11px] text-slate-600 leading-relaxed">
+                        Saat Anda kembali membuka menu <em>Input Rekapan SO</em> dan memilih toko ini di perangkat yang sama, seluruh inputan Anda otomatis dipulihkan tanpa hilang.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-start gap-2.5">
+                    <div className="p-1.5 bg-blue-100 text-blue-800 rounded-lg shrink-0 mt-0.5">
+                      <ShieldCheck className="w-4 h-4" />
+                    </div>
+                    <div className="space-y-0.5">
+                      <strong className="text-slate-900 text-[11px] block">4. Pembersihan Otomatis Saat Kirim Rekapan SO</strong>
+                      <p className="text-[11px] text-slate-600 leading-relaxed">
+                        Setelah rekapan selesai lengkap dan Anda menekan tombol <strong>"Simpan Rekapan SO"</strong>, draft lokal akan otomatis dibersihkan dan hasil SO resmi tersinkron ke SPV.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col-reverse sm:flex-row items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDraftExplanationModal(false);
+                    onClose();
+                  }}
+                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition flex items-center justify-center gap-1.5 min-h-[42px] cursor-pointer"
+                >
+                  <span>Tutup Form (Keluar Aman)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowDraftExplanationModal(false)}
+                  className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black transition flex items-center justify-center gap-1.5 shadow-sm min-h-[42px] cursor-pointer"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Lanjut Mengisi Form</span>
+                </button>
+              </div>
+
+            </div>
+
+          </div>
+        </div>
+      )}
+
       {/* VALIDATION QUESTION MODAL (If fields are missing) */}
       {showValidationModal && (
         <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -845,22 +1079,34 @@ export const InputResultModal: React.FC<InputResultModalProps> = ({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleManualSaveDraft(true)}
+              className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 hover:text-amber-200 border border-amber-500/40 text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+              title="Simpan draft sementara ke memori browser perangkat ini"
+            >
+              <Save className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">Buat Draft</span>
+              <span className="sm:hidden">Draft</span>
+            </button>
+
             {hasRestoredDraft && (
               <button
                 type="button"
                 onClick={handleClearDraft}
-                className="text-amber-300 hover:text-amber-200 text-[10px] font-bold underline px-2 py-1 rounded bg-amber-950/60 border border-amber-500/40 flex items-center gap-1 transition"
+                className="text-slate-400 hover:text-rose-300 text-[10px] font-bold underline px-2 py-1 rounded hover:bg-rose-950/40 transition flex items-center gap-1 cursor-pointer"
                 title="Reset/hapus draft inputan saat ini"
               >
                 <RotateCcw className="w-3 h-3" />
-                <span>Reset Draft</span>
+                <span className="hidden sm:inline">Reset Draft</span>
               </button>
             )}
+
             <button 
               type="button"
               onClick={onClose}
-              className="text-slate-200 hover:text-white px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
-              title="Tutup Modal (Draft Otomatis Tersimpan)"
+              className="text-slate-200 hover:text-white px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+              title="Tutup Modal (Draft Otomatis Tersimpan di Browser)"
             >
               <span>Tutup</span>
               <X className="w-4 h-4 text-slate-400" />
@@ -871,20 +1117,30 @@ export const InputResultModal: React.FC<InputResultModalProps> = ({
         {/* Schedule Selector & Store Header */}
         <div className="p-3 sm:p-4 bg-slate-50 border-b border-slate-200 shrink-0 space-y-2.5">
           {hasRestoredDraft && (
-            <div className="bg-amber-50 border border-amber-300 text-amber-900 rounded-xl p-2.5 px-3.5 text-xs flex items-center justify-between animate-in fade-in">
-              <div className="flex items-center gap-2 font-medium text-[11px]">
-                <Clock className="w-4 h-4 text-amber-600 shrink-0" />
-                <span>
-                  <strong>Draft Otomatis Dimuat:</strong> Progres input Anda tersimpan otomatis saat tidak sengaja diklik Tutup atau browser di-refresh (tersimpan hingga 30 menit).
-                </span>
+            <div className="bg-amber-50 border border-amber-300 text-amber-950 rounded-xl p-2.5 px-3.5 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 animate-in fade-in">
+              <div className="flex items-start sm:items-center gap-2 font-medium text-[11px]">
+                <HardDrive className="w-4 h-4 text-amber-600 shrink-0 mt-0.5 sm:mt-0" />
+                <div>
+                  <strong>Draft Tersimpan di Memori Perangkat:</strong> Data sementara toko ini dimuat otomatis ({draftSavedTimestamp || 'Aktif'}). Aman jika browser di-refresh / ditutup.
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={handleClearDraft}
-                className="text-[10px] font-bold text-amber-800 hover:text-amber-950 bg-amber-200/80 hover:bg-amber-300 px-2.5 py-1 rounded-lg transition shrink-0 ml-2"
-              >
-                Reset Draft
-              </button>
+              <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setShowDraftExplanationModal(true)}
+                  className="text-[10px] font-bold text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2.5 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer"
+                >
+                  <Info className="w-3 h-3 text-indigo-600" />
+                  <span>Cara Kerja Draft</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearDraft}
+                  className="text-[10px] font-bold text-rose-800 hover:text-rose-950 bg-rose-100 hover:bg-rose-200 border border-rose-200 px-2.5 py-1 rounded-lg transition cursor-pointer"
+                >
+                  Hapus Draft
+                </button>
+              </div>
             </div>
           )}
 
@@ -1865,33 +2121,51 @@ export const InputResultModal: React.FC<InputResultModalProps> = ({
           )}
 
           {/* SUBMIT FOOTER BUTTONS (Optimized for Mobile Touch) */}
-          <div className="pt-3 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-2.5">
-            {activeTab === 'condition' ? (
+          <div className="pt-3 border-t border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2 w-full sm:w-auto">
               <button
                 type="button"
-                onClick={handleCopyCurrentWA}
-                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-bold transition flex items-center justify-center gap-1.5 min-h-[44px]"
+                onClick={() => handleManualSaveDraft(true)}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm min-h-[44px] cursor-pointer"
+                title="Simpan progress inputan saat ini ke memori browser perangkat"
               >
-                {isCopiedWA ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4 text-emerald-600" />}
-                <span>{isCopiedWA ? 'Tersalin!' : 'Salin Format WA'}</span>
+                <Save className="w-4 h-4 text-amber-100" />
+                <span>Simpan Draft</span>
               </button>
-            ) : (
-              <div className="hidden sm:block text-[11px] text-slate-400 font-medium italic">
-                *Salin Format WA dapat diakses di bagian 3 (Kondisi Toko)
-              </div>
-            )}
+
+              {activeTab === 'condition' ? (
+                <button
+                  type="button"
+                  onClick={handleCopyCurrentWA}
+                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-bold transition flex items-center justify-center gap-1.5 min-h-[44px] cursor-pointer"
+                >
+                  {isCopiedWA ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4 text-emerald-600" />}
+                  <span>{isCopiedWA ? 'Tersalin!' : 'Salin Format WA'}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowDraftExplanationModal(true)}
+                  className="hidden sm:flex text-[11px] text-amber-700 hover:text-amber-900 font-bold items-center gap-1 px-2 py-1 rounded hover:bg-amber-50 cursor-pointer"
+                  title="Lihat penjelasan cara kerja draft"
+                >
+                  <Info className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Info Draft</span>
+                </button>
+              )}
+            </div>
 
             <div className="flex items-center gap-2 w-full sm:w-auto">
               <button
                 type="button"
                 onClick={onClose}
-                className="w-1/3 sm:w-auto px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition min-h-[44px]"
+                className="w-1/3 sm:w-auto px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition min-h-[44px] cursor-pointer"
               >
                 Batal
               </button>
               <button
                 type="submit"
-                className="w-2/3 sm:w-auto px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black transition shadow-md min-h-[44px] flex items-center justify-center gap-1.5"
+                className="w-2/3 sm:w-auto px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black transition shadow-md min-h-[44px] flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <CheckCircle2 className="w-4 h-4" />
                 <span>Simpan Rekapan SO</span>
