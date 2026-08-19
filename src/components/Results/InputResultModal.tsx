@@ -466,6 +466,9 @@ export const InputResultModal: React.FC<InputResultModalProps> = ({
       salesTotalRp: totalFisikSalesRp,
       selisihSalesRp,
       nettSOBrankasRp,
+      storeCondition,
+      cctvCheck,
+      opCheck,
       itemTidakTerdisplayCount,
       wdcpAudit: {
         totalUnits: wdcpTotal,
@@ -656,7 +659,12 @@ export const InputResultModal: React.FC<InputResultModalProps> = ({
 
       notaKurangNKValRp,
       notaLebihNLValRp,
-      customNKLItems: customNKLItems.filter(i => i.label.trim() !== ''),
+      customNKLItems: customNKLItems
+        .filter(i => (i.label && i.label.trim() !== '') || (i.amountRp && i.amountRp > 0))
+        .map(i => ({
+          ...i,
+          label: i.label && i.label.trim() !== '' ? i.label.trim() : (i.type === 'plus' ? 'Penyesuaian NL (Plus)' : 'Penyesuaian NK (Minus)')
+        })),
       nettNKLValRp,
 
       storeCondition,
@@ -1064,55 +1072,77 @@ export const InputResultModal: React.FC<InputResultModalProps> = ({
                 <div className="pt-2 border-t border-slate-200 space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="text-[11px] font-bold text-slate-700">
-                      Rincian Penyesuaian (+ / - Kontainer, Sarana, dll.)
+                      Rincian Penyesuaian (+ / - Kontainer, Sarana, Selisih RPH, dll.)
                     </label>
                     <button
                       type="button"
                       onClick={addCustomNKLItem}
-                      className="text-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold px-2 py-1 rounded-lg border border-indigo-200 flex items-center gap-1"
+                      className="text-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold px-2 py-1 rounded-lg border border-indigo-200 flex items-center gap-1 cursor-pointer transition"
                     >
-                      <Plus className="w-3 h-3" /> Tambah Adjustment
+                      <Plus className="w-3 h-3" /> Tambah Penyesuaian
                     </button>
                   </div>
 
                   {customNKLItems.length > 0 && (
-                    <div className="space-y-2">
+                    <div className="space-y-2.5">
                       {customNKLItems.map((item) => (
-                        <div key={item.id} className="p-2 bg-white border border-slate-200 rounded-xl space-y-2 sm:space-y-0 sm:flex sm:items-center sm:gap-2 shadow-2xs">
-                          <div className="flex-1">
-                            <input
-                              type="text"
-                              placeholder="Deskripsi item..."
-                              value={item.label}
-                              onChange={(e) => updateCustomNKLItem(item.id, 'label', e.target.value)}
-                              className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs font-medium focus:ring-1 focus:ring-indigo-500"
-                            />
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <select
-                              value={item.type}
-                              onChange={(e) => updateCustomNKLItem(item.id, 'type', e.target.value as 'plus' | 'minus')}
-                              className="bg-white border border-slate-300 rounded-lg p-2 text-xs font-semibold shrink-0 focus:ring-1 focus:ring-indigo-500"
-                            >
-                              <option value="plus">Plus (+)</option>
-                              <option value="minus">Minus (-)</option>
-                            </select>
-                            <div className="flex-1 sm:w-36">
-                              <RupiahInput
-                                value={item.amountRp}
-                                onChange={(val) => updateCustomNKLItem(item.id, 'amountRp', val)}
-                                placeholder="0"
-                                className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs font-mono font-bold text-slate-900 focus:ring-1 focus:ring-indigo-500"
-                              />
+                        <div key={item.id} className="p-2.5 bg-white border border-slate-200 rounded-xl space-y-2 shadow-2xs">
+                          <div className="space-y-1.5">
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                              <div className="flex-1">
+                                <input
+                                  type="text"
+                                  placeholder="Ketik keterangan (cth: Selisih RPH, Kontainer, Sarana, Retur DC...)"
+                                  value={item.label}
+                                  onChange={(e) => updateCustomNKLItem(item.id, 'label', e.target.value)}
+                                  className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs font-semibold text-slate-900 focus:bg-white focus:ring-1 focus:ring-indigo-500"
+                                />
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <select
+                                  value={item.type}
+                                  onChange={(e) => updateCustomNKLItem(item.id, 'type', e.target.value as 'plus' | 'minus')}
+                                  className={`border rounded-lg p-2 text-xs font-bold shrink-0 focus:ring-1 focus:ring-indigo-500 ${
+                                    item.type === 'plus' 
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-300' 
+                                      : 'bg-rose-50 text-rose-700 border-rose-300'
+                                  }`}
+                                >
+                                  <option value="plus">Plus (+) / NL</option>
+                                  <option value="minus">Minus (-) / NK</option>
+                                </select>
+                                <div className="flex-1 sm:w-36">
+                                  <RupiahInput
+                                    value={item.amountRp}
+                                    onChange={(val) => updateCustomNKLItem(item.id, 'amountRp', val)}
+                                    placeholder="0"
+                                    className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs font-mono font-bold text-slate-900 focus:ring-1 focus:ring-indigo-500"
+                                  />
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => removeCustomNKLItem(item.id)}
+                                  className="text-rose-500 hover:text-rose-700 p-2 hover:bg-rose-50 rounded-lg transition shrink-0 cursor-pointer"
+                                  title="Hapus"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => removeCustomNKLItem(item.id)}
-                              className="text-rose-500 hover:text-rose-700 p-2 hover:bg-rose-50 rounded-lg transition shrink-0 cursor-pointer"
-                              title="Hapus"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            {/* Quick Suggestion Tags */}
+                            <div className="flex flex-wrap items-center gap-1 pt-1">
+                              <span className="text-[9px] font-semibold text-slate-400">Pilihan Cepat:</span>
+                              {['Selisih RPH', 'Kontainer', 'Sarana', 'Retur Pending DC', 'BA Rusak Toko', 'Adjustment Kasir'].map((tag) => (
+                                <button
+                                  key={tag}
+                                  type="button"
+                                  onClick={() => updateCustomNKLItem(item.id, 'label', tag)}
+                                  className="text-[9px] bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-700 font-medium px-1.5 py-0.5 rounded border border-slate-200 cursor-pointer transition"
+                                >
+                                  {tag}
+                                </button>
+                              ))}
+                            </div>
                           </div>
                         </div>
                       ))}

@@ -1,4 +1,4 @@
-import { SOResult, SOSchedule } from '../types/stockOpname';
+import { SOResult, SOSchedule, StoreConditionCheck, CCTVCheck, OperationalCheck } from '../types/stockOpname';
 import { formatRupiah, formatDateIndo } from './formatters';
 
 export interface WAFORMATTERINPUT {
@@ -38,6 +38,9 @@ export interface WAFORMATTERINPUT {
   // Other details
   notes?: string;
   storeConditionSummary?: string;
+  storeCondition?: StoreConditionCheck;
+  cctvCheck?: CCTVCheck;
+  opCheck?: OperationalCheck;
   itemTidakTerdisplayCount?: number;
   wdcpAudit?: {
     totalUnits: number;
@@ -73,7 +76,10 @@ export function generateWAShareText(data: WAFORMATTERINPUT): string {
     if (data.customNKLItems && data.customNKLItems.length > 0) {
       data.customNKLItems.forEach(item => {
         if (item.label || item.amountRp > 0) {
-          text += `• ${item.label || 'Adjustment'}: ${item.type === 'plus' ? '+' : '-'}${formatRupiah(item.amountRp)}\n`;
+          const customLabel = item.label && item.label.trim()
+            ? item.label.trim()
+            : (item.type === 'plus' ? 'Penyesuaian NL (Plus)' : 'Penyesuaian NK (Minus)');
+          text += `• ${customLabel}: ${item.type === 'plus' ? '+' : '-'}${formatRupiah(item.amountRp)}\n`;
         }
       });
     }
@@ -119,12 +125,39 @@ export function generateWAShareText(data: WAFORMATTERINPUT): string {
     }
   }
 
-  if (data.storeConditionSummary) {
+  // 3. KONDISI KERAPIAN AREA TOKO
+  if (data.storeCondition) {
+    const { gudangKolian, gudangRak, areaToko, iceCreamFrozen } = data.storeCondition;
+    text += `\n🏬 *KERAPIAN AREA TOKO:*\n`;
+    text += `• Gudang Kolian: ${gudangKolian || 'Rapi'} ${gudangKolian === 'Tidak Rapi' ? '❌' : '✅'}\n`;
+    text += `• Gudang Rak: ${gudangRak || 'Rapi'} ${gudangRak === 'Tidak Rapi' ? '❌' : '✅'}\n`;
+    text += `• Area Sales / Toko: ${areaToko || 'Rapi'} ${areaToko === 'Tidak Rapi' ? '❌' : '✅'}\n`;
+    text += `• Ice Cream & Frozen: ${iceCreamFrozen || 'Rapi'} ${iceCreamFrozen === 'Tidak Rapi' ? '❌' : '✅'}\n`;
+  } else if (data.storeConditionSummary) {
     text += `\n🏬 *KONDISI TOKO:* ${data.storeConditionSummary}\n`;
   }
 
+  // 4. KONDISI CCTV & HARDWARE TOKO
+  if (data.cctvCheck) {
+    const { dvrStatus, kameraStatus, lcdStatus } = data.cctvCheck;
+    text += `\n📹 *KONDISI CCTV & MONITOR:*\n`;
+    text += `• DVR: ${dvrStatus || 'Berfungsi'} ${dvrStatus === 'Tidak' ? '❌' : '✅'}\n`;
+    text += `• Kamera CCTV: ${kameraStatus || 'Berfungsi'} ${kameraStatus === 'Tidak' ? '❌' : '✅'}\n`;
+    text += `• Monitor LCD: ${lcdStatus || 'Berfungsi'} ${lcdStatus === 'Tidak' ? '❌' : '✅'}\n`;
+  }
+
+  if (data.opCheck && (data.opCheck.bpbBelumDiproses === 'Ya' || data.opCheck.returBelumDikirimDC === 'Ya')) {
+    text += `\n⚠️ *AUDIT OPERASIONAL:*\n`;
+    if (data.opCheck.bpbBelumDiproses === 'Ya') {
+      text += `• Ada BPB Belum Diproses: Ya ⚠️\n`;
+    }
+    if (data.opCheck.returBelumDikirimDC === 'Ya') {
+      text += `• Ada Retur Belum Dikirim DC: Ya ⚠️\n`;
+    }
+  }
+
   if (data.itemTidakTerdisplayCount !== undefined && data.itemTidakTerdisplayCount > 0) {
-    text += `📦 *Item ITT (Tidak Terdisplay):* ${data.itemTidakTerdisplayCount} item\n`;
+    text += `\n📦 *Item ITT (Tidak Terdisplay):* ${data.itemTidakTerdisplayCount} item\n`;
   }
 
   if (data.wdcpAudit && data.wdcpAudit.totalUnits > 0) {

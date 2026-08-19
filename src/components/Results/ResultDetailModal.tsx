@@ -53,6 +53,7 @@ export const ResultDetailModal: React.FC<ResultDetailModalProps> = ({
       soDate: result.soDate,
       startTime: result.startTime,
       endTime: result.endTime,
+      officerInCharge: result.officerInCharge || result.spvApprover,
       executedByTeam: result.executedByTeam,
       namaAM: result.namaAM,
       namaAS: result.namaAS,
@@ -66,6 +67,8 @@ export const ResultDetailModal: React.FC<ResultDetailModalProps> = ({
       physicalValueTotalRp: result.physicalValueTotalRp,
       varianceValueTotalRp: result.varianceValueTotalRp,
       accuracyRatePercentage: result.accuracyRatePercentage,
+      top5Plus: result.top5Plus,
+      top5Minus: result.top5Minus,
       kasTokoFinanceRp: result.brankasReport?.kasTokoFinanceRp,
       fisikKasTotalRp: (result.brankasReport?.fisikKasBrankasRp || 0) + (result.brankasReport?.fisikKasKasiranRp || 0),
       selisihKasTokoRp: result.brankasReport?.selisihKasTokoRp,
@@ -73,7 +76,12 @@ export const ResultDetailModal: React.FC<ResultDetailModalProps> = ({
       salesTotalRp: result.brankasReport?.totalFisikSalesRp,
       selisihSalesRp: result.brankasReport?.selisihSalesRp,
       nettSOBrankasRp: result.brankasReport?.nettSOBrankasRp,
-      notes: result.notes || result.brankasReport?.notes
+      storeCondition: result.storeCondition,
+      cctvCheck: result.cctvCheck,
+      opCheck: result.opCheck,
+      itemTidakTerdisplayCount: result.itemTidakTerdisplayCount,
+      wdcpAudit: result.wdcpAudit,
+      notes: result.notes || result.notesAndActionPlan || result.brankasReport?.notes
     });
   };
 
