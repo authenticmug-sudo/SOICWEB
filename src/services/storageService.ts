@@ -207,6 +207,15 @@ export function getDeterministicStoreId(item: Partial<Store>): string {
   return item.id && !item.id.startsWith('STORE-EXCEL-') ? item.id : `st_${Date.now()}`;
 }
 
+export function getDeterministicScheduleId(item: Partial<SOSchedule>): string {
+  const storeKey = (item.storeCode || item.storeId || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  const dateKey = (item.scheduledDate || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  if (storeKey && dateKey) {
+    return `sch_${storeKey}_${dateKey}`.slice(0, 45);
+  }
+  return item.id && !item.id.startsWith('AUTO-SCHED-') && !item.id.startsWith('SCHED-') ? item.id : `sch_${Date.now()}`;
+}
+
 export function getDeterministicUniformId(item: Partial<UniformRecord>): string {
   const cat = (item.category || 'general').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
   const batch = (item.batchTitle || item.personnelName || 'batch').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
@@ -236,6 +245,12 @@ export function deduplicateEntityList<T extends { id: string }>(
   const groupMap = new Map<string, T[]>();
 
   const getEntityKey = (it: any): string => {
+    if (collectionName === 'schedules') {
+      const sc = (it.storeCode || it.storeId || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      const dt = (it.scheduledDate || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      if (sc && dt) return `sch_${sc}_${dt}`;
+      return `id_${it.id}`;
+    }
     if (collectionName === 'equipment') {
       const sn = (it.serialNumber || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
       const isFullSerial = sn && sn.length >= 6 && !sn.startsWith('000000');
@@ -282,6 +297,7 @@ export function deduplicateEntityList<T extends { id: string }>(
   };
 
   const getCanonicalId = (it: any): string => {
+    if (collectionName === 'schedules') return getDeterministicScheduleId(it);
     if (collectionName === 'equipment') return getDeterministicEquipmentId(it);
     if (collectionName === 'personnel') return getDeterministicPersonnelId(it);
     if (collectionName === 'stores') return getDeterministicStoreId(it);
@@ -398,21 +414,20 @@ function mergeAndSyncFirestoreWithLocal<T extends { id: string }>(
     }
   } catch {}
 
-  if (dedupedFsItems && dedupedFsItems.length > 0) {
-    const incomingIds = dedupedFsItems.map(item => item && item.id).filter(Boolean) as string[];
-    if (incomingIds.length > 0) {
-      untrackDeletedIdsForItems(storageKey, incomingIds);
-    }
-  }
-
   let deletedIds = getDeletedIdsSet(storageKey);
   const mergedMap = new Map<string, T>();
 
   // 2. Add Firestore items unless marked deleted locally
   for (const item of dedupedFsItems) {
-    if (item && item.id && !deletedIds.has(item.id)) {
-      mergedMap.set(item.id, item);
-      cacheMap.set(item.id, JSON.stringify(item));
+    if (item && item.id) {
+      if (!deletedIds.has(item.id)) {
+        mergedMap.set(item.id, item);
+        cacheMap.set(item.id, JSON.stringify(item));
+      } else if (!isFirestoreQuotaExceeded) {
+        // Doc was deleted locally; ensure it is removed from Firestore and cache
+        deleteDoc(doc(db, collectionName, item.id)).catch(() => {});
+        cacheMap.delete(item.id);
+      }
     }
   }
 
@@ -766,6 +781,10 @@ export async function saveScheduleToFirestore(schedule: SOSchedule): Promise<voi
 
 export async function deleteScheduleFromFirestore(scheduleId: string): Promise<void> {
   trackDeletedId(STORAGE_KEYS.SCHEDULES, scheduleId);
+  recordDeletedId(STORAGE_KEYS.SCHEDULES, scheduleId);
+  if (syncedItemsHash['schedules']) {
+    syncedItemsHash['schedules'].delete(scheduleId);
+  }
   if (isFirestoreQuotaExceeded) return;
   try {
     await deleteDoc(doc(db, 'schedules', scheduleId));
@@ -1386,12 +1405,6 @@ export async function syncCollectionFromCloudinary<T extends { id: string }>(
         return localItems;
       }
       return null;
-    }
-
-    // Untrack deleted IDs for items present in Cloudinary master dataset
-    const incomingIds = cloudinaryData.map(item => item && item.id).filter(Boolean) as string[];
-    if (incomingIds.length > 0) {
-      untrackDeletedIdsForItems(storageKey, incomingIds);
     }
 
     deletedIds = getDeletedIdsSet(storageKey);

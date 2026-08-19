@@ -32,6 +32,11 @@ import {
   subscribeFirestoreData,
   clearAllDeletedIds,
   recordDeletedId,
+  deleteScheduleFromFirestore,
+  deleteStoreFromFirestore,
+  deletePersonnelFromFirestore,
+  deleteEquipmentFromFirestore,
+  deleteRepairLogFromFirestore,
   STORAGE_KEYS,
   getDashboardSummary,
   reconcilePendingExcelBackups
@@ -530,6 +535,8 @@ export default function App() {
   };
 
   const handleDeleteSchedule = (scheduleId: string) => {
+    recordDeletedId(STORAGE_KEYS.SCHEDULES, scheduleId);
+    deleteScheduleFromFirestore(scheduleId).catch(() => {});
     const updated = schedules.filter(s => s.id !== scheduleId);
     setSchedules(updated);
     saveSchedules(updated);
@@ -768,6 +775,7 @@ export default function App() {
 
   const handleDeleteStore = (storeId: string) => {
     recordDeletedId(STORAGE_KEYS.STORES, storeId);
+    deleteStoreFromFirestore(storeId).catch(() => {});
     const updated = stores.filter(s => s.id !== storeId);
     setStores(updated);
     saveStores(updated);
@@ -822,6 +830,7 @@ export default function App() {
 
   const handleDeletePersonnel = (id: string) => {
     recordDeletedId(STORAGE_KEYS.PERSONNEL, id);
+    deletePersonnelFromFirestore(id).catch(() => {});
     const updated = personnel.filter(p => p.id !== id);
     setPersonnel(updated);
     savePersonnel(updated);
@@ -854,6 +863,7 @@ export default function App() {
 
   const handleDeleteEquipment = (id: string) => {
     recordDeletedId(STORAGE_KEYS.EQUIPMENT, id);
+    deleteEquipmentFromFirestore(id).catch(() => {});
     const updated = equipment.filter(e => e.id !== id);
     setEquipment(updated);
     saveEquipment(updated);
@@ -886,6 +896,7 @@ export default function App() {
 
   const handleDeleteRepairLog = (id: string) => {
     recordDeletedId(STORAGE_KEYS.REPAIR_LOGS, id);
+    deleteRepairLogFromFirestore(id).catch(() => {});
     const updated = repairLogs.filter(r => r.id !== id);
     setRepairLogs(updated);
     saveRepairLogs(updated);
