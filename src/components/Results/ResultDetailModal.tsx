@@ -200,39 +200,41 @@ export const ResultDetailModal: React.FC<ResultDetailModalProps> = ({
           )}
 
           {/* High level KPI Comparison Box */}
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
-              <span className="text-[10px] font-bold text-slate-600 uppercase">Nilai System (Rp)</span>
-              <p className="text-sm font-bold text-slate-900 mt-1 font-mono">
-                {formatRupiah(result.systemValueTotalRp)}
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl">
+              <span className="text-[10px] font-bold text-rose-700 uppercase">Nota Kurang (NK)</span>
+              <p className="text-sm font-bold text-rose-700 mt-1 font-mono">
+                {formatRupiah(result.notaKurangNKValRp || 0)}
               </p>
             </div>
 
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
-              <span className="text-[10px] font-bold text-slate-600 uppercase">Nilai Fisik (Rp)</span>
-              <p className="text-sm font-bold text-slate-900 mt-1 font-mono">
-                {formatRupiah(result.physicalValueTotalRp)}
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+              <span className="text-[10px] font-bold text-emerald-700 uppercase">Nota Lebih (NL)</span>
+              <p className="text-sm font-bold text-emerald-700 mt-1 font-mono">
+                {formatRupiah(result.notaLebihNLValRp || 0)}
               </p>
             </div>
 
             <div className={`p-3 rounded-xl border ${
-              result.varianceValueTotalRp < 0 ? 'bg-rose-50 border-rose-200' : 'bg-emerald-50 border-emerald-200'
+              (result.nettNKLValRp || 0) < 0 ? 'bg-rose-50/80 border-rose-300' : 'bg-indigo-50 border-indigo-200'
             }`}>
-              <span className="text-[10px] font-bold uppercase text-slate-700">Selisih Fisik vs System</span>
+              <span className="text-[10px] font-bold uppercase text-slate-700">Nett NKL (Rp)</span>
               <p className={`text-sm font-extrabold mt-1 font-mono ${
-                result.varianceValueTotalRp < 0 ? 'text-rose-700' : 'text-emerald-700'
+                (result.nettNKLValRp || 0) < 0 ? 'text-rose-700' : 'text-indigo-800'
               }`}>
-                {result.varianceValueTotalRp > 0 ? '+' : ''}{formatRupiah(result.varianceValueTotalRp)}
+                {formatRupiah(result.nettNKLValRp || 0)}
               </p>
             </div>
 
-            <div className="p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl">
-              <span className="text-[10px] font-bold text-indigo-900 uppercase">Nett NKL (Rp)</span>
+            <div className={`p-3 rounded-xl border ${
+              (result.brankasReport?.selisihBrankasRp || result.brankasReport?.selisihSalesRp || 0) < 0 ? 'bg-rose-50 border-rose-200' : 'bg-amber-50 border-amber-200'
+            }`}>
+              <span className="text-[10px] font-bold text-amber-800 uppercase">Selisih Brankas</span>
               <p className={`text-sm font-extrabold mt-1 font-mono ${
-                (result.nettNKLValRp || 0) < 0 ? 'text-rose-700' : 'text-indigo-900'
+                (result.brankasReport?.selisihBrankasRp || result.brankasReport?.selisihSalesRp || 0) < 0 ? 'text-rose-700' : 'text-amber-800'
               }`}>
-                {formatRupiah(result.nettNKLValRp || 0)}
+                {formatRupiah(result.brankasReport?.selisihBrankasRp || result.brankasReport?.selisihSalesRp || 0)}
               </p>
             </div>
 

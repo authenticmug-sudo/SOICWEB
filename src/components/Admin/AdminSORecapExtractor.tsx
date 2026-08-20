@@ -20,11 +20,13 @@ import {
   ArrowUpDown,
   TrendingDown,
   TrendingUp,
-  RefreshCw
+  RefreshCw,
+  Landmark
 } from 'lucide-react';
 import { SOResult, RegionArea, UserRole, SOSchedule, Store, AuditorPersonnel } from '../../types/stockOpname';
 import { formatRupiah, formatDateIndo } from '../../utils/formatters';
 import { exportToExcelWithBackup } from '../../services/storageService';
+import { ResultDetailModal } from '../Results/ResultDetailModal';
 
 interface AdminSORecapExtractorProps {
   results: SOResult[];
@@ -61,6 +63,7 @@ export const AdminSORecapExtractor: React.FC<AdminSORecapExtractorProps> = ({
   const [selectedKorlap, setSelectedKorlap] = useState<string>('ALL');
   const [selectedApproval, setSelectedApproval] = useState<string>('ALL');
   const [copiedWA, setCopiedWA] = useState(false);
+  const [localSelectedResult, setLocalSelectedResult] = useState<SOResult | null>(null);
 
   // Extract unique Korlaps & Teams from results
   const korlapList = useMemo(() => {
@@ -113,18 +116,12 @@ export const AdminSORecapExtractor: React.FC<AdminSORecapExtractorProps> = ({
   // Summary KPI Calculations
   const kpis = useMemo(() => {
     const totalToko = filteredResults.length;
-    let totalSystemRp = 0;
-    let totalFisikRp = 0;
-    let totalVarianceRp = 0;
     let totalNKValRp = 0;
     let totalNLValRp = 0;
     let totalNettNKLValRp = 0;
     let totalSelisihBrankasRp = 0;
 
     filteredResults.forEach(r => {
-      totalSystemRp += r.systemValueTotalRp || 0;
-      totalFisikRp += r.physicalValueTotalRp || 0;
-      totalVarianceRp += r.varianceValueTotalRp || 0;
       totalNKValRp += r.notaKurangNKValRp || 0;
       totalNLValRp += r.notaLebihNLValRp || 0;
       totalNettNKLValRp += r.nettNKLValRp || 0;
@@ -133,9 +130,6 @@ export const AdminSORecapExtractor: React.FC<AdminSORecapExtractorProps> = ({
 
     return {
       totalToko,
-      totalSystemRp,
-      totalFisikRp,
-      totalVarianceRp,
       totalNKValRp,
       totalNLValRp,
       totalNettNKLValRp,
@@ -171,14 +165,6 @@ export const AdminSORecapExtractor: React.FC<AdminSORecapExtractorProps> = ({
         'Nama AM': r.namaAM || '-',
         'Nama AS': r.namaAS || '-',
         'Pimpinan Shift Toko': r.namaPimpinanShift || '-',
-
-        // Stock Opname Barang & Nilai Fisik vs System
-        'Total Nominal System (Rp)': r.systemValueTotalRp,
-        'Total Nominal Fisik (Rp)': r.physicalValueTotalRp,
-        'Total Nominal Selisih (Rp)': r.varianceValueTotalRp,
-        'Total Qty System': r.systemQtyTotal || 0,
-        'Total Qty Fisik': r.physicalQtyTotal || 0,
-        'Total Qty Selisih': r.varianceQtyTotal || 0,
 
         // NKL (Nota Kurang & Nota Lebih)
         'Nota Kurang (NK) Minus Rp': r.notaKurangNKValRp || 0,
@@ -248,9 +234,6 @@ export const AdminSORecapExtractor: React.FC<AdminSORecapExtractorProps> = ({
     if (selectedRegion !== 'ALL') msg += `📍 Wilayah: *${selectedRegion}*\n`;
     msg += `🏢 Total Toko Selesai SO: *${kpis.totalToko} Toko*\n`;
     msg += `-----------------------------------------\n`;
-    msg += `💰 *TOTAL SYSTEM:* ${formatRupiah(kpis.totalSystemRp)}\n`;
-    msg += `📦 *TOTAL FISIK:* ${formatRupiah(kpis.totalFisikRp)}\n`;
-    msg += `⚖️ *TOTAL SELISIH FISIK:* ${formatRupiah(kpis.totalVarianceRp)}\n`;
     msg += `🔻 *TOTAL NOTA KURANG (NK):* ${formatRupiah(kpis.totalNKValRp)}\n`;
     msg += `🟢 *TOTAL NOTA LEBIH (NL):* ${formatRupiah(kpis.totalNLValRp)}\n`;
     msg += `📑 *TOTAL NETT NKL:* ${formatRupiah(kpis.totalNettNKLValRp)}\n`;
@@ -261,6 +244,14 @@ export const AdminSORecapExtractor: React.FC<AdminSORecapExtractorProps> = ({
     navigator.clipboard.writeText(msg);
     setCopiedWA(true);
     setTimeout(() => setCopiedWA(false), 2500);
+  };
+
+  const handleOpenDetail = (r: SOResult) => {
+    if (onViewDetailResult) {
+      onViewDetailResult(r);
+    } else {
+      setLocalSelectedResult(r);
+    }
   };
 
   return (
@@ -282,7 +273,7 @@ export const AdminSORecapExtractor: React.FC<AdminSORecapExtractorProps> = ({
               </h1>
             </div>
             <p className="text-xs sm:text-sm text-amber-200/80 max-w-2xl">
-              Portal penarikan data komprehensif inputan hasil SO dari personil lapangan: mencakup Nota Kurang (NK), Nota Lebih (NL), SO Brankas Kasir, Selisih Nilai Fisik vs System, hingga Kondisi Toko & CCTV.
+              Portal penarikan data komprehensif inputan hasil SO dari personil lapangan: mencakup Nota Kurang (NK), Nota Lebih (NL), SO Brankas Kasir, hingga Kondisi Toko & CCTV.
             </p>
           </div>
 
@@ -290,7 +281,7 @@ export const AdminSORecapExtractor: React.FC<AdminSORecapExtractorProps> = ({
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={handleCopyWA}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-200 border border-amber-500/30 text-xs font-bold transition active:scale-95"
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-200 border border-amber-500/30 text-xs font-bold transition active:scale-95 cursor-pointer"
             >
               {copiedWA ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
               <span>{copiedWA ? 'Tersalin!' : 'Salin Rekap WA'}</span>
@@ -298,7 +289,7 @@ export const AdminSORecapExtractor: React.FC<AdminSORecapExtractorProps> = ({
 
             <button
               onClick={handleExportFullExcel}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black shadow-md shadow-amber-500/20 transition active:scale-95"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black shadow-md shadow-amber-500/20 transition active:scale-95 cursor-pointer"
             >
               <Download className="w-4 h-4" />
               <span>Tarik Rekap Lengkap (Excel)</span>
@@ -306,44 +297,44 @@ export const AdminSORecapExtractor: React.FC<AdminSORecapExtractorProps> = ({
           </div>
         </div>
 
-        {/* Big KPI Metrics Dashboard */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2.5 mt-6 pt-5 border-t border-amber-800/50">
-          <div className="p-2.5 bg-slate-900/60 rounded-xl border border-amber-500/20">
-            <span className="text-[10px] uppercase font-bold text-slate-400">Total Toko</span>
-            <p className="text-lg font-black text-white">{kpis.totalToko} Toko</p>
+        {/* Big KPI Metrics Dashboard (Cleaned of dummy physical/system data) */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 mt-6 pt-5 border-t border-amber-800/50">
+          <div className="p-3 bg-slate-900/70 rounded-xl border border-amber-500/20 shadow-xs">
+            <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
+              <Building2 className="w-3.5 h-3.5 text-amber-400" /> Total Toko Selesai
+            </span>
+            <p className="text-xl font-black text-white mt-0.5">{kpis.totalToko} Toko</p>
           </div>
 
-          <div className="p-2.5 bg-slate-900/60 rounded-xl border border-slate-700/50">
-            <span className="text-[10px] uppercase font-bold text-slate-400">Nilai System</span>
-            <p className="text-xs font-bold text-slate-200 font-mono mt-0.5">{formatRupiah(kpis.totalSystemRp)}</p>
+          <div className="p-3 bg-rose-950/60 rounded-xl border border-rose-500/30 shadow-xs">
+            <span className="text-[10px] uppercase font-bold text-rose-300 flex items-center gap-1">
+              <TrendingDown className="w-3.5 h-3.5 text-rose-400" /> Nota Kurang (NK)
+            </span>
+            <p className="text-sm font-black text-rose-300 font-mono mt-1">{formatRupiah(kpis.totalNKValRp)}</p>
           </div>
 
-          <div className="p-2.5 bg-slate-900/60 rounded-xl border border-slate-700/50">
-            <span className="text-[10px] uppercase font-bold text-slate-400">Nilai Fisik</span>
-            <p className="text-xs font-bold text-slate-200 font-mono mt-0.5">{formatRupiah(kpis.totalFisikRp)}</p>
+          <div className="p-3 bg-emerald-950/60 rounded-xl border border-emerald-500/30 shadow-xs">
+            <span className="text-[10px] uppercase font-bold text-emerald-300 flex items-center gap-1">
+              <TrendingUp className="w-3.5 h-3.5 text-emerald-400" /> Nota Lebih (NL)
+            </span>
+            <p className="text-sm font-black text-emerald-300 font-mono mt-1">{formatRupiah(kpis.totalNLValRp)}</p>
           </div>
 
-          <div className="p-2.5 bg-slate-900/60 rounded-xl border border-slate-700/50">
-            <span className="text-[10px] uppercase font-bold text-slate-400">Selisih Fisik</span>
-            <p className={`text-xs font-extrabold font-mono mt-0.5 ${kpis.totalVarianceRp < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
-              {formatRupiah(kpis.totalVarianceRp)}
+          <div className="p-3 bg-indigo-950/60 rounded-xl border border-indigo-500/30 shadow-xs">
+            <span className="text-[10px] uppercase font-bold text-indigo-300 flex items-center gap-1">
+              <DollarSign className="w-3.5 h-3.5 text-indigo-400" /> Nett NKL
+            </span>
+            <p className={`text-sm font-black font-mono mt-1 ${kpis.totalNettNKLValRp < 0 ? 'text-rose-400' : 'text-indigo-300'}`}>
+              {formatRupiah(kpis.totalNettNKLValRp)}
             </p>
           </div>
 
-          <div className="p-2.5 bg-rose-950/60 rounded-xl border border-rose-500/30">
-            <span className="text-[10px] uppercase font-bold text-rose-300">Nota Kurang (NK)</span>
-            <p className="text-xs font-bold text-rose-300 font-mono mt-0.5">{formatRupiah(kpis.totalNKValRp)}</p>
-          </div>
-
-          <div className="p-2.5 bg-emerald-950/60 rounded-xl border border-emerald-500/30">
-            <span className="text-[10px] uppercase font-bold text-emerald-300">Nota Lebih (NL)</span>
-            <p className="text-xs font-bold text-emerald-300 font-mono mt-0.5">{formatRupiah(kpis.totalNLValRp)}</p>
-          </div>
-
-          <div className="p-2.5 bg-indigo-950/60 rounded-xl border border-indigo-500/30">
-            <span className="text-[10px] uppercase font-bold text-indigo-300">Nett NKL</span>
-            <p className={`text-xs font-extrabold font-mono mt-0.5 ${kpis.totalNettNKLValRp < 0 ? 'text-rose-400' : 'text-indigo-300'}`}>
-              {formatRupiah(kpis.totalNettNKLValRp)}
+          <div className="p-3 bg-amber-950/60 rounded-xl border border-amber-500/30 shadow-xs col-span-2 sm:col-span-1">
+            <span className="text-[10px] uppercase font-bold text-amber-300 flex items-center gap-1">
+              <Landmark className="w-3.5 h-3.5 text-amber-400" /> Selisih Brankas
+            </span>
+            <p className={`text-sm font-black font-mono mt-1 ${kpis.totalSelisihBrankasRp < 0 ? 'text-rose-400' : 'text-amber-300'}`}>
+              {formatRupiah(kpis.totalSelisihBrankasRp)}
             </p>
           </div>
         </div>
@@ -361,7 +352,7 @@ export const AdminSORecapExtractor: React.FC<AdminSORecapExtractorProps> = ({
             className="w-full bg-transparent border-none outline-hidden text-slate-800 placeholder-slate-400 text-xs"
           />
           {searchQuery && (
-            <button onClick={() => setSearchQuery('')} className="text-slate-400 hover:text-slate-600">×</button>
+            <button onClick={() => setSearchQuery('')} className="text-slate-400 hover:text-slate-600 cursor-pointer">×</button>
           )}
         </div>
 
@@ -378,7 +369,7 @@ export const AdminSORecapExtractor: React.FC<AdminSORecapExtractorProps> = ({
             {selectedDate && (
               <button 
                 onClick={() => setSelectedDate('')}
-                className="text-[10px] text-rose-600 font-bold px-1 hover:bg-rose-50 rounded"
+                className="text-[10px] text-rose-600 font-bold px-1 hover:bg-rose-50 rounded cursor-pointer"
               >
                 Reset
               </button>
@@ -389,7 +380,7 @@ export const AdminSORecapExtractor: React.FC<AdminSORecapExtractorProps> = ({
           <select
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-700 font-medium"
+            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-700 font-medium cursor-pointer"
           >
             <option value="ALL">Semua Bulan</option>
             <option value="01">Januari</option>
@@ -410,7 +401,7 @@ export const AdminSORecapExtractor: React.FC<AdminSORecapExtractorProps> = ({
           <select
             value={selectedRegion}
             onChange={(e) => setSelectedRegion(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-700 font-medium"
+            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-700 font-medium cursor-pointer"
           >
             <option value="ALL">Semua Wilayah</option>
             {REGION_OPTIONS.map(r => (
@@ -422,7 +413,7 @@ export const AdminSORecapExtractor: React.FC<AdminSORecapExtractorProps> = ({
           <select
             value={selectedKorlap}
             onChange={(e) => setSelectedKorlap(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-700 font-medium"
+            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-700 font-medium cursor-pointer"
           >
             <option value="ALL">Semua Korlap / Tim</option>
             {korlapList.map(k => (
@@ -443,7 +434,7 @@ export const AdminSORecapExtractor: React.FC<AdminSORecapExtractorProps> = ({
           </div>
           <button
             onClick={handleExportFullExcel}
-            className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1.5"
+            className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1.5 cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Download Rekap Lengkap</span>
@@ -467,7 +458,6 @@ export const AdminSORecapExtractor: React.FC<AdminSORecapExtractorProps> = ({
                 <tr className="bg-slate-50/80 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
                   <th className="py-3 px-3.5">Toko & BA</th>
                   <th className="py-3 px-3.5">Tanggal & Tim</th>
-                  <th className="py-3 px-3.5">Nilai Fisik vs System</th>
                   <th className="py-3 px-3.5">Nota Kurang / Lebih (NKL)</th>
                   <th className="py-3 px-3.5">SO Brankas Toko</th>
                   <th className="py-3 px-3.5">Kondisi & Audit Toko</th>
@@ -507,19 +497,6 @@ export const AdminSORecapExtractor: React.FC<AdminSORecapExtractorProps> = ({
                         {r.officerInCharge && (
                           <div className="text-[10px] text-slate-500">Korlap: {r.officerInCharge}</div>
                         )}
-                      </td>
-
-                      {/* Nilai Fisik vs System */}
-                      <td className="py-3 px-3.5">
-                        <div className="text-[11px] text-slate-600">
-                          Sys: <span className="font-mono font-medium">{formatRupiah(r.systemValueTotalRp)}</span>
-                        </div>
-                        <div className="text-[11px] text-slate-600">
-                          Fisik: <span className="font-mono font-medium">{formatRupiah(r.physicalValueTotalRp)}</span>
-                        </div>
-                        <div className={`font-mono text-xs font-black mt-0.5 ${r.varianceValueTotalRp < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                          Selisih: {r.varianceValueTotalRp > 0 ? '+' : ''}{formatRupiah(r.varianceValueTotalRp)}
-                        </div>
                       </td>
 
                       {/* NKL */}
@@ -588,8 +565,9 @@ export const AdminSORecapExtractor: React.FC<AdminSORecapExtractorProps> = ({
                       {/* Actions */}
                       <td className="py-3 px-3.5 text-right">
                         <button
-                          onClick={() => onViewDetailResult(r)}
-                          className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold transition flex items-center gap-1 ml-auto"
+                          onClick={() => handleOpenDetail(r)}
+                          className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 active:scale-95 text-indigo-700 rounded-lg text-xs font-bold transition flex items-center gap-1 ml-auto cursor-pointer shadow-2xs"
+                          title="Lihat Detail Berita Acara (BA) & Rekapan Hasil SO"
                         >
                           <Eye className="w-3.5 h-3.5" />
                           <span>Detail BA</span>
@@ -603,6 +581,17 @@ export const AdminSORecapExtractor: React.FC<AdminSORecapExtractorProps> = ({
           </div>
         )}
       </div>
+
+      {/* Local Fallback Modal for BA Detail if needed */}
+      {localSelectedResult && (
+        <ResultDetailModal
+          result={localSelectedResult}
+          onClose={() => setLocalSelectedResult(null)}
+          onApproveResult={() => {}}
+          onRequestRecount={() => {}}
+        />
+      )}
     </div>
   );
 };
+

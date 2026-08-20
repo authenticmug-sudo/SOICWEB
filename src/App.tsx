@@ -1235,6 +1235,8 @@ export default function App() {
               schedules={schedules}
               stores={stores}
               personnel={personnel}
+              currentRole={currentRole}
+              onViewDetailResult={(res) => setSelectedResultDetail(res)}
             />
           )}
 
