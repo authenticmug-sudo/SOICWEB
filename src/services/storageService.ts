@@ -90,13 +90,28 @@ function calculateListHash<T>(items: T[]): string {
 }
 
 export function trackDeletedId(storageKey: string, id: string) {
+  if (!id) return;
   try {
     const deletedKey = `spv_deleted_ids_${storageKey}`;
+    const tombstoneKey = `spv_tombstones_${storageKey}`;
+    
+    // 1. Pending queue
     const deletedRaw = localStorage.getItem(deletedKey);
     const list: string[] = deletedRaw ? JSON.parse(deletedRaw) : [];
     if (!list.includes(id)) {
       list.push(id);
       localStorage.setItem(deletedKey, JSON.stringify(list));
+    }
+
+    // 2. Permanent tombstone registry (persists across sync cycles)
+    const tombRaw = localStorage.getItem(tombstoneKey);
+    let tombstones: string[] = tombRaw ? JSON.parse(tombRaw) : [];
+    if (!Array.isArray(tombstones)) tombstones = [];
+    if (!tombstones.includes(id)) {
+      tombstones.push(id);
+      // Keep up to 2000 recent tombstones
+      if (tombstones.length > 2000) tombstones = tombstones.slice(-2000);
+      localStorage.setItem(tombstoneKey, JSON.stringify(tombstones));
     }
   } catch {}
 }
@@ -120,18 +135,25 @@ export function untrackDeletedIdsForItems(storageKey: string, ids: string[]) {
 export function clearAllDeletedIds(storageKey: string) {
   try {
     localStorage.removeItem(`spv_deleted_ids_${storageKey}`);
+    localStorage.removeItem(`spv_tombstones_${storageKey}`);
   } catch {}
 }
 
 export function getDeletedIdsSet(storageKey: string): Set<string> {
+  const result = new Set<string>();
   try {
-    const raw = localStorage.getItem(`spv_deleted_ids_${storageKey}`);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return new Set(parsed);
+    const raw1 = localStorage.getItem(`spv_deleted_ids_${storageKey}`);
+    if (raw1) {
+      const p1 = JSON.parse(raw1);
+      if (Array.isArray(p1)) p1.forEach(id => result.add(id));
+    }
+    const raw2 = localStorage.getItem(`spv_tombstones_${storageKey}`);
+    if (raw2) {
+      const p2 = JSON.parse(raw2);
+      if (Array.isArray(p2)) p2.forEach(id => result.add(id));
     }
   } catch {}
-  return new Set();
+  return result;
 }
 
 // ------------------- CROSS-TAB & REALTIME SYNC BROADCASTER ------------------- //
@@ -779,15 +801,41 @@ export async function saveScheduleToFirestore(schedule: SOSchedule): Promise<voi
   }
 }
 
-export async function deleteScheduleFromFirestore(scheduleId: string): Promise<void> {
+export async function deleteScheduleFromFirestore(scheduleId: string, scheduleObj?: SOSchedule): Promise<void> {
   trackDeletedId(STORAGE_KEYS.SCHEDULES, scheduleId);
   recordDeletedId(STORAGE_KEYS.SCHEDULES, scheduleId);
   if (syncedItemsHash['schedules']) {
     syncedItemsHash['schedules'].delete(scheduleId);
   }
+
+  // Derive and track canonical ID as well
+  let canonicalId = '';
+  if (scheduleObj) {
+    canonicalId = getDeterministicScheduleId(scheduleObj);
+  } else {
+    try {
+      const stored = getStoredSchedules();
+      const match = stored.find(s => s.id === scheduleId);
+      if (match) {
+        canonicalId = getDeterministicScheduleId(match);
+      }
+    } catch {}
+  }
+
+  if (canonicalId && canonicalId !== scheduleId) {
+    trackDeletedId(STORAGE_KEYS.SCHEDULES, canonicalId);
+    recordDeletedId(STORAGE_KEYS.SCHEDULES, canonicalId);
+    if (syncedItemsHash['schedules']) {
+      syncedItemsHash['schedules'].delete(canonicalId);
+    }
+  }
+
   if (isFirestoreQuotaExceeded) return;
   try {
     await deleteDoc(doc(db, 'schedules', scheduleId));
+    if (canonicalId && canonicalId !== scheduleId) {
+      await deleteDoc(doc(db, 'schedules', canonicalId));
+    }
   } catch (err: any) {
     handleFirestoreError(err);
   }

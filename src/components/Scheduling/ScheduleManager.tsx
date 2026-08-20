@@ -757,17 +757,19 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
             setScheduleToDelete(null);
           }
         }}
-        title="Hapus Jadwal Stock Opname"
-        subtitle="Apakah Anda yakin ingin menghapus jadwal ini?"
+        title="Konfirmasi Hapus Penjadwalan SO"
+        subtitle="Apakah Anda yakin ingin menghapus jadwal toko ini?"
         itemName={scheduleToDelete ? `${scheduleToDelete.storeCode} - ${scheduleToDelete.storeName}` : undefined}
         itemDetails={scheduleToDelete ? [
           { label: 'Tanggal SO', value: formatDateIndo(scheduleToDelete.scheduledDate) },
-          { label: 'Jam', value: scheduleToDelete.scheduledTime || '21:00 WITA' },
-          { label: 'Penanggung Jawab', value: scheduleToDelete.officerInCharge || scheduleToDelete.spvInCharge || '-' },
-          { label: 'Status', value: scheduleToDelete.status }
+          { label: 'Jam Mulai', value: scheduleToDelete.scheduledTime || '21:00 WITA' },
+          { label: 'Penanggung Jawab / Korlap', value: scheduleToDelete.officerInCharge || scheduleToDelete.spvInCharge || '-' },
+          { label: 'Tim SO', value: scheduleToDelete.teamName || '-' },
+          { label: 'Status Saat Ini', value: scheduleToDelete.status }
         ] : []}
-        confirmText="Ya, Hapus Jadwal"
-        dangerBadgeText="Jadwal SO ini akan dihapus permanen dari kalender & portal sync."
+        confirmText="Ya, Hapus"
+        cancelText="Tidak, Batalkan"
+        dangerBadgeText="Toko akan dihapus permanen dari jadwal SO dan tidak akan muncul kembali."
       />
 
       {/* Success Toast Feedback */}

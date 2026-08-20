@@ -2120,56 +2120,87 @@ export const InputResultModal: React.FC<InputResultModalProps> = ({
             </div>
           )}
 
-          {/* SUBMIT FOOTER BUTTONS (Optimized for Mobile Touch) */}
-          <div className="pt-3 border-t border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <button
-                type="button"
-                onClick={() => handleManualSaveDraft(true)}
-                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm min-h-[44px] cursor-pointer"
-                title="Simpan progress inputan saat ini ke memori browser perangkat"
-              >
-                <Save className="w-4 h-4 text-amber-100" />
-                <span>Simpan Draft</span>
-              </button>
-
-              {activeTab === 'condition' ? (
-                <button
-                  type="button"
-                  onClick={handleCopyCurrentWA}
-                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-bold transition flex items-center justify-center gap-1.5 min-h-[44px] cursor-pointer"
-                >
-                  {isCopiedWA ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4 text-emerald-600" />}
-                  <span>{isCopiedWA ? 'Tersalin!' : 'Salin Format WA'}</span>
-                </button>
-              ) : (
+          {/* SUBMIT FOOTER BUTTONS (Batal, Simpan Draft, Salin WA, Simpan Rekapan SO) */}
+          <div className="pt-3.5 border-t border-slate-200 bg-slate-50/90 -mx-3 -mb-3 sm:-mx-6 sm:-mb-4 p-3 sm:p-4 rounded-b-2xl">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+              
+              {/* Reset Draft and Info Trigger */}
+              <div className="flex items-center justify-between sm:justify-start gap-2 text-xs">
+                {hasRestoredDraft && (
+                  <button
+                    type="button"
+                    onClick={handleClearDraft}
+                    className="text-[11px] font-bold text-rose-700 hover:text-rose-800 flex items-center gap-1 hover:underline cursor-pointer"
+                    title="Hapus draft tersimpan untuk toko ini"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Reset Draft</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setShowDraftExplanationModal(true)}
-                  className="hidden sm:flex text-[11px] text-amber-700 hover:text-amber-900 font-bold items-center gap-1 px-2 py-1 rounded hover:bg-amber-50 cursor-pointer"
-                  title="Lihat penjelasan cara kerja draft"
+                  className="text-[11px] text-slate-500 hover:text-indigo-600 font-medium flex items-center gap-1 cursor-pointer"
+                  title="Lihat info penyimpanan draft"
                 >
-                  <Info className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Info Draft</span>
+                  <Info className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>Info Draft Offline</span>
                 </button>
-              )}
-            </div>
+              </div>
 
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <button
-                type="button"
-                onClick={onClose}
-                className="w-1/3 sm:w-auto px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition min-h-[44px] cursor-pointer"
-              >
-                Batal
-              </button>
-              <button
-                type="submit"
-                className="w-2/3 sm:w-auto px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black transition shadow-md min-h-[44px] flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Simpan Rekapan SO</span>
-              </button>
+              {/* 4 Main Action Buttons Side-by-Side with Distinct Colors */}
+              <div className="grid grid-cols-2 sm:flex sm:items-center sm:justify-end gap-2 w-full sm:w-auto">
+                
+                {/* 1. Batal Button (Slate / Neutral) */}
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-3.5 py-2.5 rounded-xl bg-white hover:bg-slate-100 active:scale-95 text-slate-700 border border-slate-300 shadow-xs text-xs font-bold transition flex items-center justify-center gap-1.5 min-h-[44px] cursor-pointer"
+                  title="Batal dan tutup modal input hasil"
+                >
+                  <X className="w-4 h-4 text-slate-500" />
+                  <span>Batal</span>
+                </button>
+
+                {/* 2. Simpan Draft Button (Warm Amber / Honey) */}
+                <button
+                  type="button"
+                  onClick={() => handleManualSaveDraft(true)}
+                  className="px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 active:scale-95 text-white border border-amber-600 shadow-sm text-xs font-extrabold transition flex items-center justify-center gap-1.5 min-h-[44px] cursor-pointer"
+                  title="Simpan progress inputan saat ini ke memori browser perangkat"
+                >
+                  <Save className="w-4 h-4 text-amber-100" />
+                  <span className="hidden sm:inline">Simpan Draft</span>
+                  <span className="sm:hidden">Draft</span>
+                </button>
+
+                {/* 3. Salin WA Button (WhatsApp Emerald Green) */}
+                <button
+                  type="button"
+                  onClick={handleCopyCurrentWA}
+                  className={`px-3.5 py-2.5 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-1.5 min-h-[44px] cursor-pointer active:scale-95 shadow-sm border ${
+                    isCopiedWA 
+                      ? 'bg-emerald-700 text-white border-emerald-800'
+                      : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white border-emerald-700'
+                  }`}
+                  title="Salin format laporan WhatsApp hasil SO saat ini"
+                >
+                  {isCopiedWA ? <Check className="w-4 h-4 text-emerald-200" /> : <Copy className="w-4 h-4 text-emerald-100" />}
+                  <span>{isCopiedWA ? 'Tersalin!' : 'Salin WA'}</span>
+                </button>
+
+                {/* 4. Simpan Rekapan SO Button (Indigo Primary) */}
+                <button
+                  type="submit"
+                  className="col-span-2 sm:col-span-1 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 active:scale-95 text-white border border-indigo-700 text-xs font-black transition shadow-md min-h-[44px] flex items-center justify-center gap-1.5 cursor-pointer"
+                  title="Simpan dan finalisasi rekapan hasil Stock Opname ke database"
+                >
+                  <CheckCircle2 className="w-4 h-4 text-indigo-100" />
+                  <span>Simpan Rekapan</span>
+                </button>
+
+              </div>
+
             </div>
           </div>
 

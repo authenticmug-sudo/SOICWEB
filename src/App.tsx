@@ -32,6 +32,8 @@ import {
   subscribeFirestoreData,
   clearAllDeletedIds,
   recordDeletedId,
+  trackDeletedId,
+  getDeterministicScheduleId,
   deleteScheduleFromFirestore,
   deleteStoreFromFirestore,
   deletePersonnelFromFirestore,
@@ -535,11 +537,20 @@ export default function App() {
   };
 
   const handleDeleteSchedule = (scheduleId: string) => {
+    const targetSched = schedules.find(s => s.id === scheduleId);
     recordDeletedId(STORAGE_KEYS.SCHEDULES, scheduleId);
-    deleteScheduleFromFirestore(scheduleId).catch(() => {});
+    trackDeletedId(STORAGE_KEYS.SCHEDULES, scheduleId);
+    if (targetSched) {
+      const canonicalId = getDeterministicScheduleId(targetSched);
+      if (canonicalId) {
+        recordDeletedId(STORAGE_KEYS.SCHEDULES, canonicalId);
+        trackDeletedId(STORAGE_KEYS.SCHEDULES, canonicalId);
+      }
+    }
+    deleteScheduleFromFirestore(scheduleId, targetSched).catch(() => {});
     const updated = schedules.filter(s => s.id !== scheduleId);
     setSchedules(updated);
-    saveSchedules(updated);
+    saveSchedules(updated, true);
   };
 
   const handleAssignPersonnelSave = (scheduleId: string, personnelIds: string[], personnelNames: string[]) => {
