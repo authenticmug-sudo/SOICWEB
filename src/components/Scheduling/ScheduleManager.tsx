@@ -194,65 +194,9 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
             </p>
           </div>
 
-          {/* Action Buttons (2-column on mobile, inline on desktop) */}
-          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full md:w-auto">
-            {activeRoleContext !== 'OFFICER' && viewMode !== 'officer' && (
-              <>
-                {onOpenKorlapImageModal && (
-                  <button
-                    onClick={onOpenKorlapImageModal}
-                    className="w-full sm:w-auto px-3 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white rounded-xl text-xs font-bold shadow-xs hover:shadow transition flex items-center justify-center gap-1.5"
-                    title="Buat rute toko & gambar jadwal Excel Korlap"
-                  >
-                    <FileSpreadsheet className="w-4 h-4 text-emerald-200 shrink-0" />
-                    <span className="truncate">Input Korlap & Image</span>
-                  </button>
-                )}
-
-                <button
-                  onClick={onOpenAutoGenerator}
-                  className="w-full sm:w-auto px-3 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 active:scale-98 text-white rounded-xl text-xs font-black shadow-xs hover:shadow transition flex items-center justify-center gap-1.5"
-                  title="Generate otomatis jadwal dari 737 toko"
-                >
-                  <Wand2 className="w-4 h-4 text-purple-200 shrink-0" />
-                  <span className="truncate">Auto-Schedule (700+)</span>
-                </button>
-
-                <button
-                  onClick={onOpenCreateModal}
-                  className="w-full sm:w-auto px-3 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white rounded-xl text-xs font-black shadow-xs hover:shadow transition flex items-center justify-center gap-1.5"
-                  title="Tambah 1 jadwal audit toko manual"
-                >
-                  <Plus className="w-4 h-4 text-indigo-200 shrink-0" />
-                  <span className="truncate">+ Tambah Manual</span>
-                </button>
-              </>
-            )}
-
-            <button
-              onClick={handleExportSchedules}
-              className="w-full sm:w-auto px-3 py-2.5 bg-slate-100 hover:bg-slate-200 active:scale-98 text-slate-700 hover:text-slate-900 rounded-xl text-xs font-bold border border-slate-300 transition flex items-center justify-center gap-1.5 shadow-2xs"
-              title="Download rekap data jadwal ke file CSV"
-            >
-              <Download className="w-4 h-4 text-slate-500 shrink-0" />
-              <span className="truncate">Export CSV</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Super Account Dedicated Mode Switcher Toggle Bar */}
-        {currentRole === 'ALL' && (
-          <div className="p-2.5 bg-gradient-to-r from-purple-900/10 via-indigo-900/10 to-slate-900/10 rounded-2xl border border-purple-200/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-black text-purple-950 uppercase tracking-wider flex items-center gap-1">
-                ⚡ Mode Switcher Super Account:
-              </span>
-              <span className="text-[11px] text-purple-800 hidden lg:inline">
-                Pilih tampilan yang ingin Anda operasikan di bawah ini
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 sm:flex sm:items-center gap-1.5 bg-white p-1 rounded-xl border border-purple-200 shadow-2xs">
+          {/* Super Account Dedicated Mode Switcher Toggle Bar */}
+          {currentRole === 'ALL' && (
+            <div className="grid grid-cols-2 sm:flex sm:items-center gap-1.5 bg-slate-50 p-1.5 rounded-xl border border-purple-200 shadow-2xs">
               <button
                 onClick={() => {
                   setSuperAdminRoleMode('SUPERVISOR');
@@ -281,8 +225,8 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                 <span>📱 Portal Korlap / Officer</span>
               </button>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Filter Toolbar & Sub-Menu Navigation */}
@@ -338,8 +282,8 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
 
         </div>
 
-        {/* Sub-Menu Tabs Pill Box */}
-        <div className="pt-2 border-t border-slate-100 flex items-center justify-between flex-wrap gap-2">
+        {/* Sub-Menu Tabs Pill Box & Action Bar */}
+        <div className="pt-2 border-t border-slate-100 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
           
           <div className="flex items-center gap-1.5 bg-slate-100/90 p-1 rounded-xl border border-slate-200/80 w-full sm:w-auto overflow-x-auto custom-scrollbar">
             <button
@@ -396,8 +340,49 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
             </button>
           </div>
 
-          <div className="text-xs text-slate-500 font-medium hidden lg:block">
-            Tampil <strong className="text-slate-900">{filteredSchedules.length}</strong> dari {schedules.length} Toko Terjadwal
+          {/* Action Buttons: Export, Auto-Schedule, Add Schedule */}
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full md:w-auto">
+            {activeRoleContext !== 'OFFICER' && viewMode !== 'officer' && (
+              <>
+                {onOpenKorlapImageModal && (
+                  <button
+                    onClick={onOpenKorlapImageModal}
+                    className="w-full sm:w-auto px-3 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white rounded-xl text-xs font-bold shadow-xs hover:shadow transition flex items-center justify-center gap-1.5"
+                    title="Buat rute toko & gambar jadwal Excel Korlap"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-200 shrink-0" />
+                    <span className="truncate">Input Korlap & Image</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={onOpenAutoGenerator}
+                  className="w-full sm:w-auto px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 active:scale-98 text-white rounded-xl text-xs font-black shadow-xs hover:shadow transition flex items-center justify-center gap-1.5"
+                  title="Generate otomatis jadwal dari 737 toko"
+                >
+                  <Wand2 className="w-4 h-4 text-purple-200 shrink-0" />
+                  <span className="truncate">Auto-Schedule (700+)</span>
+                </button>
+
+                <button
+                  onClick={onOpenCreateModal}
+                  className="w-full sm:w-auto px-3 py-2 bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white rounded-xl text-xs font-black shadow-xs hover:shadow transition flex items-center justify-center gap-1.5"
+                  title="Tambah 1 jadwal audit toko manual"
+                >
+                  <Plus className="w-4 h-4 text-indigo-200 shrink-0" />
+                  <span className="truncate">+ Tambah Manual</span>
+                </button>
+              </>
+            )}
+
+            <button
+              onClick={handleExportSchedules}
+              className="w-full sm:w-auto px-3 py-2 bg-slate-100 hover:bg-slate-200 active:scale-98 text-slate-700 hover:text-slate-900 rounded-xl text-xs font-bold border border-slate-300 transition flex items-center justify-center gap-1.5 shadow-2xs"
+              title="Download rekap data jadwal ke file CSV"
+            >
+              <Download className="w-4 h-4 text-slate-500 shrink-0" />
+              <span className="truncate">Export CSV</span>
+            </button>
           </div>
 
         </div>
