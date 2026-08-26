@@ -145,8 +145,12 @@ export const ZoneStoreChecklist: React.FC<ZoneStoreChecklistProps> = ({
         !!matchedResult;
 
       // Extract Zona Criteria from Store or Schedule
-      const rawZona = storeObj?.riskLevel || storeObj?.smartClassification || 'Sedang';
-      const kriteriaZona = formatZoneText(rawZona);
+      const isHitam = Boolean(
+        storeObj?.isZonaHitam ||
+        storeObj?.zona?.toUpperCase().includes('HITAM') ||
+        storeObj?.keterangan?.toUpperCase().includes('ZONA HITAM')
+      );
+      const kriteriaZona = isHitam ? 'ZONA HITAM' : (storeObj?.zona || 'NON ZONA HITAM');
 
       const itemKey = `${sch.storeCode}_${schDate}`;
       processedKeys.add(itemKey);
@@ -269,8 +273,13 @@ export const ZoneStoreChecklist: React.FC<ZoneStoreChecklistProps> = ({
 
       // Zona Filter
       if (selectedZonaFilter !== 'ALL') {
-        if (!item.kriteriaZona.toLowerCase().includes(selectedZonaFilter.toLowerCase())) {
-          return false;
+        const zUpper = item.kriteriaZona.toUpperCase();
+        if (selectedZonaFilter === 'HITAM') {
+          const isHitam = zUpper.includes('HITAM') && !zUpper.includes('NON');
+          if (!isHitam) return false;
+        } else if (selectedZonaFilter === 'NON') {
+          const isNon = zUpper.includes('NON') || !zUpper.includes('HITAM');
+          if (!isNon) return false;
         }
       }
 
@@ -304,38 +313,50 @@ export const ZoneStoreChecklist: React.FC<ZoneStoreChecklistProps> = ({
     });
   }, [checklistData, searchQuery, selectedZonaFilter, selectedStatusFilter, selectedRegionFilter, selectedKorlapFilter, sortField, sortAsc]);
 
-  // Aggregate Metrics & Progress
+  // Aggregate Metrics & Progress based on Master Toko specifications
   const metrics = useMemo(() => {
     const total = checklistData.length;
     const sudah = checklistData.filter(i => i.isSudahSo).length;
     const belum = total - sudah;
     const percent = total > 0 ? Math.round((sudah / total) * 100) : 0;
 
-    // Breakdown per Zona
-    const zonaBreakdown = {
-      highTotal: 0,
-      highSudah: 0,
-      mediumTotal: 0,
-      mediumSudah: 0,
-      lowTotal: 0,
-      lowSudah: 0
-    };
+    // Breakdown per Master Toko Zona (ZONA HITAM vs NON ZONA HITAM)
+    let zonaHitamTotal = 0;
+    let zonaHitamSudah = 0;
+    let nonZonaHitamTotal = 0;
+    let nonZonaHitamSudah = 0;
 
     checklistData.forEach(item => {
-      const z = item.kriteriaZona.toLowerCase();
-      if (z.includes('high') || z.includes('tinggi') || z.includes('merah')) {
-        zonaBreakdown.highTotal++;
-        if (item.isSudahSo) zonaBreakdown.highSudah++;
-      } else if (z.includes('medium') || z.includes('sedang') || z.includes('kuning')) {
-        zonaBreakdown.mediumTotal++;
-        if (item.isSudahSo) zonaBreakdown.mediumSudah++;
+      const zUpper = item.kriteriaZona.toUpperCase();
+      if (zUpper.includes('HITAM') && !zUpper.includes('NON')) {
+        zonaHitamTotal++;
+        if (item.isSudahSo) zonaHitamSudah++;
       } else {
-        zonaBreakdown.lowTotal++;
-        if (item.isSudahSo) zonaBreakdown.lowSudah++;
+        nonZonaHitamTotal++;
+        if (item.isSudahSo) nonZonaHitamSudah++;
       }
     });
 
-    return { total, sudah, belum, percent, zonaBreakdown };
+    const zonaHitamBelum = zonaHitamTotal - zonaHitamSudah;
+    const zonaHitamPercent = zonaHitamTotal > 0 ? Math.round((zonaHitamSudah / zonaHitamTotal) * 100) : 0;
+
+    const nonZonaHitamBelum = nonZonaHitamTotal - nonZonaHitamSudah;
+    const nonZonaHitamPercent = nonZonaHitamTotal > 0 ? Math.round((nonZonaHitamSudah / nonZonaHitamTotal) * 100) : 0;
+
+    return {
+      total,
+      sudah,
+      belum,
+      percent,
+      zonaHitamTotal,
+      zonaHitamSudah,
+      zonaHitamBelum,
+      zonaHitamPercent,
+      nonZonaHitamTotal,
+      nonZonaHitamSudah,
+      nonZonaHitamBelum,
+      nonZonaHitamPercent
+    };
   }, [checklistData]);
 
   // Handle Export to Excel
@@ -374,10 +395,9 @@ export const ZoneStoreChecklist: React.FC<ZoneStoreChecklistProps> = ({
     msg += `• ✅ Sudah Selesai SO: *${metrics.sudah} Toko (${metrics.percent}%)*\n`;
     msg += `• ⏳ Belum Selesai SO: *${metrics.belum} Toko*\n\n`;
 
-    msg += `🏷️ *Capaian per Kriteria Zona:*\n`;
-    msg += `🔴 *Zona High:* ${metrics.zonaBreakdown.highSudah}/${metrics.zonaBreakdown.highTotal} SO (${metrics.zonaBreakdown.highTotal > 0 ? Math.round((metrics.zonaBreakdown.highSudah / metrics.zonaBreakdown.highTotal) * 100) : 0}%)\n`;
-    msg += `🟡 *Zona Medium:* ${metrics.zonaBreakdown.mediumSudah}/${metrics.zonaBreakdown.mediumTotal} SO (${metrics.zonaBreakdown.mediumTotal > 0 ? Math.round((metrics.zonaBreakdown.mediumSudah / metrics.zonaBreakdown.mediumTotal) * 100) : 0}%)\n`;
-    msg += `🟢 *Zona Low:* ${metrics.zonaBreakdown.lowSudah}/${metrics.zonaBreakdown.lowTotal} SO (${metrics.zonaBreakdown.lowTotal > 0 ? Math.round((metrics.zonaBreakdown.lowSudah / metrics.zonaBreakdown.lowTotal) * 100) : 0}%)\n\n`;
+    msg += `🏷️ *Capaian per Kategori Zona Toko:*\n`;
+    msg += `🔴 *Toko Zona Hitam:* ${metrics.zonaHitamSudah}/${metrics.zonaHitamTotal} SO (${metrics.zonaHitamPercent}%)\n`;
+    msg += `🟢 *Non Zona Hitam:* ${metrics.nonZonaHitamSudah}/${metrics.nonZonaHitamTotal} SO (${metrics.nonZonaHitamPercent}%)\n\n`;
 
     const pendingList = filteredData.filter(i => !i.isSudahSo).slice(0, 15);
     if (pendingList.length > 0) {
@@ -501,40 +521,39 @@ export const ZoneStoreChecklist: React.FC<ZoneStoreChecklistProps> = ({
               <p className="text-lg font-black text-amber-400">{metrics.belum}</p>
             </div>
             
-            {/* Zona Breakdown */}
-            <div className="p-2.5 bg-rose-950/50 rounded-xl border border-rose-500/30">
-              <span className="text-[10px] uppercase font-bold text-rose-300 flex items-center gap-1">
-                <ShieldAlert className="w-3 h-3" /> Zona High
+            {/* Toko Zona Hitam KPI */}
+            <div className="p-2.5 bg-rose-950/60 rounded-xl border border-rose-500/40">
+              <span className="text-[10px] uppercase font-extrabold text-rose-300 flex items-center gap-1">
+                <ShieldAlert className="w-3.5 h-3.5 text-rose-400" /> ZONA HITAM
               </span>
-              <p className="text-sm font-black text-rose-300">
-                {metrics.zonaBreakdown.highSudah} / {metrics.zonaBreakdown.highTotal}
-                <span className="text-[10px] font-normal text-rose-200 ml-1">
-                  ({metrics.zonaBreakdown.highTotal > 0 ? Math.round((metrics.zonaBreakdown.highSudah / metrics.zonaBreakdown.highTotal) * 100) : 0}%)
+              <p className="text-sm font-black text-rose-200">
+                {metrics.zonaHitamSudah} / {metrics.zonaHitamTotal}
+                <span className="text-[10px] font-bold text-rose-300 ml-1">
+                  ({metrics.zonaHitamPercent}%)
                 </span>
               </p>
             </div>
 
-            <div className="p-2.5 bg-amber-950/50 rounded-xl border border-amber-500/30">
-              <span className="text-[10px] uppercase font-bold text-amber-300 flex items-center gap-1">
-                <Shield className="w-3 h-3" /> Zona Medium
-              </span>
-              <p className="text-sm font-black text-amber-300">
-                {metrics.zonaBreakdown.mediumSudah} / {metrics.zonaBreakdown.mediumTotal}
-                <span className="text-[10px] font-normal text-amber-200 ml-1">
-                  ({metrics.zonaBreakdown.mediumTotal > 0 ? Math.round((metrics.zonaBreakdown.mediumSudah / metrics.zonaBreakdown.mediumTotal) * 100) : 0}%)
-                </span>
-              </p>
-            </div>
-
+            {/* Non Zona Hitam KPI */}
             <div className="p-2.5 bg-emerald-950/50 rounded-xl border border-emerald-500/30">
               <span className="text-[10px] uppercase font-bold text-emerald-300 flex items-center gap-1">
-                <ShieldCheck className="w-3 h-3" /> Zona Low
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" /> NON ZONA HITAM
               </span>
               <p className="text-sm font-black text-emerald-300">
-                {metrics.zonaBreakdown.lowSudah} / {metrics.zonaBreakdown.lowTotal}
-                <span className="text-[10px] font-normal text-emerald-200 ml-1">
-                  ({metrics.zonaBreakdown.lowTotal > 0 ? Math.round((metrics.zonaBreakdown.lowSudah / metrics.zonaBreakdown.lowTotal) * 100) : 0}%)
+                {metrics.nonZonaHitamSudah} / {metrics.nonZonaHitamTotal}
+                <span className="text-[10px] font-bold text-emerald-200 ml-1">
+                  ({metrics.nonZonaHitamPercent}%)
                 </span>
+              </p>
+            </div>
+
+            {/* Total Capaian */}
+            <div className="p-2.5 bg-indigo-950/60 rounded-xl border border-indigo-500/30">
+              <span className="text-[10px] uppercase font-bold text-indigo-300 flex items-center gap-1">
+                <BarChart3 className="w-3.5 h-3.5 text-indigo-400" /> % CAPAIAN TOTAL
+              </span>
+              <p className="text-lg font-black text-indigo-300">
+                {metrics.percent}%
               </p>
             </div>
           </div>
@@ -580,12 +599,11 @@ export const ZoneStoreChecklist: React.FC<ZoneStoreChecklistProps> = ({
           <select
             value={selectedZonaFilter}
             onChange={(e) => setSelectedZonaFilter(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
           >
             <option value="ALL">Semua Kriteria Zona</option>
-            <option value="High">🔴 Zona High / Tinggi</option>
-            <option value="Medium">🟡 Zona Medium / Sedang</option>
-            <option value="Low">🟢 Zona Low / Rendah</option>
+            <option value="HITAM">🔴 ZONA HITAM ({metrics.zonaHitamTotal})</option>
+            <option value="NON">🟢 NON ZONA HITAM ({metrics.nonZonaHitamTotal})</option>
           </select>
 
           {/* Filter Wilayah / Kabupaten */}
@@ -791,16 +809,17 @@ export const ZoneStoreChecklist: React.FC<ZoneStoreChecklistProps> = ({
 
                       {/* KRITERIA ZONA */}
                       <td className="py-3 px-3.5">
-                        <span className={`px-2.5 py-1 rounded-lg text-[10px] border inline-flex items-center gap-1 ${getZoneBadgeClass(item.kriteriaZona)}`}>
-                          {item.kriteriaZona.toLowerCase().includes('high') ? (
-                            <ShieldAlert className="w-3 h-3 shrink-0" />
-                          ) : item.kriteriaZona.toLowerCase().includes('low') ? (
-                            <ShieldCheck className="w-3 h-3 shrink-0" />
-                          ) : (
-                            <Shield className="w-3 h-3 shrink-0" />
-                          )}
-                          {item.kriteriaZona}
-                        </span>
+                        {item.kriteriaZona.toUpperCase().includes('HITAM') && !item.kriteriaZona.toUpperCase().includes('NON') ? (
+                          <span className="px-2.5 py-1 rounded-lg text-[10px] font-extrabold border inline-flex items-center gap-1.5 bg-rose-100 border-rose-300 text-rose-800 shadow-2xs">
+                            <ShieldAlert className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                            ZONA HITAM
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-lg text-[10px] font-extrabold border inline-flex items-center gap-1.5 bg-emerald-100 border-emerald-300 text-emerald-800 shadow-2xs">
+                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            NON ZONA HITAM
+                          </span>
+                        )}
                       </td>
 
                       {/* KORLAP / OFFICER PIC */}
