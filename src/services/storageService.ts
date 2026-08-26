@@ -1768,7 +1768,7 @@ export function subscribeFirestoreData(callbacks: {
 export function getDashboardSummary(stores: Store[], schedules: SOSchedule[], results: SOResult[]): DashboardSummary {
   const totalStores = stores.length;
   
-  const completedThisMonth = schedules.filter(s => s.status === 'Selesai').length;
+  const completedThisMonth = schedules.filter(s => s.status === 'Selesai' || s.spvApprovalStatus === 'Disetujui').length;
   const scheduledThisMonth = schedules.filter(s => s.status === 'Terjadwal' || s.status === 'Proses SO').length;
   const inProgressCount = schedules.filter(s => s.status === 'Proses SO').length;
   const pendingApprovalCount = results.filter(r => r.approvalStatus === 'Menunggu Approval SPV').length;
@@ -1789,7 +1789,44 @@ export function getDashboardSummary(stores: Store[], schedules: SOSchedule[], re
   });
 
   const avgAccuracyRate = results.length > 0 ? +(totalAccuracySum / results.length).toFixed(2) : 0;
-  const highRiskStoreCount = stores.filter(s => s.riskLevel === 'Tinggi').length;
+  const highRiskStoreCount = stores.filter(s => s.riskLevel === 'Tinggi' || s.zona === 'ZONA HITAM' || (s.zona && s.zona.toUpperCase().includes('HITAM'))).length;
+
+  // Zona Hitam Metrics Calculation
+  const isZonaHitamStore = (s: Store) => {
+    const z = String(s.zona || '').toUpperCase();
+    const ket = String(s.keterangan || '').toUpperCase();
+    return z.includes('HITAM') || s.isZonaHitam === true || s.riskLevel === 'Tinggi' || ket.includes('ZONA HITAM');
+  };
+
+  const zonaHitamStores = stores.filter(isZonaHitamStore);
+  const totalZonaHitam = zonaHitamStores.length;
+
+  // Check which Zona Hitam stores have been SO'd / approved in the filtered period
+  const zonaHitamTerSO = zonaHitamStores.filter(st => {
+    // 1. Check completed/approved schedule
+    const hasSched = schedules.some(sch => 
+      (sch.storeCode === st.code || sch.storeId === st.id || sch.storeName?.toLowerCase() === st.name?.toLowerCase()) &&
+      (sch.status === 'Selesai' || sch.spvApprovalStatus === 'Disetujui')
+    );
+    if (hasSched) return true;
+
+    // 2. Check result
+    const hasRes = results.some(r => 
+      (r.storeCode === st.code || r.storeId === st.id) &&
+      (r.approvalStatus === 'Disetujui' || !!r.baNumber)
+    );
+    if (hasRes) return true;
+
+    // 3. Check store active month / approved date
+    if (st.soSeptember && st.soSeptember !== '-' && st.soSeptember !== '0' && st.soSeptember !== '0-Jan-00' && st.soSeptember.toLowerCase() !== 'belum so') return true;
+    if (st.soAgustus && st.soAgustus !== '-' && st.soAgustus !== '0' && st.soAgustus !== '0-Jan-00' && st.soAgustus.toLowerCase() !== 'belum so') return true;
+    if (st.tglSoApproved && st.tglSoApproved !== '-') return true;
+
+    return false;
+  }).length;
+
+  const zonaHitamBelumSO = Math.max(0, totalZonaHitam - zonaHitamTerSO);
+  const achievePercentZonaHitam = totalZonaHitam > 0 ? Math.round((zonaHitamTerSO / totalZonaHitam) * 100) : 0;
 
   return {
     totalStores,
@@ -1801,7 +1838,12 @@ export function getDashboardSummary(stores: Store[], schedules: SOSchedule[], re
     totalVarianceRp,
     positiveVarianceRp,
     negativeVarianceRp,
-    highRiskStoreCount
+    highRiskStoreCount,
+    // Zona Hitam Metrics
+    totalZonaHitam,
+    zonaHitamTerSO,
+    zonaHitamBelumSO,
+    achievePercentZonaHitam
   };
 }
 

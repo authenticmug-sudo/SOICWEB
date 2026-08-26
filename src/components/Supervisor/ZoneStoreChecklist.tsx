@@ -69,8 +69,8 @@ export const ZoneStoreChecklist: React.FC<ZoneStoreChecklistProps> = ({
   onOpenInputResultModal,
   onSelectStore
 }) => {
-  // Active Filter Month (Default to August 2026 / current month)
-  const [selectedMonth, setSelectedMonth] = useState<string>('2026-08');
+  // Active Filter Month (Default to September 2026 / current active month)
+  const [selectedMonth, setSelectedMonth] = useState<string>('2026-09');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedZonaFilter, setSelectedZonaFilter] = useState<string>('ALL');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('ALL');
@@ -82,7 +82,8 @@ export const ZoneStoreChecklist: React.FC<ZoneStoreChecklistProps> = ({
 
   // Available month periods
   const MONTH_OPTIONS = [
-    { value: '2026-08', label: 'Agustus 2026 (Bulan Berjalan)' },
+    { value: '2026-09', label: 'September 2026 (Bulan Aktif)' },
+    { value: '2026-08', label: 'Agustus 2026' },
     { value: '2026-07', label: 'Juli 2026' },
     { value: '2026-06', label: 'Juni 2026' },
     { value: '2026-05', label: 'Mei 2026' },
@@ -175,46 +176,63 @@ export const ZoneStoreChecklist: React.FC<ZoneStoreChecklistProps> = ({
     });
 
     // 2. Also incorporate Master Store items that have date inputs for the current month but not yet explicitly in schedule table
-    if (selectedMonth === '2026-08' || selectedMonth === 'ALL') {
-      stores.forEach(st => {
-        const tglSoInput = st.soAgustus || st.tglSoApproved;
-        if (!tglSoInput) return;
+    stores.forEach(st => {
+      let tglSoInput = '';
+      if (selectedMonth === '2026-09' || (selectedMonth === 'ALL' && st.soSeptember)) {
+        tglSoInput = st.soSeptember || '';
+      } else if (selectedMonth === '2026-08' || (selectedMonth === 'ALL' && st.soAgustus)) {
+        tglSoInput = st.soAgustus || '';
+      } else if (selectedMonth === '2026-07' || (selectedMonth === 'ALL' && st.tglSoJuli)) {
+        tglSoInput = st.tglSoJuli || '';
+      } else if (selectedMonth === '2026-06' || (selectedMonth === 'ALL' && st.tglSoJuni)) {
+        tglSoInput = st.tglSoJuni || '';
+      } else if (selectedMonth === '2026-05' || (selectedMonth === 'ALL' && st.tglSoMei)) {
+        tglSoInput = st.tglSoMei || '';
+      } else if (st.tglSoApproved) {
+        tglSoInput = st.tglSoApproved;
+      }
 
-        // Normalize date to standard ISO 2026-08-XX if written as day number e.g. "17" or "17-Aug"
-        let normalizedDate = tglSoInput;
-        if (/^\d{1,2}$/.test(tglSoInput.trim())) {
-          const dayNum = tglSoInput.trim().padStart(2, '0');
-          normalizedDate = `2026-08-${dayNum}`;
-        }
+      if (!tglSoInput || tglSoInput === '-' || tglSoInput === '0' || tglSoInput === '0-Jan-00' || tglSoInput.toLowerCase() === 'belum so') return;
 
-        const itemKey = `${st.code}_${normalizedDate}`;
-        if (processedKeys.has(itemKey)) return; // Already included from schedule
+      // Normalize date to standard ISO if written as day number e.g. "17"
+      let normalizedDate = tglSoInput;
+      if (/^\d{1,2}$/.test(tglSoInput.trim())) {
+        const dayNum = tglSoInput.trim().padStart(2, '0');
+        const mPart = selectedMonth !== 'ALL' ? selectedMonth : '2026-09';
+        normalizedDate = `${mPart}-${dayNum}`;
+      }
 
-        const storeResults = resultsByStoreCode.get(st.code) || [];
-        const hasResult = storeResults.some(r => r.auditDate === normalizedDate || (r.auditDate && r.auditDate.startsWith('2026-08')));
+      const itemKey = `${st.code}_${normalizedDate}`;
+      if (processedKeys.has(itemKey)) return; // Already included from schedule
 
-        const rawZona = st.riskLevel || st.smartClassification || 'Sedang';
-        const kriteriaZona = formatZoneText(rawZona);
+      const storeResults = resultsByStoreCode.get(st.code) || [];
+      const hasResult = storeResults.some(r => r.auditDate === normalizedDate || (selectedMonth !== 'ALL' && r.auditDate && r.auditDate.startsWith(selectedMonth)));
 
-        items.push({
-          id: `store_${st.id}_${normalizedDate}`,
-          storeId: st.id,
-          storeCode: st.code,
-          storeName: st.name,
-          region: st.region || 'Kota Denpasar',
-          kabupaten: st.kabupaten || st.city,
-          tanggalSo: normalizedDate,
-          tanggalSoFormatted: formatDateIndo(normalizedDate),
-          kriteriaZona,
-          isSudahSo: hasResult,
-          keteranganSo: hasResult ? 'Sudah SO' : 'Belum SO',
-          officerInCharge: st.korlap || '-',
-          teamName: st.assignedTeamId || '-',
-          scheduleStatus: hasResult ? 'Selesai' : 'Terjadwal (Master)',
-          storeObj: st
-        });
+      const isHitam = Boolean(
+        st.isZonaHitam ||
+        st.zona?.toUpperCase().includes('HITAM') ||
+        st.keterangan?.toUpperCase().includes('ZONA HITAM')
+      );
+      const kriteriaZona = isHitam ? 'ZONA HITAM' : (st.zona || 'NON ZONA HITAM');
+
+      items.push({
+        id: `store_${st.id}_${normalizedDate}`,
+        storeId: st.id,
+        storeCode: st.code,
+        storeName: st.name,
+        region: st.region || 'Kota Denpasar',
+        kabupaten: st.kabupaten || st.city,
+        tanggalSo: normalizedDate,
+        tanggalSoFormatted: formatDateIndo(normalizedDate),
+        kriteriaZona,
+        isSudahSo: hasResult,
+        keteranganSo: hasResult ? 'Sudah SO' : 'Belum SO',
+        officerInCharge: st.korlap || '-',
+        teamName: st.assignedTeamId || '-',
+        scheduleStatus: hasResult ? 'Selesai' : 'Terjadwal (Master)',
+        storeObj: st
       });
-    }
+    });
 
     return items;
   }, [schedules, stores, results, selectedMonth, storesByCode, resultsByScheduleId, resultsByStoreCode]);

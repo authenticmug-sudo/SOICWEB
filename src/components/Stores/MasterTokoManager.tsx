@@ -697,10 +697,10 @@ export const MasterTokoManager: React.FC<MasterTokoManagerProps> = ({
                     <th className="p-3">Kode Toko</th>
                     <th className="p-3">Nama Toko</th>
                     <th className="p-3">Kabupaten</th>
-                    <th className="p-3">Status / Type SO</th>
-                    <th className="p-3">Jenis Toko</th>
+                    <th className="p-3">Type SO</th>
+                    <th className="p-3">Zona Toko</th>
                     <th className="p-3">Korlap</th>
-                    <th className="p-3">JOP / Saldo</th>
+                    <th className="p-3 text-right">Saldo Toko</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
@@ -708,33 +708,46 @@ export const MasterTokoManager: React.FC<MasterTokoManagerProps> = ({
                     .filter(s => 
                       s.code.toLowerCase().includes(previewSearch.toLowerCase()) ||
                       s.name.toLowerCase().includes(previewSearch.toLowerCase()) ||
-                      s.city.toLowerCase().includes(previewSearch.toLowerCase())
+                      (s.city || '').toLowerCase().includes(previewSearch.toLowerCase()) ||
+                      (s.kabupaten || '').toLowerCase().includes(previewSearch.toLowerCase())
                     )
                     .slice(0, 150)
-                    .map((st, idx) => (
-                      <tr key={st.id || idx} className="hover:bg-slate-50/80 transition">
-                        <td className="p-3 text-slate-400 font-mono">{idx + 1}</td>
-                        <td className="p-3 font-mono font-bold text-indigo-600">{st.code}</td>
-                        <td className="p-3 font-extrabold text-slate-900">{st.name}</td>
-                        <td className="p-3 text-slate-600">{st.city}</td>
-                        <td className="p-3">
-                          <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 font-bold rounded border border-indigo-200 text-[11px]">
-                            {st.qm || 'Quarterly'}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${
-                            st.jenisToko?.includes('FRESH') 
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 
-                              : 'bg-slate-100 text-slate-700'
-                          }`}>
-                            {st.jenisToko || 'REGULAR'}
-                          </span>
-                        </td>
-                        <td className="p-3 text-slate-700 font-semibold">{st.korlap || '-'}</td>
-                        <td className="p-3 font-mono text-slate-600">JOP: {st.jop || '4'}</td>
-                      </tr>
-                    ))}
+                    .map((st, idx) => {
+                      const isHitam = Boolean(
+                        st.isZonaHitam ||
+                        st.zona?.toUpperCase().includes('HITAM') ||
+                        st.keterangan?.toUpperCase().includes('ZONA HITAM')
+                      );
+
+                      const formattedSaldo = typeof st.saldoToko === 'number' 
+                        ? `Rp ${st.saldoToko.toLocaleString('id-ID')}` 
+                        : (st.saldoToko ? `Rp ${st.saldoToko}` : '-');
+
+                      return (
+                        <tr key={st.id || idx} className={`hover:bg-slate-50/80 transition ${isHitam ? 'bg-rose-50/30' : ''}`}>
+                          <td className="p-3 text-slate-400 font-mono">{idx + 1}</td>
+                          <td className="p-3 font-mono font-bold text-amber-900">{st.code}</td>
+                          <td className="p-3 font-extrabold text-slate-900">{st.name}</td>
+                          <td className="p-3 text-slate-700 font-semibold">{st.kabupaten || st.city || '-'}</td>
+                          <td className="p-3">
+                            <span className="px-2 py-0.5 bg-slate-100 text-slate-800 font-black rounded border border-slate-300 text-[10px]">
+                              {st.qm || st.typeSo || 'Q'}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <span className={`px-2 py-0.5 rounded font-extrabold text-[10px] border ${
+                              isHitam 
+                                ? 'bg-rose-100 border-rose-300 text-rose-800' 
+                                : 'bg-emerald-100 border-emerald-300 text-emerald-800'
+                            }`}>
+                              {st.zona || (isHitam ? 'ZONA HITAM' : 'NON ZONA HITAM')}
+                            </span>
+                          </td>
+                          <td className="p-3 text-slate-700 font-semibold">{st.korlap || '-'}</td>
+                          <td className="p-3 font-mono font-bold text-slate-900 text-right">{formattedSaldo}</td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>

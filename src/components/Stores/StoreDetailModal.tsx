@@ -56,44 +56,84 @@ export const StoreDetailModal: React.FC<StoreDetailModalProps> = ({
           {/* Metadata Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-3.5 bg-slate-50 rounded-xl border border-slate-200">
             <div>
-              <span className="text-[10px] uppercase font-bold text-slate-400">Tipe Operasional</span>
-              <p className="font-bold text-slate-800 mt-0.5">{store.storeType}</p>
-            </div>
-
-            <div>
-              <span className="text-[10px] uppercase font-bold text-slate-400">Kriteria Zona</span>
+              <span className="text-[10px] uppercase font-bold text-slate-400">Zona Toko</span>
               <p className="mt-0.5">
-                {store.riskLevel ? (
-                  <span className={`px-2 py-0.5 rounded text-[10px] border ${getRiskBadgeClass(store.riskLevel)}`}>
-                    {formatZoneText(store.riskLevel)}
+                {(store.isZonaHitam || store.zona?.toUpperCase().includes('HITAM') || store.keterangan?.toUpperCase().includes('ZONA HITAM')) ? (
+                  <span className="px-2.5 py-1 rounded-md bg-slate-900 border border-rose-600 text-rose-300 font-black text-[10px] inline-flex items-center gap-1 shadow-xs">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                    ZONA HITAM
                   </span>
                 ) : (
-                  <span className="text-slate-400 font-mono text-xs select-none">-</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 border border-emerald-200 text-emerald-700">
+                    {store.zona || 'NON ZONA HITAM'}
+                  </span>
                 )}
               </p>
             </div>
 
             <div>
-              <span className="text-[10px] uppercase font-bold text-slate-400">Area / Wilayah</span>
-              <p className="font-bold text-indigo-700 mt-0.5">
-                {store.region || store.city || '-'}
+              <span className="text-[10px] uppercase font-bold text-slate-400">Saldo Toko</span>
+              <p className="font-mono font-bold text-slate-900 mt-0.5">
+                {typeof store.saldoToko === 'number' 
+                  ? `Rp ${store.saldoToko.toLocaleString('id-ID')}` 
+                  : (store.saldoToko ? `Rp ${store.saldoToko}` : '-')}
               </p>
             </div>
 
             <div>
-              <span className="text-[10px] uppercase font-bold text-slate-400">Kepala Toko</span>
-              <p className="font-medium text-slate-800 mt-0.5">{store.managerName || '-'}</p>
+              <span className="text-[10px] uppercase font-bold text-slate-400">Type SO (Q/M)</span>
+              <p className="font-bold text-slate-800 mt-0.5">
+                {store.qm || store.typeSo || '-'}
+              </p>
             </div>
 
             <div>
-              <span className="text-[10px] uppercase font-bold text-slate-400">Telepon Kontak</span>
-              <p className="font-mono text-slate-700 mt-0.5">{store.phone || '-'}</p>
+              <span className="text-[10px] uppercase font-bold text-slate-400">Coverage</span>
+              <p className="font-bold text-indigo-700 mt-0.5">
+                {store.coverage || '-'}
+              </p>
             </div>
 
             <div>
-              <span className="text-[10px] uppercase font-bold text-slate-400">Status Toko</span>
-              <p className="font-bold text-emerald-700 text-sm mt-0.5">
-                {store.status || 'Aktif Operasional'}
+              <span className="text-[10px] uppercase font-bold text-slate-400">Frekuensi Tidak SO</span>
+              <p className="font-bold text-slate-800 mt-0.5">
+                <span className={`px-2 py-0.5 rounded font-black text-[11px] ${
+                  (store.frekuensiTidakSO ?? 0) >= 3 
+                    ? 'bg-rose-100 text-rose-800 border border-rose-300' 
+                    : (store.frekuensiTidakSO ?? 0) > 0
+                    ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                    : 'bg-slate-100 text-slate-700'
+                }`}>
+                  {store.frekuensiTidakSO ?? 0} Kali
+                </span>
+              </p>
+            </div>
+
+            <div>
+              <span className="text-[10px] uppercase font-bold text-slate-400">Keterangan Master</span>
+              <p className="font-semibold text-slate-800 text-xs mt-0.5">
+                {store.keterangan || '-'}
+              </p>
+            </div>
+
+            <div>
+              <span className="text-[10px] uppercase font-bold text-slate-400">Kabupaten / Wilayah</span>
+              <p className="font-medium text-slate-800 mt-0.5">
+                {store.kabupaten || store.region || store.city || '-'}
+              </p>
+            </div>
+
+            <div>
+              <span className="text-[10px] uppercase font-bold text-slate-400">AM / AS</span>
+              <p className="font-medium text-slate-700 mt-0.5">
+                {store.am || '-'} / {store.as || '-'}
+              </p>
+            </div>
+
+            <div>
+              <span className="text-[10px] uppercase font-bold text-slate-400">Korlap / Officer</span>
+              <p className="font-bold text-indigo-800 mt-0.5">
+                {store.korlap || '-'}
               </p>
             </div>
           </div>

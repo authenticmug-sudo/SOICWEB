@@ -45,6 +45,7 @@ import {
 } from './services/storageService';
 import { ensureStoreCoordinates, autoSyncStoreRegionAndKabupaten } from './utils/geoUtils';
 import { formatSmartSODate } from './utils/formatters';
+import { autoSyncStoreWithApprovedSchedule } from './utils/storeSyncUtils';
 import { 
   Store, 
   SOSchedule, 
@@ -645,16 +646,15 @@ export default function App() {
     saveSchedules(updated);
 
     if (targetSched) {
-      // 1. Update matching store master with Approved SO date
+      // 1. Update matching store master with Approved SO date & auto-fill active month column (e.g. September 2026)
       const approvedDateStr = targetSched.scheduledDate;
       const updatedStores = stores.map(st => {
-        if (st.code === targetSched.storeCode || st.id === targetSched.storeId || st.name.toLowerCase() === targetSched.storeName.toLowerCase()) {
-          return {
-            ...st,
-            lastSODate: approvedDateStr,
-            tglSoApproved: approvedDateStr,
-            soAgustus: approvedDateStr
-          };
+        if (
+          st.code === targetSched.storeCode || 
+          st.id === targetSched.storeId || 
+          (st.name && targetSched.storeName && st.name.toLowerCase() === targetSched.storeName.toLowerCase())
+        ) {
+          return autoSyncStoreWithApprovedSchedule(st, approvedDateStr);
         }
         return st;
       });

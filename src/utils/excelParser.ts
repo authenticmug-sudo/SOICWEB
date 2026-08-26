@@ -222,11 +222,17 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
       const addressVal = findVal(['alamat', 'address', 'lokasi']);
       const amVal = findVal(['am', 'area manager']);
       const asVal = findVal(['as', 'assistant manager']);
-      const region = findVal(['cabang', 'region', 'area']) || 'Bali & Nusa Tenggara';
-      const qm = findVal(['type so', 'status so', 'q/m', 'qm']);
+      const region = findVal(['wilayah', 'cabang', 'region', 'area']) || 'BALI';
+      const coverageVal = findVal(['coverage', 'dc/igr', 'dc / igr', 'distribusi']);
+      const typeSoVal = findVal(['type so', 'status so', 'type_so', 'q/m', 'qm']);
       const korlap = findVal(['korlap', 'officer', 'penanggung jawab']);
       const jop = findVal(['jop']);
-      const saldo = findVal(['saldo', 'saldo toko']);
+      const saldoRaw = findVal(['saldo toko agustus', 'saldo toko', 'saldo_toko', 'saldo']);
+      let saldoTokoNum: number | string = saldoRaw;
+      if (saldoRaw) {
+        const cleaned = saldoRaw.replace(/[^0-9.-]/g, '');
+        saldoTokoNum = !isNaN(Number(cleaned)) && cleaned !== '' ? Number(cleaned) : saldoRaw;
+      }
 
       // Parse coordinates if provided
       const rawCoord = findVal(['koordinat', 'koordinat toko', 'koordinat_toko', 'lat long', 'lat/long', 'lat,long', 'gps', 'location', 'lokasi', 'coordinate', 'coordinates', 'coord', 'titik', 'posisi', 'map', 'geo']);
@@ -271,28 +277,76 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
       const skuVal = findVal(['totalsku', 'total sku', 'sku']);
       const totalSKUCount = skuVal && !isNaN(Number(skuVal.replace(/[^0-9]/g, ''))) ? Number(skuVal.replace(/[^0-9]/g, '')) : undefined;
 
-      const riskVal = findVal(['risk level', 'risklevel', 'risiko', 'tingkat risiko']);
-      const riskLevel = riskVal ? (riskVal as any) : undefined;
+      // Parse ZONA (ZONA HITAM vs NON ZONA HITAM)
+      const zonaRaw = findVal(['zona', 'kriteria zona', 'zona toko', 'kriteria_zona', 'status zona']);
+      let zonaFormatted = 'NON ZONA HITAM';
+      let isZonaHitam = false;
+      let riskLevel: 'Tinggi' | 'Sedang' | 'Rendah' = 'Rendah';
+
+      if (zonaRaw) {
+        const zUpper = zonaRaw.toUpperCase();
+        if (zUpper.includes('HITAM') || zUpper === 'ZONA HITAM' || zUpper === 'BLACK ZONE') {
+          zonaFormatted = 'ZONA HITAM';
+          isZonaHitam = true;
+          riskLevel = 'Tinggi';
+        } else if (zUpper.includes('TINGGI') || zUpper.includes('HIGH')) {
+          zonaFormatted = 'ZONA HITAM';
+          isZonaHitam = true;
+          riskLevel = 'Tinggi';
+        } else if (zUpper.includes('SEDANG') || zUpper.includes('MEDIUM')) {
+          zonaFormatted = 'NON ZONA HITAM';
+          riskLevel = 'Sedang';
+        } else {
+          zonaFormatted = 'NON ZONA HITAM';
+          riskLevel = 'Rendah';
+        }
+      }
 
       const accVal = findVal(['akurasi', 'accuracy', 'last accuracy', 'akurasi so']);
       const lastAccuracyRate = accVal && !isNaN(parseFloat(accVal.replace(/[^0-9.]/g, ''))) ? parseFloat(accVal.replace(/[^0-9.]/g, '')) : undefined;
 
       const jenisTokoVal = findVal(['jenis toko', 'jenis_toko', 'tipetoko', 'tipe toko', 'storetype']);
-      const ketVal = findVal(['keterangan', 'notes', 'nkl', 'ket']);
+      const ketVal = findVal(['keterangan', 'notes', 'nkl', 'ket']) || 'TOKO EKSIS';
+      const soAktivaVal = findVal(['so aktiva', 'so_aktiva', 'aktiva']);
       const phoneVal = findVal(['notelp', 'no telp', 'phone', 'telepon']);
 
-      const tglSoMei = formatSmartSODate(findVal(['tgl so mei', 'so mei', 'mei']));
-      const tglSoJuni = formatSmartSODate(findVal(['tgl so juni', 'so juni', 'juni']));
-      const tglSoJuli = formatSmartSODate(findVal(['tgl so juli', 'so juli', 'juli']));
-      const soAgustus = formatSmartSODate(findVal(['so agustus', 'tgl so agustus', 'agustus', 'so bulan ini', 'jadwal so']));
+      const tglSoMei = formatSmartSODate(findVal(["so mei '26", 'so mei', 'tgl so mei', 'mei']));
+      const tglSoJuni = formatSmartSODate(findVal(["so juni '26", 'so juni', 'tgl so juni', 'juni']));
+      const tglSoJuli = formatSmartSODate(findVal(["so juli '26", 'so juli', 'tgl so juli', 'juli']));
+      const soAgustus = formatSmartSODate(findVal(["so agustus '26", 'so agustus', 'tgl so agustus', 'agustus', 'so bulan ini', 'jadwal so']));
+      const soSeptember = formatSmartSODate(findVal(["so september '26", 'so september', 'tgl so september', 'september']));
       const tglSoApproved = formatSmartSODate(findVal(['tgl so approved', 'so approved', 'approved spv', 'so disetujui', 'tgl so']));
+
+      // Parse FREKUENSI TIDAK SO
+      const freqRaw = findVal(['frekuensi tidak so', 'frekuensi_tidak_so', 'freq tidak so', 'tidak so']);
+      let frekuensiTidakSO = 0;
+      if (freqRaw && !isNaN(Number(freqRaw))) {
+        frekuensiTidakSO = Number(freqRaw);
+      } else {
+        // Calculate based on monthly columns
+        const monthsChecked = [
+          tglSoMei && tglSoMei !== '-',
+          tglSoJuni && tglSoJuni !== '-',
+          tglSoJuli && tglSoJuli !== '-',
+          soAgustus && soAgustus !== '-',
+          soSeptember && soSeptember !== '-'
+        ];
+        if (soSeptember && soSeptember !== '-') {
+          frekuensiTidakSO = 0;
+        } else {
+          for (let m = 4; m >= 0; m--) {
+            if (!monthsChecked[m]) frekuensiTidakSO++;
+            else break;
+          }
+        }
+      }
 
       const storeObj: Store = {
         id: `STORE-DATASET-${storeCode}-${r}`,
         code: storeCode,
         name: storeName,
         region: region as any,
-        address: addressVal,
+        address: addressVal || `Jl. Raya ${storeName}`,
         city: kabVal,
         kabupaten: kabVal,
         district: kecVal,
@@ -302,21 +356,28 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
         koordinat: rawCoord || (parsedLat && parsedLng ? `${parsedLat}, ${parsedLng}` : undefined),
         am: amVal,
         as: asVal,
-        saldoToko: saldo,
-        qm: qm,
+        saldoToko: saldoTokoNum,
+        coverage: coverageVal || 'DC',
+        typeSo: typeSoVal || 'M',
+        qm: typeSoVal || 'M',
         smartClassification: findVal(['perubahan', 'kategori', 'klasifikasi', 'turun kelas']) || '',
         korlap: korlap,
         keterangan: ketVal,
-        jenisToko: jenisTokoVal,
+        zona: zonaFormatted,
+        isZonaHitam: isZonaHitam,
+        soAktiva: soAktivaVal,
+        frekuensiTidakSO: frekuensiTidakSO,
+        jenisToko: jenisTokoVal || 'REGULER',
         jop: jop,
         tglSoMei: tglSoMei !== '-' ? tglSoMei : undefined,
         tglSoJuni: tglSoJuni !== '-' ? tglSoJuni : undefined,
         tglSoJuli: tglSoJuli !== '-' ? tglSoJuli : undefined,
         soAgustus: soAgustus !== '-' ? soAgustus : undefined,
+        soSeptember: soSeptember !== '-' ? soSeptember : undefined,
         tglSoApproved: tglSoApproved !== '-' ? tglSoApproved : undefined,
         storeType: 'Regular Minimarket',
-        managerName: korlap,
-        phone: phoneVal,
+        managerName: korlap || 'Kepala Toko',
+        phone: phoneVal || '08123456789',
         totalSKUCount,
         riskLevel,
         lastAccuracyRate
@@ -333,11 +394,20 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
     });
   }
 
-  // Pick best sheet with the most parsed stores
-  let bestSheet = sheetResults.reduce<SheetParseResult | null>((best, current) => {
-    if (!best) return current;
-    return current.stores.length > best.stores.length ? current : best;
-  }, null);
+  // Prioritize "MASTER TOKO BALI" sheet if present!
+  let masterBaliSheet = sheetResults.find(s => 
+    s.sheetName.toUpperCase().includes('MASTER TOKO BALI') || 
+    s.sheetName.toUpperCase().includes('MASTER TOKO') ||
+    s.sheetName.toUpperCase().includes('MASTER')
+  );
+
+  // Fallback: Pick best sheet with the most parsed stores
+  let bestSheet = masterBaliSheet && masterBaliSheet.stores.length > 0
+    ? masterBaliSheet
+    : sheetResults.reduce<SheetParseResult | null>((best, current) => {
+        if (!best) return current;
+        return current.stores.length > best.stores.length ? current : best;
+      }, null);
 
   return {
     allSheets: sheetResults,

@@ -26,7 +26,10 @@ export const AddEditStoreModal: React.FC<AddEditStoreModalProps> = ({
   const [managerName, setManagerName] = useState('');
   const [phone, setPhone] = useState('');
   const [totalSKUCount, setTotalSKUCount] = useState<number>(5000);
-  const [riskLevel, setRiskLevel] = useState<'Tinggi' | 'Sedang' | 'Rendah'>('Rendah');
+  const [zona, setZona] = useState<string>('NON ZONA HITAM');
+  const [coverage, setCoverage] = useState<string>('DC');
+  const [qm, setQm] = useState<string>('Q');
+  const [saldoToko, setSaldoToko] = useState<string>('0');
   const [latitude, setLatitude] = useState<string>('');
   const [longitude, setLongitude] = useState<string>('');
   const [koordinatRaw, setKoordinatRaw] = useState<string>('');
@@ -38,11 +41,14 @@ export const AddEditStoreModal: React.FC<AddEditStoreModalProps> = ({
       setRegion(editingStore.region);
       setCity(editingStore.city);
       setAddress(editingStore.address);
-      setStoreType(editingStore.storeType);
-      setManagerName(editingStore.managerName);
-      setPhone(editingStore.phone);
-      setTotalSKUCount(editingStore.totalSKUCount);
-      setRiskLevel(editingStore.riskLevel);
+      setStoreType(editingStore.storeType || 'Regular Minimarket');
+      setManagerName(editingStore.managerName || editingStore.korlap || '');
+      setPhone(editingStore.phone || '');
+      setTotalSKUCount(editingStore.totalSKUCount || 5000);
+      setZona(editingStore.zona || (editingStore.isZonaHitam ? 'ZONA HITAM' : 'NON ZONA HITAM'));
+      setCoverage(editingStore.coverage || 'DC');
+      setQm(editingStore.qm || editingStore.typeSo || 'Q');
+      setSaldoToko(typeof editingStore.saldoToko === 'number' ? String(editingStore.saldoToko) : (editingStore.saldoToko || '0'));
       setLatitude(editingStore.latitude ? String(editingStore.latitude) : '');
       setLongitude(editingStore.longitude ? String(editingStore.longitude) : '');
       setKoordinatRaw(editingStore.koordinat || (editingStore.latitude && editingStore.longitude ? `${editingStore.latitude}, ${editingStore.longitude}` : ''));
@@ -56,7 +62,10 @@ export const AddEditStoreModal: React.FC<AddEditStoreModalProps> = ({
       setManagerName('');
       setPhone('08123456789');
       setTotalSKUCount(5000);
-      setRiskLevel('Rendah');
+      setZona('NON ZONA HITAM');
+      setCoverage('DC');
+      setQm('Q');
+      setSaldoToko('0');
       setLatitude('-8.6705');
       setLongitude('115.2126');
       setKoordinatRaw('S8 40 13.8 E115 12 45.4');
@@ -83,12 +92,15 @@ export const AddEditStoreModal: React.FC<AddEditStoreModalProps> = ({
     const finalLat = parsed.isValid && parsed.latitude !== undefined ? parsed.latitude : (latitude ? Number(latitude) : undefined);
     const finalLng = parsed.isValid && parsed.longitude !== undefined ? parsed.longitude : (longitude ? Number(longitude) : undefined);
 
+    const isHitam = zona.toUpperCase().includes('HITAM');
+
     const newOrUpdatedStore: Store = {
       id: editingStore ? editingStore.id : `STORE-${Date.now()}`,
       code,
       name,
       region,
       city,
+      kabupaten: editingStore?.kabupaten || city,
       address,
       latitude: finalLat,
       longitude: finalLng,
@@ -97,7 +109,12 @@ export const AddEditStoreModal: React.FC<AddEditStoreModalProps> = ({
       managerName,
       phone,
       totalSKUCount,
-      riskLevel,
+      zona: isHitam ? 'ZONA HITAM' : 'NON ZONA HITAM',
+      isZonaHitam: isHitam,
+      coverage,
+      qm,
+      typeSo: qm,
+      saldoToko: Number(saldoToko) || saldoToko,
       lastAccuracyRate: editingStore ? editingStore.lastAccuracyRate : 98.5,
       lastSODate: editingStore ? editingStore.lastSODate : undefined
     };
@@ -255,32 +272,61 @@ export const AddEditStoreModal: React.FC<AddEditStoreModalProps> = ({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Tipe Operasional Toko
+                Zona Toko (Master Data)
               </label>
               <select
-                value={storeType}
-                onChange={(e) => setStoreType(e.target.value as StoreType)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs"
+                value={zona}
+                onChange={(e) => setZona(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs font-bold text-slate-800"
               >
-                <option value="Regular Minimarket">Regular Minimarket</option>
-                <option value="Flagship Supermarket">Flagship Supermarket</option>
-                <option value="Express Outlet">Express Outlet</option>
-                <option value="Distribution Hub Center">Distribution Hub Center</option>
+                <option value="NON ZONA HITAM">🟢 Non Zona Hitam (Reguler)</option>
+                <option value="ZONA HITAM">🔴 ZONA HITAM (High-Risk Audit)</option>
               </select>
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Kriteria Zona Toko
+                Saldo Toko (Rp)
+              </label>
+              <input
+                type="number"
+                value={saldoToko}
+                onChange={(e) => setSaldoToko(e.target.value)}
+                placeholder="Contoh: 350000000"
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs font-mono font-semibold"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Coverage
               </label>
               <select
-                value={riskLevel}
-                onChange={(e) => setRiskLevel(e.target.value as any)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs font-medium"
+                value={coverage}
+                onChange={(e) => setCoverage(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs"
               >
-                <option value="Tinggi">🔴 Zona High (Tinggi - Prioritas)</option>
-                <option value="Sedang">🟡 Zona Medium (Sedang - Reguler)</option>
-                <option value="Rendah">🟢 Zona Low (Rendah - Aman)</option>
+                <option value="DC">DC (Distribution Center)</option>
+                <option value="IGR">IGR (Indogrosir)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Type SO (Frekuensi Audit)
+              </label>
+              <select
+                value={qm}
+                onChange={(e) => setQm(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs"
+              >
+                <option value="Q">Type Q (Quarterly - Triwulan)</option>
+                <option value="M">Type M (Monthly - Bulanan)</option>
+                <option value="Q1">Type Q1</option>
+                <option value="Q2">Type Q2</option>
+                <option value="Q3">Type Q3</option>
               </select>
             </div>
           </div>

@@ -53,55 +53,56 @@ export const ALL_STORE_COLUMNS: ColumnDef[] = [
   { id: 'code', label: 'KD TOKO', category: 'Identitas', defaultVisible: true },
   { id: 'name', label: 'NAMA TOKO', category: 'Identitas', defaultVisible: true },
   { id: 'koordinat', label: 'KOORDINAT', category: 'Lokasi', defaultVisible: false },
-  { id: 'kecamatan', label: 'KECAMATAN', category: 'Lokasi', defaultVisible: true },
-  { id: 'kabupaten', label: 'KABUPATEN', category: 'Lokasi', defaultVisible: true },
+  { id: 'saldoToko', label: 'SALDO TOKO', category: 'Status & Keuangan', defaultVisible: true },
   { id: 'am', label: 'AM', category: 'Penanggung Jawab', defaultVisible: false },
   { id: 'as', label: 'AS', category: 'Penanggung Jawab', defaultVisible: false },
-  { id: 'korlap', label: 'KORLAP/OFFICER', category: 'Penanggung Jawab', defaultVisible: true },
-  { id: 'saldoToko', label: 'SALDO TOKO', category: 'Status & Keuangan', defaultVisible: true },
-  { id: 'qm', label: 'Q/M', category: 'Jadwal SO', defaultVisible: false },
-  { id: 'tglSoMei', label: 'TGL SO MEI', category: 'Jadwal SO', defaultVisible: false },
-  { id: 'tglSoJuni', label: 'TGL SO JUNI', category: 'Jadwal SO', defaultVisible: false },
-  { id: 'tglSoJuli', label: 'TGL SO JULI', category: 'Jadwal SO', defaultVisible: false },
-  { id: 'soAgustus', label: 'SO BULAN INI', category: 'Jadwal SO', defaultVisible: true },
-  { id: 'tglSoApproved', label: 'SO APPROVED (SPV)', category: 'Jadwal SO', defaultVisible: true },
-  { id: 'smartClassification', label: 'KRITERIA CERDAS', category: 'Identitas', defaultVisible: true },
-  { id: 'keterangan', label: 'KETERANGAN', category: 'Status & Keuangan', defaultVisible: false },
-  { id: 'jenisToko', label: 'JENIS TOKO', category: 'Identitas', defaultVisible: true },
-  { id: 'riskLevel', label: 'KRITERIA ZONA', category: 'Status & Keuangan', defaultVisible: true },
-  { id: 'jop', label: 'JOP', category: 'Status & Keuangan', defaultVisible: false },
-  { id: 'storeType', label: 'TIPE TOKO (RITEL)', category: 'Identitas', defaultVisible: false }
+  { id: 'region', label: 'WILAYAH', category: 'Lokasi', defaultVisible: false },
+  { id: 'kabupaten', label: 'KABUPATEN', category: 'Lokasi', defaultVisible: true },
+  { id: 'kecamatan', label: 'KECAMATAN', category: 'Lokasi', defaultVisible: false },
+  { id: 'coverage', label: 'COVERAGE', category: 'Identitas', defaultVisible: true },
+  { id: 'qm', label: 'TYPE SO', category: 'Jadwal SO', defaultVisible: true },
+  { id: 'tglSoMei', label: "SO MEI '26", category: 'Jadwal SO', defaultVisible: false },
+  { id: 'tglSoJuni', label: "SO JUNI '26", category: 'Jadwal SO', defaultVisible: false },
+  { id: 'tglSoJuli', label: "SO JULI '26", category: 'Jadwal SO', defaultVisible: false },
+  { id: 'soAgustus', label: "SO AGUSTUS '26", category: 'Jadwal SO', defaultVisible: true },
+  { id: 'soSeptember', label: "SO SEPTEMBER '26", category: 'Jadwal SO', defaultVisible: true },
+  { id: 'tglSoApproved', label: 'SO APPROVED (SPV)', category: 'Jadwal SO', defaultVisible: false },
+  { id: 'frekuensiTidakSO', label: 'FREKUENSI TIDAK SO', category: 'Jadwal SO', defaultVisible: true },
+  { id: 'keterangan', label: 'KETERANGAN', category: 'Status & Keuangan', defaultVisible: true },
+  { id: 'zona', label: 'ZONA', category: 'Status & Keuangan', defaultVisible: true },
+  { id: 'soAktiva', label: 'SO AKTIVA', category: 'Status & Keuangan', defaultVisible: false },
+  { id: 'korlap', label: 'KORLAP/OFFICER', category: 'Penanggung Jawab', defaultVisible: true }
 ];
 
 const PRESETS = [
   {
+    id: 'master_bali',
+    name: 'Master Toko Bali (Excel)',
+    desc: 'Struktur urutan kolom persis Sheet Master Toko Bali',
+    cols: ['code', 'name', 'koordinat', 'saldoToko', 'am', 'as', 'region', 'kabupaten', 'coverage', 'qm', 'tglSoMei', 'tglSoJuni', 'tglSoJuli', 'soAgustus', 'soSeptember', 'frekuensiTidakSO', 'keterangan', 'zona', 'soAktiva']
+  },
+  {
+    id: 'zona_hitam',
+    name: '🔴 Monitoring Zona Hitam',
+    desc: 'Fokus toko high risk, frekuensi tidak SO & jadwal',
+    cols: ['code', 'name', 'zona', 'frekuensiTidakSO', 'soSeptember', 'soAgustus', 'saldoToko', 'kabupaten', 'korlap', 'keterangan']
+  },
+  {
     id: 'ringkas',
     name: 'Ringkas (Default)',
-    desc: 'Tampilan esensial & bersih',
-    cols: ['code', 'name', 'kabupaten', 'korlap', 'riskLevel', 'saldoToko', 'jenisToko']
+    desc: 'Tampilan esensial & monitoring cepat',
+    cols: ['code', 'name', 'kabupaten', 'coverage', 'qm', 'zona', 'soSeptember', 'soAgustus', 'frekuensiTidakSO', 'saldoToko', 'korlap']
   },
   {
     id: 'jadwal',
-    name: 'Jadwal SO Mei - Agt',
-    desc: 'Monitoring tanggal SO per bulan',
-    cols: ['code', 'name', 'qm', 'tglSoMei', 'tglSoJuni', 'tglSoJuli', 'soAgustus', 'riskLevel', 'korlap', 'keterangan']
-  },
-  {
-    id: 'lokasi',
-    name: 'Detail Lokasi & Area',
-    desc: 'Koordinat, Kecamatan, AM, AS',
-    cols: ['code', 'name', 'koordinat', 'kecamatan', 'kabupaten', 'am', 'as', 'jenisToko']
-  },
-  {
-    id: 'keuangan',
-    name: 'Finansial & Status',
-    desc: 'Saldo Toko, Jenis Toko & Kriteria Zona',
-    cols: ['code', 'name', 'saldoToko', 'jenisToko', 'riskLevel']
+    name: 'Jadwal SO Mei - Sep',
+    desc: 'Monitoring riwayat tanggal SO per bulan',
+    cols: ['code', 'name', 'qm', 'tglSoMei', 'tglSoJuni', 'tglSoJuli', 'soAgustus', 'soSeptember', 'frekuensiTidakSO', 'zona', 'korlap']
   },
   {
     id: 'semua',
     name: 'Tampilkan Semua Kolom',
-    desc: 'Semua atribut data lengkap',
+    desc: 'Semua atribut data master toko lengkap',
     cols: ALL_STORE_COLUMNS.map(c => c.id)
   }
 ];
@@ -118,13 +119,11 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRegion, setSelectedRegion] = useState('ALL');
-  const [selectedType, setSelectedType] = useState('ALL');
-  const [selectedRisk, setSelectedRisk] = useState('ALL');
+  const [selectedQm, setSelectedQm] = useState('ALL');
+  const [selectedZona, setSelectedZona] = useState('ALL');
   const [selectedKorlap, setSelectedKorlap] = useState('ALL');
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
 
-  // Smart Criteria Categorizer Modal state
-  const [isCategorizerOpen, setIsCategorizerOpen] = useState(false);
   const [storeToDelete, setStoreToDelete] = useState<Store | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -167,49 +166,6 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
     }
     setSyncNotice(`100% Berhasil! ${updated.length} toko telah disinkronkan kolom Kabupaten & Wilayahnya secara cerdas berdasarkan koordinat GPS & kode toko.`);
     setTimeout(() => setSyncNotice(null), 6000);
-  };
-
-  const handleRunCategorization = () => {
-    let flagshipCount = 0;
-    let highVolCount = 0;
-    let medVolCount = 0;
-    let standardCount = 0;
-
-    const updated = stores.map(s => {
-      const saldo = typeof s.saldoToko === 'number' ? s.saldoToko : parseFloat(String(s.saldoToko || 0).replace(/[^0-9.]/g, '')) || 0;
-      const jns = (s.jenisToko || s.storeType || '').toUpperCase();
-
-      let classification = 'Standard Retail Outlet';
-      if (saldo >= 500000000 || jns.includes('SUPERMARKET') || jns.includes('HYPERMARKET')) {
-        classification = 'Flagship Supermarket (High Inventory)';
-        flagshipCount++;
-      } else if (saldo >= 200000000 || jns.includes('LARGE') || jns.includes('BIG')) {
-        classification = 'High-Volume Outlet';
-        highVolCount++;
-      } else if (saldo >= 50000000 || jns.includes('STANDART')) {
-        classification = 'Medium Volume Outlet';
-        medVolCount++;
-      } else {
-        classification = 'Compact Outlet';
-        standardCount++;
-      }
-
-      return {
-        ...s,
-        smartClassification: classification
-      };
-    });
-
-    if (onBulkUpdateStores) {
-      onBulkUpdateStores(updated);
-    }
-
-    setSyncNotice(
-      `⚡ Klasifikasi Cerdas Selesai! ${updated.length} Toko berhasil dikategorikan secara otomatis: ` +
-      `🏆 Flagship Supermarket (${flagshipCount}), 💎 High-Volume (${highVolCount}), 🏪 Medium Volume (${medVolCount}), 🏬 Compact (${standardCount}).`
-    );
-    setIsCategorizerOpen(false);
-    setTimeout(() => setSyncNotice(null), 8000);
   };
   
   // Column selector state
@@ -254,16 +210,24 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
       (s.city || '').toLowerCase().includes(searchLower) ||
       (s.kabupaten || '').toLowerCase().includes(searchLower) ||
       (s.kecamatan || '').toLowerCase().includes(searchLower) ||
+      (s.coverage || '').toLowerCase().includes(searchLower) ||
       effKorlap.toLowerCase().includes(searchLower) ||
       (s.am || '').toLowerCase().includes(searchLower) ||
       (s.as || '').toLowerCase().includes(searchLower);
 
-    const matchesRegion = selectedRegion === 'ALL' || s.region === selectedRegion;
-    const matchesType = selectedType === 'ALL' || s.storeType === selectedType;
-    const matchesRisk = selectedRisk === 'ALL' || s.riskLevel === selectedRisk;
+    const matchesRegion = selectedRegion === 'ALL' || s.region === selectedRegion || s.kabupaten === selectedRegion;
+    const matchesQm = selectedQm === 'ALL' || (s.qm && s.qm.toUpperCase().includes(selectedQm)) || (s.typeSo && s.typeSo.toUpperCase().includes(selectedQm));
     const matchesKorlap = selectedKorlap === 'ALL' || effKorlap === selectedKorlap;
 
-    return matchesSearch && matchesRegion && matchesType && matchesRisk && matchesKorlap;
+    const isStoreZonaHitam = Boolean(
+      s.isZonaHitam ||
+      s.zona?.toUpperCase().includes('HITAM') ||
+      s.keterangan?.toUpperCase().includes('ZONA HITAM')
+    );
+    const matchesZona = selectedZona === 'ALL' || 
+      (selectedZona === 'HITAM' ? isStoreZonaHitam : !isStoreZonaHitam);
+
+    return matchesSearch && matchesRegion && matchesQm && matchesKorlap && matchesZona;
   });
 
   const totalPages = Math.ceil(filteredStores.length / pageSize) || 1;
@@ -284,27 +248,27 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
 
   const handleExportCSV = () => {
     const data = filteredStores.map(s => ({
-      'KD TOKO': s.code,
+      'KDTK': s.code,
       'NAMA': s.name,
       'KOORDINAT': s.koordinat || (s.latitude && s.longitude ? `${s.latitude}, ${s.longitude}` : '-'),
+      'SALDO TOKO': typeof s.saldoToko === 'number' ? s.saldoToko : s.saldoToko || '0',
       'AM': s.am || '-',
       'AS': s.as || '-',
-      'SALDO TOKO': typeof s.saldoToko === 'number' ? s.saldoToko : s.saldoToko || '0',
-      'KECAMATAN': s.kecamatan || s.district || '-',
+      'WILAYAH': s.region || 'BALI',
       'KABUPATEN': s.kabupaten || s.city || '-',
-      'Q/M': s.qm || '-',
-      'TGL SO MEI': formatSmartSODate(s.tglSoMei),
-      'TGL SO JUNI': formatSmartSODate(s.tglSoJuni),
-      'TGL SO JULI': formatSmartSODate(s.tglSoJuli),
-      'SO BULAN INI (APPROVED SPV)': formatSmartSODate(s.tglSoApproved || s.soAgustus || s.lastSODate),
-      'STATUS APPROVAL SO': (s.tglSoApproved || s.lastSODate) ? 'DISETUJUI SPV' : 'BELUM SO',
-      'KORLAP/OFFICER': getEffectiveKorlap(s),
+      'COVERAGE': s.coverage || '-',
+      'TYPE SO': s.qm || s.typeSo || '-',
+      'SO MEI 26': formatSmartSODate(s.tglSoMei),
+      'SO JUNI 26': formatSmartSODate(s.tglSoJuni),
+      'SO JULI 26': formatSmartSODate(s.tglSoJuli),
+      'SO AGUSTUS 26': formatSmartSODate(s.soAgustus),
+      'SO SEPTEMBER 26': formatSmartSODate(s.soSeptember || s.tglSoApproved),
+      'FREKUENSI TIDAK SO': s.frekuensiTidakSO ?? 0,
       'KETERANGAN': s.keterangan || '-',
-      'JENIS TOKO': s.jenisToko || s.storeType,
-      'KLASIFIKASI KRITERIA': s.smartClassification || 'Standard Retail',
-      'JOP': s.jop !== undefined ? s.jop : '0'
+      'ZONA': s.zona || (s.isZonaHitam ? 'ZONA HITAM' : 'NON ZONA HITAM'),
+      'SO AKTIVA': s.soAktiva || '-'
     }));
-    exportToCSV('Master_Toko_Bali_Approved.csv', data);
+    exportToCSV('Master_Toko_Bali_Integrated.csv', data);
   };
 
   const isColVisible = (colId: string) => visibleColumns.includes(colId);
@@ -331,17 +295,6 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
 
         <div className="flex flex-wrap items-center gap-2">
           
-          {/* Smart AI Criteria Categorizer Button */}
-          <button
-            type="button"
-            onClick={() => setIsCategorizerOpen(true)}
-            className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-black shadow-xs transition flex items-center gap-1.5 active:scale-95"
-            title="Analisis & Klasifikasi Cerdas Kriteria Toko Berdasarkan Saldo & Tipe"
-          >
-            <Sparkles className="w-4 h-4 text-purple-200 animate-pulse" />
-            <span>Klasifikasi Cerdas</span>
-          </button>
-
           {/* Smart Auto-Sync Button */}
           <button
             type="button"
@@ -427,6 +380,20 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
         {/* Dropdown Filters */}
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
           
+          {/* Zona Filter */}
+          <select
+            value={selectedZona}
+            onChange={(e) => {
+              setSelectedZona(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="bg-slate-50 border border-slate-200 text-xs rounded-lg px-2.5 py-2 text-slate-700 font-bold focus:outline-none focus:border-amber-500"
+          >
+            <option value="ALL">Semua Zona Toko</option>
+            <option value="HITAM">🔴 Khusus Toko Zona Hitam ({stores.filter(s => s.isZonaHitam || s.zona?.toUpperCase().includes('HITAM') || s.keterangan?.toUpperCase().includes('ZONA HITAM')).length})</option>
+            <option value="NON_HITAM">🟢 Non Zona Hitam</option>
+          </select>
+
           <select
             value={selectedKorlap}
             onChange={(e) => {
@@ -456,32 +423,16 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
           </select>
 
           <select
-            value={selectedType}
+            value={selectedQm}
             onChange={(e) => {
-              setSelectedType(e.target.value);
+              setSelectedQm(e.target.value);
               setCurrentPage(1);
             }}
             className="bg-slate-50 border border-slate-200 text-xs rounded-lg px-2.5 py-2 text-slate-700 font-semibold focus:outline-none focus:border-amber-500"
           >
-            <option value="ALL">Semua Jenis / Tipe Toko</option>
-            <option value="Regular Minimarket">Regular Minimarket</option>
-            <option value="Flagship Supermarket">Flagship Supermarket</option>
-            <option value="Express Outlet">Express Outlet</option>
-            <option value="Distribution Hub Center">Distribution Hub Center</option>
-          </select>
-
-          <select
-            value={selectedRisk}
-            onChange={(e) => {
-              setSelectedRisk(e.target.value);
-              setCurrentPage(1);
-            }}
-            className="bg-slate-50 border border-slate-200 text-xs rounded-lg px-2.5 py-2 text-slate-700 font-semibold focus:outline-none focus:border-amber-500"
-          >
-            <option value="ALL">Semua Kriteria Zona</option>
-            <option value="Tinggi">🔴 Zona High (Tinggi)</option>
-            <option value="Sedang">🟡 Zona Medium (Sedang)</option>
-            <option value="Rendah">🟢 Zona Low (Rendah)</option>
+            <option value="ALL">Semua Type SO</option>
+            <option value="Q">Type Q (Quarterly)</option>
+            <option value="M">Type M (Monthly)</option>
           </select>
 
         </div>
@@ -532,23 +483,25 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
                 {isColVisible('code') && <th className="py-3 px-3 min-w-[90px]">KD TOKO</th>}
                 {isColVisible('name') && <th className="py-3 px-3 min-w-[180px]">NAMA TOKO</th>}
                 {isColVisible('koordinat') && <th className="py-3 px-3 min-w-[150px]">KOORDINAT</th>}
+                {isColVisible('saldoToko') && <th className="py-3 px-3 min-w-[120px] text-right">SALDO TOKO</th>}
                 {isColVisible('am') && <th className="py-3 px-3 min-w-[110px]">AM</th>}
                 {isColVisible('as') && <th className="py-3 px-3 min-w-[110px]">AS</th>}
-                {isColVisible('saldoToko') && <th className="py-3 px-3 min-w-[120px] text-right">SALDO TOKO</th>}
-                {isColVisible('kecamatan') && <th className="py-3 px-3 min-w-[120px]">KECAMATAN</th>}
+                {isColVisible('region') && <th className="py-3 px-3 min-w-[90px]">WILAYAH</th>}
                 {isColVisible('kabupaten') && <th className="py-3 px-3 min-w-[120px]">KABUPATEN</th>}
-                {isColVisible('qm') && <th className="py-3 px-3 text-center min-w-[60px]">Q/M</th>}
-                {isColVisible('tglSoMei') && <th className="py-3 px-3 text-center min-w-[95px]">TGL SO MEI</th>}
-                {isColVisible('tglSoJuni') && <th className="py-3 px-3 text-center min-w-[95px]">TGL SO JUNI</th>}
-                {isColVisible('tglSoJuli') && <th className="py-3 px-3 text-center min-w-[95px]">TGL SO JULI</th>}
-                {isColVisible('soAgustus') && <th className="py-3 px-3 text-center min-w-[95px]">SO AGUSTUS</th>}
+                {isColVisible('kecamatan') && <th className="py-3 px-3 min-w-[120px]">KECAMATAN</th>}
+                {isColVisible('coverage') && <th className="py-3 px-3 text-center min-w-[90px]">COVERAGE</th>}
+                {isColVisible('qm') && <th className="py-3 px-3 text-center min-w-[70px]">TYPE SO</th>}
+                {isColVisible('tglSoMei') && <th className="py-3 px-3 text-center min-w-[95px]">SO MEI '26</th>}
+                {isColVisible('tglSoJuni') && <th className="py-3 px-3 text-center min-w-[95px]">SO JUNI '26</th>}
+                {isColVisible('tglSoJuli') && <th className="py-3 px-3 text-center min-w-[95px]">SO JULI '26</th>}
+                {isColVisible('soAgustus') && <th className="py-3 px-3 text-center min-w-[95px]">SO AGT '26</th>}
+                {isColVisible('soSeptember') && <th className="py-3 px-3 text-center min-w-[110px] bg-emerald-50 text-emerald-900 border-b-2 border-emerald-500">SO SEP '26 (AKTIF)</th>}
+                {isColVisible('frekuensiTidakSO') && <th className="py-3 px-3 text-center min-w-[100px]">FREKUENSI TDK SO</th>}
+                {isColVisible('keterangan') && <th className="py-3 px-3 min-w-[120px]">KETERANGAN</th>}
+                {isColVisible('zona') && <th className="py-3 px-3 min-w-[120px]">ZONA</th>}
+                {isColVisible('soAktiva') && <th className="py-3 px-3 text-center min-w-[90px]">SO AKTIVA</th>}
                 {isColVisible('korlap') && <th className="py-3 px-3 min-w-[120px]">KORLAP/OFFICER</th>}
-                {isColVisible('keterangan') && <th className="py-3 px-3 min-w-[100px]">KETERANGAN</th>}
-                {isColVisible('jenisToko') && <th className="py-3 px-3 min-w-[130px]">JENIS TOKO</th>}
-                {isColVisible('jop') && <th className="py-3 px-3 text-center min-w-[60px]">JOP</th>}
-                
-                {isColVisible('storeType') && <th className="py-3 px-3 min-w-[140px]">TIPE RITEL</th>}
-                {isColVisible('riskLevel') && <th className="py-3 px-3 min-w-[120px]">KRITERIA ZONA</th>}
+                {isColVisible('tglSoApproved') && <th className="py-3 px-3 text-center min-w-[120px]">SO APPROVED</th>}
                 
                 <th className="py-3 px-3 text-right min-w-[100px] sticky right-0 bg-slate-100/90 shadow-2xs">AKSI</th>
               </tr>
@@ -561,8 +514,20 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
                     ? `Rp ${s.saldoToko.toLocaleString('id-ID')}` 
                     : (s.saldoToko ? `Rp ${s.saldoToko}` : '-');
 
+                  const isZonaHitam = Boolean(
+                    s.isZonaHitam ||
+                    s.zona?.toUpperCase().includes('HITAM') ||
+                    s.riskLevel === 'Tinggi' ||
+                    s.keterangan?.toUpperCase().includes('ZONA HITAM')
+                  );
+
                   return (
-                    <tr key={s.id} className="hover:bg-amber-50/40 transition font-medium">
+                    <tr 
+                      key={s.id} 
+                      className={`hover:bg-amber-50/40 transition font-medium ${
+                        isZonaHitam ? 'bg-rose-50/20' : ''
+                      }`}
+                    >
                       
                       {/* NO */}
                       <td className="py-2.5 px-3 text-center font-mono text-slate-400 text-[11px]">
@@ -572,7 +537,12 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
                       {/* KD TOKO */}
                       {isColVisible('code') && (
                         <td className="py-2.5 px-3 font-mono font-bold text-amber-950 bg-amber-50/20">
-                          {s.code}
+                          <div className="flex items-center gap-1.5">
+                            {isZonaHitam && (
+                              <span className="w-2 h-2 rounded-full bg-rose-600 shrink-0" title="Toko Zona Hitam (High-Risk)" />
+                            )}
+                            <span>{s.code}</span>
+                          </div>
                         </td>
                       )}
 
@@ -592,6 +562,13 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
                         </td>
                       )}
 
+                      {/* SALDO TOKO */}
+                      {isColVisible('saldoToko') && (
+                        <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900 bg-slate-50/50">
+                          {formattedSaldo}
+                        </td>
+                      )}
+
                       {/* AM */}
                       {isColVisible('am') && (
                         <td className="py-2.5 px-3 text-slate-800">
@@ -606,17 +583,10 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
                         </td>
                       )}
 
-                      {/* SALDO TOKO */}
-                      {isColVisible('saldoToko') && (
-                        <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900 bg-slate-50/50">
-                          {formattedSaldo}
-                        </td>
-                      )}
-
-                      {/* KECAMATAN */}
-                      {isColVisible('kecamatan') && (
-                        <td className="py-2.5 px-3 text-slate-800">
-                          {s.kecamatan || s.district || '-'}
+                      {/* WILAYAH */}
+                      {isColVisible('region') && (
+                        <td className="py-2.5 px-3 font-semibold text-slate-800">
+                          {s.region || 'BALI'}
                         </td>
                       )}
 
@@ -627,12 +597,32 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
                         </td>
                       )}
 
-                      {/* Q/M */}
+                      {/* KECAMATAN */}
+                      {isColVisible('kecamatan') && (
+                        <td className="py-2.5 px-3 text-slate-800">
+                          {s.kecamatan || s.district || '-'}
+                        </td>
+                      )}
+
+                      {/* COVERAGE */}
+                      {isColVisible('coverage') && (
+                        <td className="py-2.5 px-3 text-center">
+                          {s.coverage ? (
+                            <span className="px-2 py-0.5 rounded font-black text-[10px] bg-slate-100 border border-slate-300 text-slate-800">
+                              {s.coverage}
+                            </span>
+                          ) : (
+                            <span className="text-slate-300 font-mono text-[11px] select-none">-</span>
+                          )}
+                        </td>
+                      )}
+
+                      {/* TYPE SO (Q/M) */}
                       {isColVisible('qm') && (
                         <td className="py-2.5 px-3 text-center">
-                          {s.qm ? (
+                          {s.qm || s.typeSo ? (
                             <span className="px-2 py-0.5 rounded font-black text-[10px] bg-slate-100 border border-slate-300 text-slate-800">
-                              {s.qm}
+                              {s.qm || s.typeSo}
                             </span>
                           ) : (
                             <span className="text-slate-300 font-mono text-[11px] select-none">-</span>
@@ -661,45 +651,75 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
                         </td>
                       )}
 
-                      {/* SO BULAN INI */}
+                      {/* SO AGUSTUS */}
                       {isColVisible('soAgustus') && (
                         <td className="py-2.5 px-3 text-center font-mono text-[11px] font-bold text-amber-900 bg-amber-50/50">
                           {formatSmartSODate(s.soAgustus)}
                         </td>
                       )}
 
-                      {/* TGL SO APPROVED (SPV) */}
-                      {isColVisible('tglSoApproved') && (
-                        <td className="py-2.5 px-3 text-center">
-                          {s.tglSoApproved || s.lastSODate ? (
-                            <span className="px-2 py-1 rounded-lg bg-emerald-100 border border-emerald-300 text-emerald-800 font-mono text-[11px] font-black inline-flex items-center gap-1 shadow-2xs">
+                      {/* SO SEPTEMBER '26 (BULAN AKTIF / AUTO FILL SETELAH APPROVAL) */}
+                      {isColVisible('soSeptember') && (
+                        <td className="py-2.5 px-3 text-center bg-emerald-50/40">
+                          {s.soSeptember || s.tglSoApproved ? (
+                            <span className="px-2 py-0.5 rounded-md bg-emerald-100 border border-emerald-300 text-emerald-900 font-mono text-[11px] font-black inline-flex items-center gap-1">
                               <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                              {formatSmartSODate(s.tglSoApproved || s.lastSODate)}
+                              {formatSmartSODate(s.soSeptember || s.tglSoApproved)}
                             </span>
                           ) : (
-                            <span className="text-slate-400 font-mono text-[11px] font-medium">Belum SO</span>
+                            <span className="text-slate-400 font-mono text-[11px]">-</span>
                           )}
                         </td>
                       )}
 
-                      {/* KRITERIA CERDAS */}
-                      {isColVisible('smartClassification') && (
+                      {/* FREKUENSI TIDAK SO */}
+                      {isColVisible('frekuensiTidakSO') && (
+                        <td className="py-2.5 px-3 text-center">
+                          <span className={`px-2 py-0.5 rounded font-black text-[11px] ${
+                            (s.frekuensiTidakSO ?? 0) >= 3 
+                              ? 'bg-rose-100 text-rose-800 border border-rose-300 font-black' 
+                              : (s.frekuensiTidakSO ?? 0) > 0
+                              ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                              : 'bg-slate-100 text-slate-700'
+                          }`}>
+                            {s.frekuensiTidakSO ?? 0}
+                          </span>
+                        </td>
+                      )}
+
+                      {/* KETERANGAN */}
+                      {isColVisible('keterangan') && (
                         <td className="py-2.5 px-3">
-                          {s.smartClassification ? (
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${
-                              s.smartClassification.includes('Flagship')
-                                ? 'bg-purple-100 border-purple-300 text-purple-900'
-                                : s.smartClassification.includes('High-Volume')
-                                ? 'bg-indigo-100 border-indigo-300 text-indigo-900'
-                                : s.smartClassification.includes('Medium')
-                                ? 'bg-blue-100 border-blue-300 text-blue-900'
-                                : 'bg-slate-100 border-slate-300 text-slate-800'
-                            }`}>
-                              {s.smartClassification}
+                          {s.keterangan ? (
+                            <span className="text-slate-800 font-bold uppercase text-[10px] bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                              {s.keterangan}
                             </span>
                           ) : (
                             <span className="text-slate-300 font-mono text-[11px] select-none">-</span>
                           )}
+                        </td>
+                      )}
+
+                      {/* ZONA (HITAM / NON) */}
+                      {isColVisible('zona') && (
+                        <td className="py-2.5 px-3">
+                          {isZonaHitam ? (
+                            <span className="px-2.5 py-1 rounded-md bg-slate-900 border border-rose-600 text-rose-300 font-black text-[10px] inline-flex items-center gap-1 shadow-xs uppercase tracking-wider">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                              ZONA HITAM
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 border border-emerald-200 text-emerald-700 uppercase">
+                              NON ZONA
+                            </span>
+                          )}
+                        </td>
+                      )}
+
+                      {/* SO AKTIVA */}
+                      {isColVisible('soAktiva') && (
+                        <td className="py-2.5 px-3 text-center font-mono text-slate-700 text-[11px]">
+                          {s.soAktiva || '-'}
                         </td>
                       )}
 
@@ -716,51 +736,16 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
                         </td>
                       )}
 
-                      {/* KETERANGAN */}
-                      {isColVisible('keterangan') && (
-                        <td className="py-2.5 px-3">
-                          {s.keterangan ? (
-                            <span className="text-emerald-800 font-extrabold uppercase text-[10px] bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                              {s.keterangan}
+                      {/* TGL SO APPROVED (SPV) */}
+                      {isColVisible('tglSoApproved') && (
+                        <td className="py-2.5 px-3 text-center">
+                          {s.tglSoApproved || s.lastSODate ? (
+                            <span className="px-2 py-1 rounded-lg bg-emerald-100 border border-emerald-300 text-emerald-800 font-mono text-[11px] font-black inline-flex items-center gap-1 shadow-2xs">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              {formatSmartSODate(s.tglSoApproved || s.lastSODate)}
                             </span>
                           ) : (
-                            <span className="text-slate-300 font-mono text-[11px] select-none">-</span>
-                          )}
-                        </td>
-                      )}
-
-                      {/* JENIS TOKO */}
-                      {isColVisible('jenisToko') && (
-                        <td className="py-2.5 px-3 font-semibold text-slate-800">
-                          {s.jenisToko || '-'}
-                        </td>
-                      )}
-
-                      {/* JOP */}
-                      {isColVisible('jop') && (
-                        <td className="py-2.5 px-3 text-center font-mono text-slate-600">
-                          {s.jop !== undefined && s.jop !== '' ? s.jop : '-'}
-                        </td>
-                      )}
-
-                      {/* TIPE TOKO (RITEL) */}
-                      {isColVisible('storeType') && (
-                        <td className="py-2.5 px-3">
-                          <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-[10px] font-medium text-slate-700">
-                            {s.storeType}
-                          </span>
-                        </td>
-                      )}
-
-                      {/* KRITERIA ZONA */}
-                      {isColVisible('riskLevel') && (
-                        <td className="py-2.5 px-3">
-                          {s.riskLevel ? (
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${getRiskBadgeClass(s.riskLevel)}`}>
-                              {formatZoneText(s.riskLevel)}
-                            </span>
-                          ) : (
-                            <span className="text-slate-300 font-mono text-[11px] select-none">-</span>
+                            <span className="text-slate-400 font-mono text-[11px] font-medium">Belum SO</span>
                           )}
                         </td>
                       )}
@@ -969,87 +954,6 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
         </div>
       )}
 
-      {/* Smart AI Criteria Categorizer Modal */}
-      {isCategorizerOpen && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-slate-100">
-            
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2 text-purple-600">
-                <Sparkles className="w-6 h-6 text-purple-600 animate-pulse" />
-                <div>
-                  <h3 className="font-black text-base text-slate-900">Klasifikasi Cerdas Kriteria Toko</h3>
-                  <p className="text-xs text-slate-500">Mesin Analisis Otomatis Nilai Saldo, Risiko & Jenis Toko</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsCategorizerOpen(false)}
-                className="p-1 rounded-lg text-slate-400 hover:bg-slate-100 transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs text-slate-600">
-              <p className="leading-relaxed">
-                Sistem secara cerdas membaca data master toko yang Anda unggah/impor, kemudian mengelompokkan toko secara dinamis berdasarkan parameter risiko dan finansial berikut:
-              </p>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl space-y-1">
-                  <span className="font-extrabold text-purple-900 block">🏆 Flagship Supermarket</span>
-                  <p className="text-[11px] text-purple-700">Saldo ≥ Rp 500 Juta / Supermarket</p>
-                </div>
-
-                <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl space-y-1">
-                  <span className="font-extrabold text-indigo-900 block">💎 High-Volume Outlet</span>
-                  <p className="text-[11px] text-indigo-700">Saldo Rp 200 Juta - 500 Juta</p>
-                </div>
-
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl space-y-1">
-                  <span className="font-extrabold text-blue-900 block">🏪 Medium Volume Outlet</span>
-                  <p className="text-[11px] text-blue-700">Saldo Rp 50 Juta - 200 Juta</p>
-                </div>
-
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
-                  <span className="font-extrabold text-slate-900 block">🏬 Compact Outlet</span>
-                  <p className="text-[11px] text-slate-600">Saldo &lt; Rp 50 Juta / Express</p>
-                </div>
-              </div>
-
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 space-y-1">
-                <strong className="font-bold flex items-center gap-1 text-amber-900">
-                  ⚡ Penyesuaian Dinamis Master Berubah:
-                </strong>
-                <p className="text-[11px] leading-relaxed">
-                  Apabila terdapat file master baru yang Anda upload di kemudian hari dengan perubahan kriteria/format kolom, alat ini secara otomatis mengadaptasi kriteria tanpa perlu koding ulang!
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setIsCategorizerOpen(false)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition"
-              >
-                Batal
-              </button>
-              <button
-                type="button"
-                onClick={handleRunCategorization}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs rounded-xl shadow-sm transition flex items-center gap-1.5 active:scale-95 cursor-pointer"
-              >
-                <Sparkles className="w-4 h-4 text-purple-200" />
-                <span>Jalankan Klasifikasi Cerdas</span>
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
-
       {/* Confirmation Modal for Store Deletion */}
       <ConfirmDeleteModal
         isOpen={!!storeToDelete}
@@ -1066,9 +970,9 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
         itemName={storeToDelete ? `${storeToDelete.code} - ${storeToDelete.name}` : undefined}
         itemDetails={storeToDelete ? [
           { label: 'Kabupaten/Wilayah', value: storeToDelete.region || storeToDelete.kabupaten || storeToDelete.city || '-' },
-          { label: 'Tipe Toko', value: storeToDelete.storeType },
-          { label: 'Tingkat Risiko', value: storeToDelete.riskLevel || 'MEDIUM' },
-          { label: 'Korlap Assigned', value: storeToDelete.assignedOfficerName || '-' }
+          { label: 'Zona Toko', value: storeToDelete.zona || (storeToDelete.isZonaHitam ? 'ZONA HITAM' : 'NON ZONA HITAM') },
+          { label: 'Type SO', value: storeToDelete.qm || storeToDelete.typeSo || '-' },
+          { label: 'Korlap Assigned', value: getEffectiveKorlap(storeToDelete) }
         ] : []}
         confirmText="Ya, Hapus Toko"
         dangerBadgeText="Data toko ini akan dihapus permanen dari database master."

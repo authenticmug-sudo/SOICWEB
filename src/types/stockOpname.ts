@@ -32,29 +32,40 @@ export type RiskLevel = 'Tinggi' | 'Sedang' | 'Rendah';
 
 export interface Store {
   id: string;
-  code: string; // KD TOKO e.g. TDVX, T-0001
-  name: string; // NAMA e.g. KEDONGANAN - BADUNG
-  region: RegionArea;
+  code: string; // KD TOKO e.g. TDVX, T-0001, F01O
+  name: string; // NAMA e.g. SILIGITA - BADUNG
+  region: RegionArea; // WILAYAH (e.g. BALI)
   address: string;
   city: string; // KABUPATEN or Kota
   district?: string; // KECAMATAN
   latitude?: number;
   longitude?: number;
-  koordinat?: string; // Raw KOORDINAT string e.g. S8 45 27.3 E115 10 36.1
+  koordinat?: string; // Raw KOORDINAT string e.g. S8 48 05.7 E115 13 01.6
   am?: string; // AM
   as?: string; // AS
-  saldoToko?: number | string; // SALDO TOKO e.g. 546017415
+  saldoToko?: number | string; // SALDO TOKO (e.g. 346801712)
   kecamatan?: string; // KECAMATAN
   kabupaten?: string; // KABUPATEN
+  coverage?: string; // COVERAGE: DC / IGR
+  typeSo?: string; // Type SO: M / Q1 / Q2 / Q3
   qm?: string; // Q/M (M, Q2, etc.)
-  tglSoMei?: string; // TGL SO MEI
-  tglSoJuni?: string; // TGL SO JUNI
-  tglSoJuli?: string; // TGL SO JULI
-  soAgustus?: string; // SO AGUSTUS
+  tglSoMei?: string; // SO MEI '26
+  tglSoJuni?: string; // SO JUNI '26
+  tglSoJuli?: string; // SO JULI '26
+  soAgustus?: string; // SO AGUSTUS '26
+  soSeptember?: string; // SO SEPTEMBER '26
+  soOktober?: string; // SO OKTOBER '26
+  soNovember?: string; // SO NOVEMBER '26
+  soDesember?: string; // SO DESEMBER '26
+  monthlySOHistory?: Record<string, string | number>; // Dynamic monthly SO history map
+  frekuensiTidakSO?: number; // FREKUENSI TIDAK SO
+  keterangan?: string; // KETERANGAN: TOKO EKSIS, WAJIB, dll.
+  zona?: 'ZONA HITAM' | 'NON ZONA HITAM' | string; // ZONA: ZONA HITAM / NON ZONA HITAM
+  isZonaHitam?: boolean;
+  soAktiva?: string; // SO AKTIVA
   tglSoApproved?: string; // Tanggal SO yang disetujui SPV bulan berjalan
   smartClassification?: string; // Klasifikasi Kriteria Cerdas (Dynamic Category)
   korlap?: string; // KORLAP/OFFICER e.g. angga, pasek, odi
-  keterangan?: string; // KETERANGAN e.g. wajib
   jenisToko?: string; // JENIS TOKO e.g. STANDART NEW
   jop?: string | number; // JOP
   storeType: StoreType;
@@ -358,6 +369,11 @@ export interface DashboardSummary {
   positiveVarianceRp: number;
   negativeVarianceRp: number;
   highRiskStoreCount: number;
+  // Zona Hitam Metrics
+  totalZonaHitam: number;
+  zonaHitamTerSO: number;
+  zonaHitamBelumSO: number;
+  achievePercentZonaHitam: number;
 }
 
 export interface FilterOptions {
