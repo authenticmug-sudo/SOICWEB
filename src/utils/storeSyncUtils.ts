@@ -1,5 +1,5 @@
 import { Store, SOSchedule, SOResult } from '../types/stockOpname';
-import { formatSmartSODate } from './formatters';
+import { formatSmartSODate, formatDateISO } from './formatters';
 
 /**
  * Check if a store belongs to ZONA HITAM (Black Zone)
@@ -191,3 +191,107 @@ export function autoSyncStoreWithApprovedSchedule(
 
   return updated;
 }
+
+/**
+ * Intelligently generate and synchronize SOSchedules from Master Store monthly date columns
+ * (e.g. SO SEPTEMBER '26 or SO AGUSTUS) when a new master file is uploaded or activated.
+ */
+export function syncSchedulesFromMasterStores(
+  stores: Store[], 
+  existingSchedules: SOSchedule[],
+  targetMonth: string = '09',
+  targetYear: string = '2026'
+): { updatedSchedules: SOSchedule[]; newlyCreatedCount: number } {
+  if (!stores || stores.length === 0) {
+    return { updatedSchedules: existingSchedules, newlyCreatedCount: 0 };
+  }
+
+  const scheduleMap = new Map<string, SOSchedule>();
+  existingSchedules.forEach(sch => {
+    const key = `${sch.storeCode || sch.storeId}_${sch.scheduledDate}`;
+    scheduleMap.set(key, sch);
+  });
+
+  const allSchedules = [...existingSchedules];
+  let newlyCreatedCount = 0;
+
+  stores.forEach(st => {
+    // Check September SO date first, then fallback to other month fields if target is different
+    let rawDateVal = '';
+    if (targetMonth === '09') {
+      rawDateVal = st.soSeptember || '';
+    } else if (targetMonth === '08') {
+      rawDateVal = st.soAgustus || '';
+    } else if (targetMonth === '07') {
+      rawDateVal = st.tglSoJuli || '';
+    } else if (targetMonth === '06') {
+      rawDateVal = st.tglSoJuni || '';
+    } else if (targetMonth === '05') {
+      rawDateVal = st.tglSoMei || '';
+    }
+
+    if (!rawDateVal || rawDateVal === '-' || rawDateVal === '0' || rawDateVal === '0.0' || rawDateVal.toLowerCase() === '0-jan-00' || rawDateVal.toLowerCase() === 'belum so') {
+      return;
+    }
+
+    // Convert date string to standard ISO format (YYYY-MM-DD)
+    const isoDate = formatDateISO(rawDateVal);
+    if (!isoDate || isoDate.startsWith('1970') || isoDate.startsWith('1900')) return;
+
+    // Check if store already has a schedule for this month/date
+    const key = `${st.code || st.id}_${isoDate}`;
+    const storeMonthKey = `${st.code || st.id}_${isoDate.slice(0, 7)}`;
+
+    const existingExact = scheduleMap.get(key);
+    const existingInMonth = allSchedules.find(s => 
+      (s.storeCode === st.code || s.storeId === st.id) && 
+      s.scheduledDate && 
+      s.scheduledDate.startsWith(isoDate.slice(0, 7))
+    );
+
+    const officer = st.korlap && st.korlap !== 'Petugas SO' ? st.korlap : 'I GEDE PASEK SANTIKA (Officer / Korlap)';
+
+    if (existingExact) {
+      // If schedule exists, ensure region & officer are in sync
+      if (!existingExact.officerInCharge || existingExact.officerInCharge === 'Petugas SO') {
+        existingExact.officerInCharge = officer;
+      }
+      if (!existingExact.region && st.region) {
+        existingExact.region = st.region;
+      }
+    } else if (existingInMonth) {
+      // If schedule exists in the same month but different date, update its scheduledDate to match the master
+      existingInMonth.scheduledDate = isoDate;
+      if (!existingInMonth.officerInCharge || existingInMonth.officerInCharge === 'Petugas SO') {
+        existingInMonth.officerInCharge = officer;
+      }
+    } else {
+      // Create new smart schedule for September
+      const newSchedule: SOSchedule = {
+        id: `SCHED-${st.code || st.id}-${isoDate}`,
+        storeId: st.id,
+        storeCode: st.code,
+        storeName: st.name,
+        scheduledDate: isoDate,
+        scheduledTime: '08:00',
+        teamId: 'TEAM-01',
+        teamName: 'Tim SO Bali',
+        spvInCharge: 'I GEDE PASEK SANTIKA',
+        officerInCharge: officer,
+        region: st.region || st.kabupaten || 'Kota Denpasar',
+        status: 'Terjadwal',
+        targetSKUCount: st.totalSKUCount || 1000,
+        spvApprovalStatus: 'Menunggu Approval SPV',
+        notes: `Otomatis disinkronkan dari Master Toko (Type SO: ${st.typeSo || st.qm || 'M'})`,
+        createdAt: new Date().toISOString().slice(0, 10)
+      };
+
+      allSchedules.push(newSchedule);
+      scheduleMap.set(key, newSchedule);
+      newlyCreatedCount++;
+    }
+  });
+
+  return { updatedSchedules: allSchedules, newlyCreatedCount };
+}
+

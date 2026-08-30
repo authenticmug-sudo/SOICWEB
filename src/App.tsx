@@ -45,7 +45,7 @@ import {
 } from './services/storageService';
 import { ensureStoreCoordinates, autoSyncStoreRegionAndKabupaten } from './utils/geoUtils';
 import { formatSmartSODate } from './utils/formatters';
-import { autoSyncStoreWithApprovedSchedule } from './utils/storeSyncUtils';
+import { autoSyncStoreWithApprovedSchedule, syncSchedulesFromMasterStores } from './utils/storeSyncUtils';
 import { 
   Store, 
   SOSchedule, 
@@ -504,8 +504,25 @@ export default function App() {
     return matchMonth && matchYear;
   });
 
-  // Summary calculated dynamically based on filtered period
-  const summary = getDashboardSummary(stores, filteredSchedules, filteredResults);
+  // State for Target Toko Wajib SO criteria (Default: Type M & Q3 for September)
+  const [targetSoTypes, setTargetSoTypes] = useState<string[]>(() => {
+    const saved = localStorage.getItem('spv_target_so_types');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+    return ['M', 'Q3'];
+  });
+
+  const handleSetTargetSoTypes = (types: string[]) => {
+    setTargetSoTypes(types);
+    localStorage.setItem('spv_target_so_types', JSON.stringify(types));
+  };
+
+  // Summary calculated dynamically based on filtered period and target SO types
+  const summary = getDashboardSummary(stores, filteredSchedules, filteredResults, targetSoTypes);
 
   // Handlers for Schedules
   const handleCreateSchedule = (newSched: Omit<SOSchedule, 'id' | 'createdAt'>) => {
@@ -768,8 +785,16 @@ export default function App() {
       });
       updated = Array.from(existingMap.values());
     }
-    setStores(updated);
-    saveStores(updated, mode === 'replace');
+    const synced = updated.map(s => autoSyncStoreRegionAndKabupaten(s));
+    setStores(synced);
+    saveStores(synced, mode === 'replace');
+
+    // Smart auto-synchronize schedules from Master Store September SO dates
+    const { updatedSchedules, newlyCreatedCount } = syncSchedulesFromMasterStores(synced, schedules, '09', '2026');
+    if (newlyCreatedCount > 0 || updatedSchedules.length !== schedules.length) {
+      setSchedules(updatedSchedules);
+      saveSchedules(updatedSchedules);
+    }
   };
 
   const handleBulkUpdateStores = (updatedStores: Store[]) => {
@@ -973,6 +998,13 @@ export default function App() {
       const synced = newDataset.stores.map(s => autoSyncStoreRegionAndKabupaten(s));
       setStores(synced);
       saveStores(synced);
+
+      // Smart auto-synchronize schedules from Master Store September SO dates
+      const { updatedSchedules, newlyCreatedCount } = syncSchedulesFromMasterStores(synced, schedules, '09', '2026');
+      if (newlyCreatedCount > 0 || updatedSchedules.length !== schedules.length) {
+        setSchedules(updatedSchedules);
+        saveSchedules(updatedSchedules);
+      }
     }
   };
 
@@ -991,6 +1023,13 @@ export default function App() {
       const synced = target.stores.map(s => autoSyncStoreRegionAndKabupaten(s));
       setStores(synced);
       saveStores(synced);
+
+      // Smart auto-synchronize schedules from Master Store September SO dates
+      const { updatedSchedules, newlyCreatedCount } = syncSchedulesFromMasterStores(synced, schedules, '09', '2026');
+      if (newlyCreatedCount > 0 || updatedSchedules.length !== schedules.length) {
+        setSchedules(updatedSchedules);
+        saveSchedules(updatedSchedules);
+      }
     }
   };
 
@@ -1067,6 +1106,8 @@ export default function App() {
               <SummaryCards
                 summary={summary}
                 onNavigateTab={(tab) => setActiveTab(tab)}
+                targetSoTypes={targetSoTypes}
+                onChangeTargetTypes={handleSetTargetSoTypes}
               />
 
               {/* Daily SO Progress Tracker Widget */}

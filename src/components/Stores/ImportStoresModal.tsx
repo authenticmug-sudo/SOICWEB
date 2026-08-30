@@ -188,13 +188,29 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
         saldoTokoNum = parseFloat(cleanedSaldo) || saldoRaw;
       }
 
-      const qm = getVal(['q/m', 'q_m', 'qm'], '');
+      const qm = getVal(['q/m', 'q_m', 'qm', 'type so', 'status so', 'type_so', 'type', 'tipe'], 'M');
+      const typeSo = qm;
       const tglSoMei = formatSmartSODate(getVal(['tgl so mei', 'so mei', 'mei'], ''));
       const tglSoJuni = formatSmartSODate(getVal(['tgl so juni', 'so juni', 'juni'], ''));
       const tglSoJuli = formatSmartSODate(getVal(['tgl so juli', 'so juli', 'juli'], ''));
       const soAgustus = formatSmartSODate(getVal(['so agustus', 'tgl so agustus', 'agustus', 'so bulan ini', 'jadwal so'], ''));
+      const soSeptember = formatSmartSODate(getVal(["so september '26", 'so september', 'tgl so september', 'september', 'so sep', 'tgl so sep', 'so sep 26', 'so september 2026'], ''));
+      const tglSoApproved = formatSmartSODate(getVal(['tgl so approved', 'so approved', 'approved spv', 'so disetujui', 'tgl so'], ''));
       const keterangan = getVal(['keterangan', 'ket'], '');
       const jop = getVal(['jop'], '');
+
+      // Parse ZONA
+      const zonaRaw = getVal(['zona', 'kriteria zona', 'zona toko', 'kriteria_zona', 'status zona'], '');
+      let zonaFormatted = 'NON ZONA HITAM';
+      let isZonaHitam = false;
+      if (zonaRaw) {
+        const zUpper = zonaRaw.toUpperCase();
+        if (zUpper.includes('HITAM') || zUpper === 'ZONA HITAM' || zUpper === 'BLACK ZONE' || zUpper.includes('TINGGI') || zUpper.includes('HIGH')) {
+          zonaFormatted = 'ZONA HITAM';
+          isZonaHitam = true;
+          if (!riskLevel) riskLevel = 'Tinggi';
+        }
+      }
 
       // Extract Coordinates Lat/Long with universal parser
       let latitude: number | undefined = undefined;
@@ -255,11 +271,16 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
         saldoToko: saldoTokoNum,
         kecamatan,
         kabupaten,
-        qm,
-        tglSoMei,
-        tglSoJuni,
-        tglSoJuli,
-        soAgustus,
+        typeSo: typeSo || qm || 'M',
+        qm: qm || typeSo || 'M',
+        tglSoMei: tglSoMei !== '-' ? tglSoMei : undefined,
+        tglSoJuni: tglSoJuni !== '-' ? tglSoJuni : undefined,
+        tglSoJuli: tglSoJuli !== '-' ? tglSoJuli : undefined,
+        soAgustus: soAgustus !== '-' ? soAgustus : undefined,
+        soSeptember: soSeptember !== '-' ? soSeptember : undefined,
+        tglSoApproved: tglSoApproved !== '-' ? tglSoApproved : undefined,
+        zona: zonaFormatted,
+        isZonaHitam: isZonaHitam,
         korlap,
         keterangan,
         jenisToko: jenisTokoRaw,

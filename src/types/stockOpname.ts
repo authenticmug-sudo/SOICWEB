@@ -374,6 +374,13 @@ export interface DashboardSummary {
   zonaHitamTerSO: number;
   zonaHitamBelumSO: number;
   achievePercentZonaHitam: number;
+  // Toko Wajib SO (Type M & Q3 / Custom Target) Metrics
+  totalTokoWajibSO: number;
+  tokoWajibSOTerSO: number;
+  tokoWajibSOBelumSO: number;
+  achievePercentWajibSO: number;
+  breakdownTypeSO?: Record<string, { total: number; terSO: number; belumSO: number }>;
+  targetTypesUsed?: string[];
 }
 
 export interface FilterOptions {

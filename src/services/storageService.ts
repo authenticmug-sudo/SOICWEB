@@ -1765,7 +1765,12 @@ export function subscribeFirestoreData(callbacks: {
 
 // ------------------- DASHBOARD SUMMARY CALCULATION ------------------- //
 
-export function getDashboardSummary(stores: Store[], schedules: SOSchedule[], results: SOResult[]): DashboardSummary {
+export function getDashboardSummary(
+  stores: Store[], 
+  schedules: SOSchedule[], 
+  results: SOResult[],
+  targetTypes: string[] = ['M', 'Q3']
+): DashboardSummary {
   const totalStores = stores.length;
   
   const completedThisMonth = schedules.filter(s => s.status === 'Selesai' || s.spvApprovalStatus === 'Disetujui').length;
@@ -1801,8 +1806,8 @@ export function getDashboardSummary(stores: Store[], schedules: SOSchedule[], re
   const zonaHitamStores = stores.filter(isZonaHitamStore);
   const totalZonaHitam = zonaHitamStores.length;
 
-  // Check which Zona Hitam stores have been SO'd / approved in the filtered period
-  const zonaHitamTerSO = zonaHitamStores.filter(st => {
+  // Check which stores have been SO'd / approved in the active/filtered period
+  const isStoreCompletedOrApproved = (st: Store) => {
     // 1. Check completed/approved schedule
     const hasSched = schedules.some(sch => 
       (sch.storeCode === st.code || sch.storeId === st.id || sch.storeName?.toLowerCase() === st.name?.toLowerCase()) &&
@@ -1823,10 +1828,54 @@ export function getDashboardSummary(stores: Store[], schedules: SOSchedule[], re
     if (st.tglSoApproved && st.tglSoApproved !== '-') return true;
 
     return false;
-  }).length;
+  };
 
+  const zonaHitamTerSO = zonaHitamStores.filter(isStoreCompletedOrApproved).length;
   const zonaHitamBelumSO = Math.max(0, totalZonaHitam - zonaHitamTerSO);
   const achievePercentZonaHitam = totalZonaHitam > 0 ? Math.round((zonaHitamTerSO / totalZonaHitam) * 100) : 0;
+
+  // ------------------- TOKO WAJIB SO (TYPE SO M & Q3 / TARGET TYPES) METRICS ------------------- //
+  const normalizedTargetTypes = (targetTypes && targetTypes.length > 0 ? targetTypes : ['M', 'Q3']).map(t => t.trim().toUpperCase());
+  
+  // Breakdown per type container
+  const breakdownTypeSO: Record<string, { total: number; terSO: number; belumSO: number }> = {};
+  
+  // Group all stores by their type
+  stores.forEach(st => {
+    const rawType = (st.typeSo || st.qm || 'M').trim().toUpperCase();
+    if (!breakdownTypeSO[rawType]) {
+      breakdownTypeSO[rawType] = { total: 0, terSO: 0, belumSO: 0 };
+    }
+    breakdownTypeSO[rawType].total++;
+    if (isStoreCompletedOrApproved(st)) {
+      breakdownTypeSO[rawType].terSO++;
+    } else {
+      breakdownTypeSO[rawType].belumSO++;
+    }
+  });
+
+  // Filter stores that match target types OR have valid SO date in September
+  const isWajibSOStore = (st: Store) => {
+    const rawType = (st.typeSo || st.qm || '').trim().toUpperCase();
+    const matchesTargetType = normalizedTargetTypes.some(t => rawType === t || rawType.startsWith(t));
+    
+    // Also include if store explicitly has filled September SO date
+    const hasSepDate = Boolean(
+      st.soSeptember && 
+      st.soSeptember !== '-' && 
+      st.soSeptember !== '0' && 
+      st.soSeptember !== '0-Jan-00' && 
+      st.soSeptember.toLowerCase() !== 'belum so'
+    );
+
+    return matchesTargetType || hasSepDate;
+  };
+
+  const tokoWajibSOList = stores.filter(isWajibSOStore);
+  const totalTokoWajibSO = tokoWajibSOList.length;
+  const tokoWajibSOTerSO = tokoWajibSOList.filter(isStoreCompletedOrApproved).length;
+  const tokoWajibSOBelumSO = Math.max(0, totalTokoWajibSO - tokoWajibSOTerSO);
+  const achievePercentWajibSO = totalTokoWajibSO > 0 ? Math.round((tokoWajibSOTerSO / totalTokoWajibSO) * 100) : 0;
 
   return {
     totalStores,
@@ -1843,7 +1892,14 @@ export function getDashboardSummary(stores: Store[], schedules: SOSchedule[], re
     totalZonaHitam,
     zonaHitamTerSO,
     zonaHitamBelumSO,
-    achievePercentZonaHitam
+    achievePercentZonaHitam,
+    // Toko Wajib SO (Type M & Q3 / Custom Target) Metrics
+    totalTokoWajibSO,
+    tokoWajibSOTerSO,
+    tokoWajibSOBelumSO,
+    achievePercentWajibSO,
+    breakdownTypeSO,
+    targetTypesUsed: normalizedTargetTypes
   };
 }
 

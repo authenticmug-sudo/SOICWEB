@@ -216,7 +216,19 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
       (s.as || '').toLowerCase().includes(searchLower);
 
     const matchesRegion = selectedRegion === 'ALL' || s.region === selectedRegion || s.kabupaten === selectedRegion;
-    const matchesQm = selectedQm === 'ALL' || (s.qm && s.qm.toUpperCase().includes(selectedQm)) || (s.typeSo && s.typeSo.toUpperCase().includes(selectedQm));
+    
+    let matchesQm = true;
+    if (selectedQm === 'M_Q3') {
+      const t = (s.typeSo || s.qm || '').toUpperCase();
+      const hasSep = Boolean(s.soSeptember && s.soSeptember !== '-' && s.soSeptember !== '0' && s.soSeptember !== '0-Jan-00' && s.soSeptember.toLowerCase() !== 'belum so');
+      matchesQm = t === 'M' || t === 'Q3' || t.startsWith('M') || t.startsWith('Q3') || hasSep;
+    } else if (selectedQm === 'SEP_FILLED') {
+      matchesQm = Boolean(s.soSeptember && s.soSeptember !== '-' && s.soSeptember !== '0' && s.soSeptember !== '0-Jan-00' && s.soSeptember.toLowerCase() !== 'belum so');
+    } else if (selectedQm !== 'ALL') {
+      const t = (s.typeSo || s.qm || '').toUpperCase();
+      matchesQm = t.includes(selectedQm.toUpperCase());
+    }
+
     const matchesKorlap = selectedKorlap === 'ALL' || effKorlap === selectedKorlap;
 
     const isStoreZonaHitam = Boolean(
@@ -428,11 +440,15 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
               setSelectedQm(e.target.value);
               setCurrentPage(1);
             }}
-            className="bg-slate-50 border border-slate-200 text-xs rounded-lg px-2.5 py-2 text-slate-700 font-semibold focus:outline-none focus:border-amber-500"
+            className="bg-slate-50 border border-slate-200 text-xs rounded-lg px-2.5 py-2 text-slate-700 font-bold focus:outline-none focus:border-amber-500"
           >
             <option value="ALL">Semua Type SO</option>
-            <option value="Q">Type Q (Quarterly)</option>
+            <option value="M_Q3">⭐ Wajib SO September (Type M & Q3)</option>
             <option value="M">Type M (Monthly)</option>
+            <option value="Q3">Type Q3 (Triwulan 3)</option>
+            <option value="Q1">Type Q1 (Triwulan 1)</option>
+            <option value="Q2">Type Q2 (Triwulan 2)</option>
+            <option value="SEP_FILLED">📅 Terisi Tgl SO September</option>
           </select>
 
         </div>
