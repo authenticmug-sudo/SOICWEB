@@ -21,11 +21,14 @@ import {
   Layers,
   MapPin,
   DollarSign,
-  ShieldAlert
+  ShieldAlert,
+  CalendarDays,
+  RotateCcw,
+  X
 } from 'lucide-react';
 import { SOSchedule, Store, SOTeam, RegionArea, UserRole, AuditorPersonnel } from '../../types/stockOpname';
 import { REGIONS } from '../../data/initialData';
-import { getStatusBadgeClass, formatDateIndo, formatRupiah } from '../../utils/formatters';
+import { getStatusBadgeClass, formatDateIndo, formatRupiah, parseSmartDate, formatDateISO } from '../../utils/formatters';
 import { getDayNameIndo } from '../../utils/storeSyncUtils';
 import { exportToCSV } from '../../services/storageService';
 import { KorlapDashboard } from './KorlapDashboard';
@@ -76,6 +79,12 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
   const [selectedGroupKorlap, setSelectedGroupKorlap] = useState<string>('ALL');
   const [tableLayoutMode, setTableLayoutMode] = useState<'SHEET_JADWAL' | 'COMPACT'>('SHEET_JADWAL');
+
+  // Date, Month, Year Filter States
+  const [selectedYear, setSelectedYear] = useState<string>('ALL');
+  const [selectedMonth, setSelectedMonth] = useState<string>('ALL');
+  const [selectedDay, setSelectedDay] = useState<string>('ALL');
+  const [selectedSpecificDate, setSelectedSpecificDate] = useState<string>('');
   
   const [superAdminRoleMode, setSuperAdminRoleMode] = useState<'SUPERVISOR' | 'OFFICER'>('SUPERVISOR');
   const [viewMode, setViewMode] = useState<'list' | 'officer' | 'calendar' | 'approval'>(
@@ -104,6 +113,66 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
     });
     return Array.from(set).filter(Boolean).sort();
   }, [stores]);
+
+  // Compute available years dynamically from schedules
+  const availableYears = useMemo(() => {
+    const set = new Set<string>();
+    set.add('2026');
+    set.add('2025');
+    set.add('2027');
+    schedules.forEach(s => {
+      const parsed = parseSmartDate(s.scheduledDate);
+      if (parsed) {
+        set.add(String(parsed.getFullYear()));
+      } else if (s.scheduledDate) {
+        const m = s.scheduledDate.match(/\b(20\d{2})\b/);
+        if (m) set.add(m[1]);
+      }
+    });
+    return Array.from(set).sort((a, b) => b.localeCompare(a));
+  }, [schedules]);
+
+  const monthOptions = [
+    { value: 'ALL', label: 'Semua Bulan' },
+    { value: '01', label: '01 - Januari' },
+    { value: '02', label: '02 - Februari' },
+    { value: '03', label: '03 - Maret' },
+    { value: '04', label: '04 - April' },
+    { value: '05', label: '05 - Mei' },
+    { value: '06', label: '06 - Juni' },
+    { value: '07', label: '07 - Juli' },
+    { value: '08', label: '08 - Agustus' },
+    { value: '09', label: '09 - September' },
+    { value: '10', label: '10 - Oktober' },
+    { value: '11', label: '11 - November' },
+    { value: '12', label: '12 - Desember' }
+  ];
+
+  const dayOptions = useMemo(() => {
+    return Array.from({ length: 31 }, (_, i) => {
+      const dayNum = i + 1;
+      const dayVal = String(dayNum).padStart(2, '0');
+      return { value: dayVal, label: `Tgl ${dayNum}` };
+    });
+  }, []);
+
+  const isDateFilterActive = selectedYear !== 'ALL' || selectedMonth !== 'ALL' || selectedDay !== 'ALL' || Boolean(selectedSpecificDate);
+
+  const handleResetDateFilters = () => {
+    setSelectedYear('ALL');
+    setSelectedMonth('ALL');
+    setSelectedDay('ALL');
+    setSelectedSpecificDate('');
+  };
+
+  const handleSetToday = () => {
+    const today = new Date();
+    const iso = formatDateISO(today);
+    setSelectedSpecificDate(iso);
+    setSelectedYear(String(today.getFullYear()));
+    setSelectedMonth(String(today.getMonth() + 1).padStart(2, '0'));
+    setSelectedDay(String(today.getDate()).padStart(2, '0'));
+  };
 
   // Pending approval schedule groups
   const pendingSelesai = schedules.filter(s => s.status === 'Selesai' && (s.spvApprovalStatus === 'Menunggu Approval SPV' || !s.spvApprovalStatus));
@@ -146,9 +215,40 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
         matchesGroup = gName.includes(selG) || selG.includes(gName);
       }
 
-      return matchesSearch && matchesRegion && matchesStatus && matchesGroup;
+      // Date Filtering Logic
+      let matchesDate = true;
+      if (selectedSpecificDate) {
+        const parsed = parseSmartDate(s.scheduledDate);
+        if (parsed) {
+          const iso = formatDateISO(parsed);
+          matchesDate = iso === selectedSpecificDate || s.scheduledDate === selectedSpecificDate;
+        } else {
+          matchesDate = s.scheduledDate.includes(selectedSpecificDate);
+        }
+      } else if (selectedYear !== 'ALL' || selectedMonth !== 'ALL' || selectedDay !== 'ALL') {
+        const parsed = parseSmartDate(s.scheduledDate);
+        if (parsed) {
+          const y = String(parsed.getFullYear());
+          const m = String(parsed.getMonth() + 1).padStart(2, '0');
+          const d = String(parsed.getDate()).padStart(2, '0');
+
+          const matchesYear = selectedYear === 'ALL' || y === selectedYear;
+          const matchesMonth = selectedMonth === 'ALL' || m === selectedMonth;
+          const matchesDay = selectedDay === 'ALL' || d === selectedDay;
+
+          matchesDate = matchesYear && matchesMonth && matchesDay;
+        } else {
+          let ok = true;
+          if (selectedYear !== 'ALL' && !s.scheduledDate.includes(selectedYear)) ok = false;
+          if (selectedMonth !== 'ALL' && !s.scheduledDate.includes(`-${selectedMonth}-`) && !s.scheduledDate.includes(`/${selectedMonth}/`)) ok = false;
+          if (selectedDay !== 'ALL' && !s.scheduledDate.includes(selectedDay)) ok = false;
+          matchesDate = ok;
+        }
+      }
+
+      return matchesSearch && matchesRegion && matchesStatus && matchesGroup && matchesDate;
     });
-  }, [schedules, searchQuery, selectedRegion, selectedStatus, selectedGroupKorlap]);
+  }, [schedules, searchQuery, selectedRegion, selectedStatus, selectedGroupKorlap, selectedYear, selectedMonth, selectedDay, selectedSpecificDate]);
 
   const getAccurateRegionForSchedule = (s: SOSchedule): string => {
     const matchingStore = stores.find(st => st.code === s.storeCode || st.id === s.storeId);
@@ -320,6 +420,134 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
 
         </div>
 
+        {/* Date, Month, Year Filter Row */}
+        <div className="pt-2.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2.5">
+          
+          {/* Left: Date Selector Dropdowns */}
+          <div className="flex flex-wrap items-center gap-2">
+            
+            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-slate-100/80 px-2.5 py-1.5 rounded-xl border border-slate-200 shrink-0">
+              <CalendarDays className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Filter Waktu SO:</span>
+            </div>
+
+            {/* Year Selector */}
+            <select
+              value={selectedYear}
+              onChange={(e) => {
+                setSelectedYear(e.target.value);
+                setSelectedSpecificDate('');
+              }}
+              className="bg-slate-50 border border-slate-300 hover:border-slate-400 text-xs font-bold rounded-xl px-2.5 py-1.5 text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer transition"
+              title="Filter Berdasarkan Tahun"
+            >
+              <option value="ALL">🗓️ Semua Tahun</option>
+              {availableYears.map(y => (
+                <option key={y} value={y}>Tahun {y}</option>
+              ))}
+            </select>
+
+            {/* Month Selector */}
+            <select
+              value={selectedMonth}
+              onChange={(e) => {
+                setSelectedMonth(e.target.value);
+                setSelectedSpecificDate('');
+              }}
+              className="bg-slate-50 border border-slate-300 hover:border-slate-400 text-xs font-bold rounded-xl px-2.5 py-1.5 text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer transition"
+              title="Filter Berdasarkan Bulan"
+            >
+              {monthOptions.map(m => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
+
+            {/* Day Selector (1-31) */}
+            <select
+              value={selectedDay}
+              onChange={(e) => {
+                setSelectedDay(e.target.value);
+                setSelectedSpecificDate('');
+              }}
+              className="bg-slate-50 border border-slate-300 hover:border-slate-400 text-xs font-bold rounded-xl px-2.5 py-1.5 text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer transition"
+              title="Filter Berdasarkan Tanggal (1-31)"
+            >
+              <option value="ALL">📅 Semua Tanggal (1-31)</option>
+              {dayOptions.map(d => (
+                <option key={d.value} value={d.value}>{d.label}</option>
+              ))}
+            </select>
+
+            {/* Specific Exact Date Picker */}
+            <div className="relative flex items-center" title="Pilih Tanggal Spesifik (Kalender)">
+              <input
+                type="date"
+                value={selectedSpecificDate}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSelectedSpecificDate(val);
+                  if (val) {
+                    const [y, m, d] = val.split('-');
+                    setSelectedYear(y || 'ALL');
+                    setSelectedMonth(m || 'ALL');
+                    setSelectedDay(d || 'ALL');
+                  }
+                }}
+                className="bg-slate-50 border border-slate-300 hover:border-slate-400 text-xs font-semibold rounded-xl px-2.5 py-1.5 text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer transition"
+              />
+            </div>
+
+          </div>
+
+          {/* Right: Quick shortcuts & Reset */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              type="button"
+              onClick={handleSetToday}
+              className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl border border-indigo-200 transition"
+            >
+              Hari Ini
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedSpecificDate('');
+                setSelectedYear('2026');
+                setSelectedMonth('09');
+                setSelectedDay('ALL');
+              }}
+              className="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold rounded-xl border border-purple-200 transition"
+            >
+              Sep 2026
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedSpecificDate('');
+                setSelectedYear('2026');
+                setSelectedMonth('08');
+                setSelectedDay('ALL');
+              }}
+              className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 transition"
+            >
+              Ags 2026
+            </button>
+
+            {isDateFilterActive && (
+              <button
+                type="button"
+                onClick={handleResetDateFilters}
+                className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-xl border border-rose-200 transition flex items-center gap-1"
+                title="Reset filter tanggal"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>Reset Tanggal</span>
+              </button>
+            )}
+          </div>
+
+        </div>
+
         {/* Sub-Menu Tabs Pill Box & Action Bar */}
         <div className="pt-2 border-t border-slate-100 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
           
@@ -457,14 +685,33 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
         <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
           
           {/* Table Header Controls: Toggle Columns View */}
-          <div className="p-3 px-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-            <div className="flex items-center gap-2">
+          <div className="p-3 px-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-bold text-slate-800">
                 Tabel Penjadwalan ({filteredSchedules.length} Toko)
               </span>
               <span className="text-[11px] text-slate-500">
                 • {selectedGroupKorlap === 'ALL' ? 'Semua Group' : `Group: ${selectedGroupKorlap}`}
               </span>
+              {isDateFilterActive && (
+                <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md border border-indigo-200 flex items-center gap-1">
+                  <CalendarDays className="w-3 h-3 text-indigo-600" />
+                  <span>
+                    {selectedSpecificDate 
+                      ? formatDateIndo(selectedSpecificDate)
+                      : `${selectedDay !== 'ALL' ? `Tgl ${parseInt(selectedDay)} ` : ''}${selectedMonth !== 'ALL' ? `${monthOptions.find(m => m.value === selectedMonth)?.label.split(' - ')[1]} ` : ''}${selectedYear !== 'ALL' ? selectedYear : ''}`
+                    }
+                  </span>
+                  <button 
+                    type="button" 
+                    onClick={handleResetDateFilters}
+                    className="ml-0.5 hover:text-rose-600 font-black text-[11px]"
+                    title="Hapus filter tanggal"
+                  >
+                    ×
+                  </button>
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 text-xs">
