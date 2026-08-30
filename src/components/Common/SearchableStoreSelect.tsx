@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Search, Building2, Check, ChevronDown, X, Sparkles, MapPin, ShieldAlert } from 'lucide-react';
+import { Search, Building2, Check, ChevronDown, X, Sparkles, MapPin, ShieldAlert, Navigation, Compass, Filter, RefreshCw } from 'lucide-react';
 import { Store } from '../../types/stockOpname';
+import { calculateHaversineDistance, extractKabupatenKecamatanMap, normalizeKabupaten, normalizeKecamatan } from '../../utils/geoUtils';
 
 interface SearchableStoreSelectProps {
   stores: Store[];
@@ -12,6 +13,14 @@ interface SearchableStoreSelectProps {
   disabled?: boolean;
   className?: string;
   autoFocus?: boolean;
+  referenceStore?: Store | null;
+  referenceStoreLabel?: string;
+  onClearReferenceStore?: () => void;
+  showFilters?: boolean;
+  selectedKabupatenFilter?: string;
+  selectedKecamatanFilter?: string;
+  onKabupatenFilterChange?: (kab: string) => void;
+  onKecamatanFilterChange?: (kec: string) => void;
 }
 
 export const SearchableStoreSelect: React.FC<SearchableStoreSelectProps> = ({
@@ -23,86 +32,204 @@ export const SearchableStoreSelect: React.FC<SearchableStoreSelectProps> = ({
   required = false,
   disabled = false,
   className = '',
-  autoFocus = false
+  autoFocus = false,
+  referenceStore = null,
+  referenceStoreLabel = 'Toko Acuan',
+  onClearReferenceStore,
+  showFilters = true,
+  selectedKabupatenFilter,
+  selectedKecamatanFilter,
+  onKabupatenFilterChange,
+  onKecamatanFilterChange
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [highlightedIndex, setHighlightedIndex] = useState(0);
+  const [sortByDistance, setSortByDistance] = useState(false);
+  
+  // Local filter states if not controlled from parent
+  const [localKabupaten, setLocalKabupaten] = useState<string>('ALL');
+  const [localKecamatan, setLocalKecamatan] = useState<string>('ALL');
+
+  const activeKabupaten = selectedKabupatenFilter !== undefined ? selectedKabupatenFilter : localKabupaten;
+  const activeKecamatan = selectedKecamatanFilter !== undefined ? selectedKecamatanFilter : localKecamatan;
+
+  const handleKabupatenChange = (val: string) => {
+    if (onKabupatenFilterChange) {
+      onKabupatenFilterChange(val);
+    } else {
+      setLocalKabupaten(val);
+    }
+    // Reset kecamatan when kabupaten changes
+    if (onKecamatanFilterChange) {
+      onKecamatanFilterChange('ALL');
+    } else {
+      setLocalKecamatan('ALL');
+    }
+  };
+
+  const handleKecamatanChange = (val: string) => {
+    if (onKecamatanFilterChange) {
+      onKecamatanFilterChange(val);
+    } else {
+      setLocalKecamatan(val);
+    }
+  };
 
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+
+  // Extract distinct Kabupaten and Kecamatan lists from stores
+  const { kabupatenList, kecamatanByKabupaten } = useMemo(() => {
+    return extractKabupatenKecamatanMap(stores);
+  }, [stores]);
+
+  const availableKecamatans = useMemo(() => {
+    if (activeKabupaten === 'ALL') {
+      const set = new Set<string>();
+      (Object.values(kecamatanByKabupaten) as string[][]).forEach(list => {
+        list.forEach(k => set.add(k));
+      });
+      return Array.from(set).sort();
+    }
+    return kecamatanByKabupaten[activeKabupaten] || [];
+  }, [activeKabupaten, kecamatanByKabupaten]);
 
   // Selected store object
   const selectedStore = useMemo(() => {
     return stores.find(s => s.id === selectedStoreId) || null;
   }, [stores, selectedStoreId]);
 
-  // Filtered & Ranked stores with smart search scoring
-  const filteredStores = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return stores.slice(0, 100); // Show first 100 if no query
+  // Calculate distance for a store from the referenceStore
+  const getStoreDistance = (store: Store): number | null => {
+    if (!referenceStore || !referenceStore.latitude || !referenceStore.longitude || !store.latitude || !store.longitude) {
+      return null;
     }
+    if (referenceStore.id === store.id || referenceStore.code === store.code) {
+      return 0;
+    }
+    return calculateHaversineDistance(
+      referenceStore.latitude,
+      referenceStore.longitude,
+      store.latitude,
+      store.longitude
+    );
+  };
 
+  // Selected store distance from referenceStore
+  const selectedStoreDistance = selectedStore ? getStoreDistance(selectedStore) : null;
+
+  // Filtered & Ranked stores with smart search scoring, Kabupaten/Kecamatan filter & distance
+  const filteredStores = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     const qClean = q.replace(/[^a-z0-9]/g, '');
 
-    const scored = stores.map(store => {
+    // 1. Filter by Kabupaten and Kecamatan first
+    let candidateStores = stores;
+
+    if (activeKabupaten !== 'ALL') {
+      candidateStores = candidateStores.filter(s => {
+        const kab = normalizeKabupaten(s.kabupaten, s.region, s.city);
+        return kab.toLowerCase() === activeKabupaten.toLowerCase();
+      });
+    }
+
+    if (activeKecamatan !== 'ALL') {
+      candidateStores = candidateStores.filter(s => {
+        const kec = normalizeKecamatan(s.kecamatan, s.district, s.name);
+        return kec.toLowerCase() === activeKecamatan.toLowerCase();
+      });
+    }
+
+    const storeItems = candidateStores.map(store => {
+      const dist = getStoreDistance(store);
       let score = 0;
-      const code = (store.code || '').toLowerCase();
-      const codeClean = code.replace(/[^a-z0-9]/g, '');
-      const name = (store.name || '').toLowerCase();
-      const region = (store.region || '').toLowerCase();
-      const kabupaten = (store.kabupaten || '').toLowerCase();
-      const city = (store.city || '').toLowerCase();
-      const manager = (store.managerName || '').toLowerCase();
 
-      // Exact code match
-      if (code === q || codeClean === qClean) {
-        score += 1000;
-      } else if (code.startsWith(q) || codeClean.startsWith(qClean)) {
-        score += 500;
-      } else if (code.includes(q) || codeClean.includes(qClean)) {
-        score += 200;
+      if (q) {
+        const code = (store.code || '').toLowerCase();
+        const codeClean = code.replace(/[^a-z0-9]/g, '');
+        const name = (store.name || '').toLowerCase();
+        const region = (store.region || '').toLowerCase();
+        const kabupaten = (store.kabupaten || '').toLowerCase();
+        const city = (store.city || '').toLowerCase();
+        const kecamatan = (store.kecamatan || store.district || '').toLowerCase();
+        const manager = (store.managerName || '').toLowerCase();
+
+        // Exact code match
+        if (code === q || codeClean === qClean) {
+          score += 1000;
+        } else if (code.startsWith(q) || codeClean.startsWith(qClean)) {
+          score += 500;
+        } else if (code.includes(q) || codeClean.includes(qClean)) {
+          score += 200;
+        }
+
+        // Name matches
+        if (name === q) {
+          score += 800;
+        } else if (name.startsWith(q)) {
+          score += 400;
+        } else if (name.includes(q)) {
+          score += 150;
+        }
+
+        // Multi-word token matching in name
+        const tokens = q.split(/\s+/);
+        if (tokens.length > 1) {
+          const allTokensMatch = tokens.every(tok => 
+            name.includes(tok) || code.includes(tok) || region.includes(tok) || kabupaten.includes(tok) || kecamatan.includes(tok)
+          );
+          if (allTokensMatch) score += 250;
+        }
+
+        // Region, Kabupaten & Kecamatan matches
+        if (region.includes(q) || kabupaten.includes(q) || city.includes(q) || kecamatan.includes(q)) {
+          score += 100;
+        }
+
+        // Manager match
+        if (manager.includes(q)) {
+          score += 50;
+        }
+      } else {
+        score = 100; // Base score when not searching
       }
 
-      // Name matches
-      if (name === q) {
-        score += 800;
-      } else if (name.startsWith(q)) {
-        score += 400;
-      } else if (name.includes(q)) {
-        score += 150;
-      }
-
-      // Multi-word token matching in name
-      const tokens = q.split(/\s+/);
-      if (tokens.length > 1) {
-        const allTokensMatch = tokens.every(tok => 
-          name.includes(tok) || code.includes(tok) || region.includes(tok) || kabupaten.includes(tok)
-        );
-        if (allTokensMatch) score += 250;
-      }
-
-      // Region & Kabupaten matches
-      if (region.includes(q) || kabupaten.includes(q) || city.includes(q)) {
-        score += 100;
-      }
-
-      // Manager match
-      if (manager.includes(q)) {
-        score += 50;
-      }
-
-      return { store, score };
+      return { store, score, distance: dist };
     });
 
-    return scored
-      .filter(item => item.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .map(item => item.store)
-      .slice(0, 150); // limit to top 150
-  }, [stores, searchQuery]);
+    if (q) {
+      return storeItems
+        .filter(item => item.score > 0)
+        .sort((a, b) => {
+          if (sortByDistance && a.distance !== null && b.distance !== null) {
+            return a.distance - b.distance;
+          }
+          return b.score - a.score;
+        })
+        .map(item => ({ store: item.store, distance: item.distance }))
+        .slice(0, 150);
+    }
+
+    if (sortByDistance && referenceStore) {
+      return storeItems
+        .sort((a, b) => {
+          if (a.distance === null && b.distance === null) return 0;
+          if (a.distance === null) return 1;
+          if (b.distance === null) return -1;
+          return a.distance - b.distance;
+        })
+        .map(item => ({ store: item.store, distance: item.distance }))
+        .slice(0, 100);
+    }
+
+    // Default sorting when filter is active: alphabetical by store name or code
+    return storeItems
+      .sort((a, b) => a.store.name.localeCompare(b.store.name))
+      .slice(0, 100)
+      .map(item => ({ store: item.store, distance: item.distance }));
+  }, [stores, searchQuery, referenceStore, sortByDistance, activeKabupaten, activeKecamatan]);
 
   // Click outside listener
   useEffect(() => {
@@ -198,6 +325,30 @@ export const SearchableStoreSelect: React.FC<SearchableStoreSelectProps> = ({
         </label>
       )}
 
+      {/* Reference Store Indicator Banner if provided */}
+      {referenceStore && (
+        <div className="mb-1.5 p-2 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl border border-indigo-200 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-1.5 overflow-hidden">
+            <Compass className="w-4 h-4 text-indigo-600 shrink-0" />
+            <span className="text-[11px] font-bold text-slate-700 shrink-0">{referenceStoreLabel}:</span>
+            <span className="font-mono font-bold text-indigo-900 bg-white px-1.5 py-0.5 rounded border border-indigo-200 text-[11px]">
+              [{referenceStore.code}]
+            </span>
+            <span className="font-bold text-slate-800 truncate text-[11px]">{referenceStore.name}</span>
+          </div>
+          {onClearReferenceStore && (
+            <button
+              type="button"
+              onClick={onClearReferenceStore}
+              className="text-[10px] text-slate-400 hover:text-slate-700 p-0.5"
+              title="Hapus acuan jarak"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Main Trigger Box */}
       <div
         onClick={() => !disabled && setIsOpen(!isOpen)}
@@ -223,6 +374,20 @@ export const SearchableStoreSelect: React.FC<SearchableStoreSelectProps> = ({
               <MapPin className="w-2.5 h-2.5 text-slate-400" />
               {selectedStore.region || selectedStore.kabupaten || selectedStore.city || 'Bali'}
             </span>
+            {selectedStoreDistance !== null && (
+              <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 border ${
+                selectedStoreDistance === 0
+                  ? 'bg-slate-100 text-slate-700 border-slate-300'
+                  : selectedStoreDistance <= 10
+                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                  : selectedStoreDistance <= 25
+                  ? 'bg-amber-100 text-amber-800 border-amber-300'
+                  : 'bg-rose-100 text-rose-800 border-rose-300'
+              }`}>
+                <Navigation className="w-2.5 h-2.5" />
+                {selectedStoreDistance === 0 ? 'Titik Awal (0 km)' : `${selectedStoreDistance} km`}
+              </span>
+            )}
             {selectedStore.riskLevel && (
               <span className={`hidden md:inline-block text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase shrink-0 ${
                 selectedStore.riskLevel === 'HIGH' ? 'bg-rose-100 text-rose-700' :
@@ -240,8 +405,13 @@ export const SearchableStoreSelect: React.FC<SearchableStoreSelectProps> = ({
         )}
 
         <div className="flex items-center gap-1.5 text-slate-400 shrink-0">
-          <span className="text-[10px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-bold border border-indigo-100 hidden sm:inline-block">
-            Cari Cepat
+          {referenceStore && (
+            <span className="text-[10px] bg-indigo-50 text-indigo-700 font-bold px-2 py-0.5 rounded-full border border-indigo-200 hidden sm:inline-block">
+              Auto Jarak GPS
+            </span>
+          )}
+          <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-bold border border-slate-200 hidden sm:inline-block">
+            Cari
           </span>
           <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isOpen ? 'rotate-180 text-indigo-600' : ''}`} />
         </div>
@@ -279,11 +449,79 @@ export const SearchableStoreSelect: React.FC<SearchableStoreSelectProps> = ({
                 </button>
               )}
             </div>
-            <div className="shrink-0 flex items-center gap-1 text-[10px] text-indigo-300 font-bold bg-indigo-950/80 px-2 py-1.5 rounded-lg border border-indigo-800/60">
+            {referenceStore && (
+              <button
+                type="button"
+                onClick={() => setSortByDistance(!sortByDistance)}
+                className={`shrink-0 flex items-center gap-1 text-[10px] font-bold px-2 py-1.5 rounded-lg border transition ${
+                  sortByDistance 
+                    ? 'bg-emerald-500 text-white border-emerald-400' 
+                    : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                }`}
+                title="Urutkan dari jarak terdekat"
+              >
+                <Compass className="w-3 h-3" />
+                <span>{sortByDistance ? 'Terdekat ✓' : 'Urut Jarak'}</span>
+              </button>
+            )}
+            <div className="shrink-0 flex items-center gap-1 text-[10px] text-indigo-300 font-bold bg-indigo-950/80 px-2 py-1.5 rounded-lg border border-indigo-800/60 hidden sm:flex">
               <Sparkles className="w-3 h-3 text-indigo-400" />
               <span>Smart Search</span>
             </div>
           </div>
+
+          {/* Quick Filter Bar: Kabupaten & Kecamatan */}
+          {showFilters && (
+            <div className="p-2 bg-slate-100/90 border-b border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {/* Kabupaten Dropdown */}
+              <div className="flex items-center gap-1.5 bg-white px-2 py-1.5 rounded-xl border border-slate-200 text-xs shadow-xs">
+                <Filter className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                <span className="text-[10px] font-bold text-slate-500 shrink-0">Kab:</span>
+                <select
+                  value={activeKabupaten}
+                  onChange={(e) => handleKabupatenChange(e.target.value)}
+                  className="w-full bg-transparent text-slate-800 font-bold text-xs focus:outline-none cursor-pointer truncate"
+                >
+                  <option value="ALL">Semua Kabupaten ({kabupatenList.length})</option>
+                  {kabupatenList.map(kab => (
+                    <option key={kab} value={kab}>{kab}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Kecamatan Dropdown */}
+              <div className="flex items-center gap-1.5 bg-white px-2 py-1.5 rounded-xl border border-slate-200 text-xs shadow-xs">
+                <MapPin className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                <span className="text-[10px] font-bold text-slate-500 shrink-0">Kec:</span>
+                <select
+                  value={activeKecamatan}
+                  onChange={(e) => handleKecamatanChange(e.target.value)}
+                  disabled={availableKecamatans.length === 0}
+                  className="w-full bg-transparent text-slate-800 font-bold text-xs focus:outline-none cursor-pointer truncate disabled:text-slate-400"
+                >
+                  <option value="ALL">
+                    {activeKabupaten === 'ALL' ? 'Semua Kecamatan' : `Semua Kec. di ${activeKabupaten}`} ({availableKecamatans.length})
+                  </option>
+                  {availableKecamatans.map(kec => (
+                    <option key={kec} value={kec}>{kec}</option>
+                  ))}
+                </select>
+                {(activeKabupaten !== 'ALL' || activeKecamatan !== 'ALL') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleKabupatenChange('ALL');
+                      handleKecamatanChange('ALL');
+                    }}
+                    className="text-[10px] text-rose-500 hover:text-rose-700 font-bold shrink-0 ml-1 px-1 py-0.5 rounded bg-rose-50 hover:bg-rose-100"
+                    title="Reset Filter"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Quick Suggestion Info */}
           <div className="px-3 py-1.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
@@ -291,10 +529,15 @@ export const SearchableStoreSelect: React.FC<SearchableStoreSelectProps> = ({
               {searchQuery.trim() ? (
                 <>Ditemukan <strong>{filteredStores.length}</strong> toko cocok</>
               ) : (
-                <>Menampilkan <strong>{filteredStores.length}</strong> toko teratas</>
+                <>Menampilkan <strong>{filteredStores.length}</strong> toko {activeKabupaten !== 'ALL' ? `(${activeKabupaten}${activeKecamatan !== 'ALL' ? ` • ${activeKecamatan}` : ''})` : ''}</>
+              )}
+              {referenceStore && (
+                <span className="text-indigo-600 font-semibold ml-1.5">
+                  (Acuan: [{referenceStore.code}] {referenceStore.name})
+                </span>
               )}
             </span>
-            <span className="text-[10px] text-slate-400">Gunakan ↑↓ dan Enter untuk memilih</span>
+            <span className="text-[10px] text-slate-400">Gunakan ↑↓ & Enter</span>
           </div>
 
           {/* Store List */}
@@ -309,7 +552,7 @@ export const SearchableStoreSelect: React.FC<SearchableStoreSelectProps> = ({
                 <p className="text-[11px] text-slate-400 mt-0.5">Coba cari dengan kode lain seperti "F...", nama cabang, atau nama kabupaten</p>
               </div>
             ) : (
-              filteredStores.map((store, index) => {
+              filteredStores.map(({ store, distance }, index) => {
                 const isSelected = selectedStoreId === store.id;
                 const isHighlighted = index === highlightedIndex;
 
@@ -357,8 +600,22 @@ export const SearchableStoreSelect: React.FC<SearchableStoreSelectProps> = ({
                       </div>
                     </div>
 
-                    {/* Right side check / badges */}
+                    {/* Right side: Distance Badge & Check */}
                     <div className="flex items-center gap-2 shrink-0 ml-2">
+                      {distance !== null && (
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold flex items-center gap-1 border ${
+                          distance === 0
+                            ? 'bg-slate-100 text-slate-700 border-slate-300'
+                            : distance <= 10
+                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                            : distance <= 25
+                            ? 'bg-amber-100 text-amber-800 border-amber-300'
+                            : 'bg-rose-100 text-rose-800 border-rose-300'
+                        }`}>
+                          <Navigation className="w-2.5 h-2.5" />
+                          {distance === 0 ? 'Acuan (0km)' : `${distance} km`}
+                        </span>
+                      )}
                       {store.riskLevel && (
                         <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase ${
                           store.riskLevel === 'HIGH' ? 'bg-rose-100 text-rose-700' :
@@ -372,7 +629,7 @@ export const SearchableStoreSelect: React.FC<SearchableStoreSelectProps> = ({
                           <Check className="w-3 h-3" />
                         </span>
                       ) : (
-                        <span className="w-5" />
+                        <span className="w-4" />
                       )}
                     </div>
                   </div>

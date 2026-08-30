@@ -9,20 +9,31 @@ import {
   ClipboardList, 
   Download, 
   Building2, 
-  TrendingUp, 
   Clock, 
-  CheckSquare, 
-  FileSpreadsheet,
+  FileSpreadsheet, 
+  Filter, 
+  Search,
+  ChevronDown, 
+  Sparkles,
+  ShieldAlert,
+  MapPin,
+  DollarSign,
+  Briefcase,
   Layers,
-  Filter,
-  Plus,
-  Minus,
-  ChevronDown,
-  ChevronRight
+  CheckSquare,
+  Navigation,
+  ExternalLink,
+  MessageSquare,
+  LayoutGrid,
+  Table as TableIcon,
+  RefreshCw,
+  X
 } from 'lucide-react';
 import { SOSchedule, Store, AuditorPersonnel, SOResult } from '../../types/stockOpname';
-import { formatDateIndo, getStatusBadgeClass, formatDateISO } from '../../utils/formatters';
+import { formatDateIndo, getStatusBadgeClass, formatDateISO, formatRupiah } from '../../utils/formatters';
+import { getDayNameIndo } from '../../utils/storeSyncUtils';
 import { exportToCSV } from '../../services/storageService';
+import { BALI_KORLAP_GROUPS } from '../../data/baliData';
 
 interface KorlapDashboardProps {
   schedules: SOSchedule[];
@@ -45,699 +56,839 @@ export const KorlapDashboard: React.FC<KorlapDashboardProps> = ({
   onOpenInputResultModal,
   onConfirmScheduleFinished
 }) => {
-  // Available Korlap officers list from personnel database - STRICTLY Officer / Korlap role
-  const korlapsInDB = personnel.filter(p => p.role === 'Officer / Korlap');
+  // 6 Main Korlap groups from sheet JADWAL & PERSONIL
+  const primaryKorlaps = useMemo(() => {
+    return [
+      'I WAYAN ANGGA RISTA',
+      'ODI TRI ANGGARA',
+      'ANGGA ARDIYANSYAH',
+      'ABDUL RAHMAN',
+      'I GEDE PASEK SANTIKA',
+      'PUTU BISMA'
+    ];
+  }, []);
 
   const [selectedOfficer, setSelectedOfficer] = useState<string>('ALL');
-  const [selectedDateFilter, setSelectedDateFilter] = useState<string>('AUTO_RELEASE'); // 'AUTO_RELEASE' | 'TODAY' | 'TOMORROW' | 'THIS_WEEK' | 'ALL'
+  const [activeTab, setActiveTab] = useState<'HARI_H' | 'H_MINUS_1' | 'ALL_SEPTEMBER'>('HARI_H');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedDateSpecific, setSelectedDateSpecific] = useState<string>('ALL');
+  const [viewLayout, setViewLayout] = useState<'cards' | 'table'>('cards');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'BELUM_SO' | 'SELESAI' | 'KENDALA'>('ALL');
 
   // Modal State for SO Selesai Confirmation
   const [confirmingSchedule, setConfirmingSchedule] = useState<SOSchedule | null>(null);
   const [confirmInputText, setConfirmInputText] = useState<string>('');
 
-  // Unique list of officer names in schedules
-  const allOfficerNames = Array.from(
-    new Set([
-      ...korlapsInDB.map(p => p.name),
-      ...schedules.map(s => s.officerInCharge).filter(Boolean).map(n => n?.split(' (')[0] || n)
-    ])
-  ).filter(Boolean) as string[];
-
-  // Dates & Time calculations for auto-release (H-1 Jam 21:00 WITA / Hari-H)
+  // Date Calculations for H-1 (Tomorrow) and Hari-H (Today)
   const now = new Date();
   const todayStr = formatDateISO(now);
   
   const tomorrow = new Date(now);
   tomorrow.setDate(tomorrow.getDate() + 1);
   const tomorrowStr = formatDateISO(tomorrow);
-  
-  const currentHour = now.getHours();
-  const isAfter21PM = currentHour >= 21; // 21:00 WITA
 
-  // Helper to check if a schedule is released for Korlap
-  const isScheduleAutoReleased = (schedDate: string): boolean => {
-    if (!schedDate) return false;
-    const normDate = formatDateISO(schedDate);
-    if (normDate <= todayStr) return true; // Hari-H or past
-    if (normDate === tomorrowStr && isAfter21PM) return true; // H-1 after 21:00 WITA
-    return false;
-  };
-
-  // Filter schedules by officer and date range / release mode
-  const filteredSchedules = schedules.filter(s => {
-    // Filter by Korlap / Officer
-    const matchesOfficer = selectedOfficer === 'ALL' || (s.officerInCharge && s.officerInCharge.toLowerCase().includes(selectedOfficer.toLowerCase()));
-    if (!matchesOfficer) return false;
-
-    const normDate = formatDateISO(s.scheduledDate);
-
-    // Filter by Date Mode
-    if (selectedDateFilter === 'AUTO_RELEASE') {
-      return isScheduleAutoReleased(s.scheduledDate);
-    } else if (selectedDateFilter === 'TODAY') {
-      return normDate === todayStr;
-    } else if (selectedDateFilter === 'TOMORROW') {
-      return normDate === tomorrowStr;
-    } else if (selectedDateFilter === 'THIS_WEEK') {
-      const schedTime = new Date(normDate).getTime();
-      const nowTime = new Date(todayStr).getTime();
-      const diffDays = (schedTime - nowTime) / (1000 * 3600 * 24);
-      return diffDays >= -1 && diffDays <= 7;
-    }
-
-    return true; // 'ALL'
-  });
-
-  // Group filtered schedules by Korlap Officer
-  const groupedByKorlap = useMemo<Record<string, SOSchedule[]>>(() => {
-    const map: Record<string, SOSchedule[]> = {};
-    filteredSchedules.forEach(s => {
-      const korlapKey = s.officerInCharge ? s.officerInCharge.split(' (')[0].trim() : 'Tanpa Korlap Terdaftar';
-      if (!map[korlapKey]) map[korlapKey] = [];
-      map[korlapKey].push(s);
+  // Available unique dates in schedules
+  const availableScheduleDates = useMemo(() => {
+    const dates = new Set<string>();
+    schedules.forEach(s => {
+      if (s.scheduledDate) dates.add(s.scheduledDate);
     });
-    return map;
-  }, [filteredSchedules]);
+    return Array.from(dates).sort();
+  }, [schedules]);
 
-  // Collapsed state per Korlap (default false = collapsed)
-  const [expandedKorlaps, setExpandedKorlaps] = useState<Record<string, boolean>>({});
+  // Determine which target date is being viewed based on activeTab
+  const targetDateForView = activeTab === 'H_MINUS_1' 
+    ? (availableScheduleDates.find(d => d >= tomorrowStr) || tomorrowStr)
+    : activeTab === 'HARI_H' 
+    ? todayStr 
+    : selectedDateSpecific;
 
-  const toggleKorlapExpand = (korlapKey: string) => {
-    setExpandedKorlaps(prev => ({ ...prev, [korlapKey]: !prev[korlapKey] }));
+  // Helper to get Store details by code/id
+  const getStoreDetail = (s: SOSchedule): Store | undefined => {
+    return stores.find(st => st.id === s.storeId || st.code === s.storeCode);
   };
 
-  const expandAllKorlaps = () => {
-    const allExpanded: Record<string, boolean> = {};
-    Object.keys(groupedByKorlap).forEach(k => allExpanded[k] = true);
-    setExpandedKorlaps(allExpanded);
-  };
-
-  const collapseAllKorlaps = () => {
-    setExpandedKorlaps({});
-  };
-
-  // Calculate Metrics
-  const totalTargetStores = filteredSchedules.length;
-  const completedStores = filteredSchedules.filter(s => s.status === 'Selesai').length;
-  const inProgressStores = filteredSchedules.filter(s => s.status === 'Proses SO' || s.status === 'Menunggu Rekapan').length;
-  const failedOrMovedStores = filteredSchedules.filter(s => s.status === 'Gagal SO' || s.status === 'Pindah Toko' || s.status === 'Dibatalkan').length;
-  
-  const effectiveTarget = Math.max(0, totalTargetStores - failedOrMovedStores);
-  const achievementRate = effectiveTarget > 0 ? Math.round((completedStores / effectiveTarget) * 100) : 0;
-
-  // Failed / Moved Stores List
-  const failureMoveLogs = filteredSchedules.filter(
-    s => s.status === 'Gagal SO' || s.status === 'Pindah Toko' || s.failureOrMoveType
-  );
-
-  // Export CSV
-  const handleExportKorlapReport = () => {
-    const exportData = filteredSchedules.map(s => {
-      const nameUpper = (s.storeName || '').toUpperCase();
-      let accurateRegion = s.region;
-      if (nameUpper.includes('BADUNG') || nameUpper.includes('TUBAN') || nameUpper.includes('TN5R') || nameUpper.includes('TCUW') || nameUpper.includes('KUTA')) {
-        accurateRegion = 'Kab. Badung';
-      } else if (nameUpper.includes('DENPASAR') || nameUpper.includes('DPS')) {
-        accurateRegion = 'Kota Denpasar';
-      } else if (s.region && s.region.includes('Jabodetabek')) {
-        accurateRegion = 'Kab. Badung';
+  // Filtered schedules for Korlap
+  const filteredSchedules = useMemo(() => {
+    return schedules.filter(s => {
+      // 1. Filter by Officer / Group
+      if (selectedOfficer !== 'ALL') {
+        const officerStr = (s.officerInCharge || s.groupName || '').toLowerCase();
+        const selStr = selectedOfficer.toLowerCase();
+        const matches = officerStr.includes(selStr) || selStr.includes(officerStr);
+        if (!matches) return false;
       }
 
+      // 2. Filter by Tab mode
+      const normDate = formatDateISO(s.scheduledDate);
+      if (activeTab === 'H_MINUS_1') {
+        if (selectedDateSpecific !== 'ALL') {
+          return normDate === selectedDateSpecific;
+        }
+        return normDate === targetDateForView || normDate === tomorrowStr;
+      } else if (activeTab === 'HARI_H') {
+        if (selectedDateSpecific !== 'ALL') {
+          return normDate === selectedDateSpecific;
+        }
+        return normDate === todayStr;
+      } else {
+        if (selectedDateSpecific !== 'ALL') {
+          return normDate === selectedDateSpecific;
+        }
+        return true;
+      }
+    }).filter(s => {
+      // 3. Status Filter
+      if (statusFilter === 'BELUM_SO') {
+        return s.status === 'Terjadwal' || s.status === 'Proses SO' || s.status === 'Menunggu Rekapan';
+      }
+      if (statusFilter === 'SELESAI') {
+        return s.status === 'Selesai';
+      }
+      if (statusFilter === 'KENDALA') {
+        return s.status === 'Gagal SO' || s.status === 'Pindah Toko' || s.status === 'Dibatalkan';
+      }
+      return true;
+    }).filter(s => {
+      // 4. Search query
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase().trim();
+      const store = getStoreDetail(s);
+      return (
+        s.storeCode.toLowerCase().includes(q) ||
+        s.storeName.toLowerCase().includes(q) ||
+        (s.officerInCharge && s.officerInCharge.toLowerCase().includes(q)) ||
+        (s.personilLeader && s.personilLeader.toLowerCase().includes(q)) ||
+        (s.zona && s.zona.toLowerCase().includes(q)) ||
+        (s.notes && s.notes.toLowerCase().includes(q)) ||
+        (store && store.region && store.region.toLowerCase().includes(q))
+      );
+    });
+  }, [schedules, selectedOfficer, activeTab, targetDateForView, tomorrowStr, todayStr, selectedDateSpecific, statusFilter, searchQuery, stores]);
+
+  // Metrics
+  const totalTargetStores = filteredSchedules.length;
+  const completedStores = filteredSchedules.filter(s => s.status === 'Selesai').length;
+  const inProgressStores = filteredSchedules.filter(s => s.status === 'Proses SO' || s.status === 'Menunggu Rekapan' || s.status === 'Terjadwal').length;
+  const failedOrMovedStores = filteredSchedules.filter(s => s.status === 'Gagal SO' || s.status === 'Pindah Toko' || s.status === 'Dibatalkan').length;
+
+  const totalStockRp = filteredSchedules.reduce((acc, s) => {
+    const store = getStoreDetail(s);
+    return acc + (Number(s.stockRp) || Number(store?.saldoToko) || 0);
+  }, 0);
+
+  const totalKasToko = filteredSchedules.reduce((acc, s) => {
+    const store = getStoreDetail(s);
+    return acc + (Number(s.kasToko) || Number(store?.kasToko) || 0);
+  }, 0);
+
+  // Export CSV formatted for Korlap
+  const handleExportCSV = () => {
+    const exportData = filteredSchedules.map((s, idx) => {
+      const store = getStoreDetail(s);
+      const isAktiva = s.soAktiva || store?.soAktiva || 'Tidak';
+      const zona = s.zona || store?.zona || (store?.isZonaHitam ? 'ZONA HITAM' : 'NON ZONA HITAM');
+      const notesSPV = s.notes || store?.keterangan || '-';
+
       return {
-        'ID Schedule': s.id,
-        'Korlap / Officer': s.officerInCharge || 'I GEDE PASEK SANTIKA (Officer / Korlap)',
-        'Kode Toko': s.storeCode,
-        'Nama Toko': s.storeName,
-        'Wilayah': accurateRegion,
-        'Tanggal SO': s.scheduledDate,
-        'Jam': s.scheduledTime,
-        'Status Execution': s.status,
-        'Personil SO Ditugaskan': s.assignedPersonnelNames?.join('; ') || 'Belum Dialokasikan',
-        'Jenis Kendala (Gagal/Pindah)': s.failureOrMoveType || '-',
-        'Alasan / Penjelasan Korlap': s.failureOrMoveReason || s.notes || '-',
-        'Toko Pengganti (Jika Pindah)': s.replacementStoreCode ? `${s.replacementStoreCode} - ${s.replacementStoreName}` : '-'
+        'NO': idx + 1,
+        'KODE TOKO': s.storeCode,
+        'NAMA TOKO': s.storeName,
+        'STOCK RP': Number(s.stockRp) || Number(store?.saldoToko) || 0,
+        'KAS TOKO': Number(s.kasToko) || Number(store?.kasToko) || 0,
+        'TGL SO': s.scheduledDate,
+        'HARI': s.dayName || getDayNameIndo(s.scheduledDate),
+        'SO AKTIVA': isAktiva,
+        'ZONA': zona,
+        'KETERANGAN / NOTES SPV': notesSPV,
+        'GROUP KORLAP': s.groupName || s.officerInCharge || '',
+        'PERSONIL LEADER': s.personilLeader || (s.assignedPersonnelNames && s.assignedPersonnelNames[0]) || '',
+        'STATUS': s.status
       };
     });
 
-    exportToCSV('Laporan_Sinkronisasi_Korlap_SO.csv', exportData);
+    exportToCSV(`Jadwal_SO_Hari_H_${activeTab}_${selectedOfficer.replace(/\s+/g, '_')}.csv`, exportData);
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-200">
+    <div className="space-y-5">
       
-      {/* Top Banner & Korlap Selector */}
-      <div className="bg-gradient-to-r from-emerald-900 via-slate-900 to-indigo-950 text-white p-3.5 sm:p-5 rounded-2xl shadow-lg border border-emerald-800/60 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded bg-emerald-500 text-slate-950 font-black text-[9px] sm:text-[10px] tracking-wider uppercase">
-              PORTAL KORLAP / OFFICER
-            </span>
-            <span className="text-[11px] text-emerald-300 font-mono hidden sm:inline">
-              Auto-Synced dengan SPV & Admin
-            </span>
-          </div>
-          <h2 className="text-sm sm:text-base font-extrabold mt-1 text-white flex items-center gap-2">
-            <UserCheck className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400 shrink-0" />
-            <span>Dashboard Monitoring Korlap</span>
-          </h2>
-          <p className="text-[11px] sm:text-xs text-emerald-100/80 mt-0.5 line-clamp-1 sm:line-clamp-none">
-            Kelola alokasi personil SO, konfirmasi SO selesai & log kejadian secara real-time.
-          </p>
-        </div>
-
-        {/* Korlap Filter Controls */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
-          <div className="bg-white/10 backdrop-blur-md p-1.5 rounded-xl border border-white/20 flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5 w-full">
-            <div className="flex items-center gap-1.5">
-              <Filter className="w-3.5 h-3.5 text-emerald-300 ml-1 shrink-0" />
-              <select
-                value={selectedOfficer}
-                onChange={(e) => setSelectedOfficer(e.target.value)}
-                className="bg-slate-900 border-0 text-white font-bold text-[11px] sm:text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-400 w-full"
-              >
-                <option value="ALL">Semua Korlap ({allOfficerNames.length})</option>
-                {allOfficerNames.map(name => (
-                  <option key={name} value={name}>{name}</option>
-                ))}
-              </select>
+      {/* Top Banner: Auto-Jadwal & Sheet Jadwal Connection */}
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-4 sm:p-6 shadow-xl border border-indigo-500/20">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
+                <Sparkles className="w-3 h-3 text-indigo-400" />
+                Portal Operasional Korlap Mobile
+              </span>
+              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-[10px] font-bold">
+                Auto Terhubung Master Toko Bali
+              </span>
             </div>
-
-            <select
-              value={selectedDateFilter}
-              onChange={(e) => setSelectedDateFilter(e.target.value)}
-              className="bg-slate-900 border-0 text-emerald-200 font-semibold text-[11px] sm:text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-400 w-full"
-            >
-              <option value="AUTO_RELEASE">🔓 Terbit Auto (Hari-H & H-1 21:00 WITA)</option>
-              <option value="TODAY">📅 Khusus Hari Ini ({todayStr})</option>
-              <option value="TOMORROW">🌙 Jadwal Besok ({tomorrowStr})</option>
-              <option value="THIS_WEEK">🗓️ 7 Hari Ke Depan</option>
-              <option value="ALL">📋 Semua Jadwal Sebulan</option>
-            </select>
-          </div>
-
-          <button
-            onClick={handleExportKorlapReport}
-            className="px-3 py-1.5 sm:py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold rounded-xl text-[11px] sm:text-xs shadow-md transition flex items-center justify-center gap-1.5 shrink-0"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            <span>Export Report</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Metric Cards Summary - Compact 2-column Grid on Mobile */}
-      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-2 sm:gap-4">
-        
-        <div className="bg-white p-2.5 sm:p-4 rounded-xl border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between text-slate-500 text-[10px] sm:text-xs font-semibold">
-            <span>Target SPV</span>
-            <Building2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-600" />
-          </div>
-          <div className="text-lg sm:text-2xl font-black text-slate-900 font-mono mt-0.5">
-            {totalTargetStores} <span className="text-[10px] sm:text-xs font-sans text-slate-500 font-normal">Toko</span>
-          </div>
-          <p className="text-[9px] sm:text-[10px] text-slate-400 hidden sm:block">Jadwal resmi Supervisor</p>
-        </div>
-
-        <div className="bg-white p-2.5 sm:p-4 rounded-xl border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between text-emerald-700 text-[10px] sm:text-xs font-semibold">
-            <span>SO Selesai</span>
-            <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600" />
-          </div>
-          <div className="text-lg sm:text-2xl font-black text-emerald-700 font-mono mt-0.5">
-            {completedStores} <span className="text-[10px] sm:text-xs font-sans text-slate-500 font-normal">Toko</span>
-          </div>
-          <p className="text-[9px] sm:text-[10px] text-emerald-600 font-medium hidden sm:block">Lengkap BA</p>
-        </div>
-
-        <div className="bg-white p-2.5 sm:p-4 rounded-xl border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between text-amber-700 text-[10px] sm:text-xs font-semibold">
-            <span>Proses Audit</span>
-            <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-600" />
-          </div>
-          <div className="text-lg sm:text-2xl font-black text-amber-700 font-mono mt-0.5">
-            {inProgressStores} <span className="text-[10px] sm:text-xs font-sans text-slate-500 font-normal">Toko</span>
-          </div>
-          <p className="text-[9px] sm:text-[10px] text-amber-600 font-medium hidden sm:block">Berjalan / NKL</p>
-        </div>
-
-        <div className="bg-white p-2.5 sm:p-4 rounded-xl border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between text-rose-700 text-[10px] sm:text-xs font-semibold">
-            <span>Gagal / Pindah</span>
-            <AlertTriangle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-600" />
-          </div>
-          <div className="text-lg sm:text-2xl font-black text-rose-700 font-mono mt-0.5">
-            {failedOrMovedStores} <span className="text-[10px] sm:text-xs font-sans text-slate-500 font-normal">Toko</span>
-          </div>
-          <p className="text-[9px] sm:text-[10px] text-rose-600 font-medium hidden sm:block">Pindah / Batal</p>
-        </div>
-
-        <div className="col-span-2 sm:col-span-1 bg-slate-900 text-white p-2.5 sm:p-4 rounded-xl border border-slate-800 shadow-xs">
-          <div className="flex items-center justify-between text-indigo-300 text-[10px] sm:text-xs font-semibold">
-            <span>Capaian Target (%)</span>
-            <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" />
-          </div>
-          <div className="text-lg sm:text-2xl font-black text-emerald-400 font-mono mt-0.5">
-            {achievementRate}%
-          </div>
-          <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mt-1">
-            <div 
-              className="bg-emerald-400 h-full rounded-full transition-all duration-300"
-              style={{ width: `${Math.min(100, achievementRate)}%` }}
-            />
-          </div>
-        </div>
-
-      </div>
-
-      {/* Main Korlap Schedule Execution Grid grouped by Korlap */}
-      <div className="bg-white rounded-xl border border-slate-200/90 shadow-sm overflow-hidden space-y-4 p-5">
-        
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-          <div>
-            <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-emerald-600" />
-              Daftar Penjadwalan & Eksekusi Toko Korlap
-            </h3>
-            <p className="text-xs text-slate-500">
-              Daftar terbagi per Korlap/Officer. Dihide secara default agar lebih rapi. Klik <strong className="text-emerald-700 font-extrabold">+ Buka</strong> untuk melihat toko.
+            <h2 className="text-lg sm:text-2xl font-black text-white tracking-tight">
+              Jadwal SO Hari-H Korlap
+            </h2>
+            <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
+              Tampilan operasional khusus Korlap: fokus pada <strong>Kode, Nama, Stock, Kas Toko, Tgl SO + Hari, SO Aktiva, Zona, dan Catatan SPV</strong> dengan aksi cepat mobile.
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* Quick Actions */}
+          <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={expandAllKorlaps}
-              className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-xs transition flex items-center gap-1"
+              onClick={handleExportCSV}
+              className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 active:scale-98 text-white text-xs font-bold transition border border-white/10 flex items-center gap-1.5 shadow-xs"
             >
-              <Plus className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Buka Semua</span>
-            </button>
-            <button
-              onClick={collapseAllKorlaps}
-              className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-xs transition flex items-center gap-1"
-            >
-              <Minus className="w-3.5 h-3.5 text-slate-500" />
-              <span>Tutup Semua</span>
-            </button>
-            <button
-              onClick={onOpenInputResultModal}
-              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs shadow-xs transition flex items-center gap-1.5"
-            >
-              <ClipboardList className="w-4 h-4" />
-              <span>+ Input Hasil SO</span>
+              <Download className="w-4 h-4 text-emerald-400" />
+              <span>Export CSV Hari-H</span>
             </button>
           </div>
         </div>
 
-        {/* Korlap Collapsible Groups */}
-        <div className="space-y-3">
-          {Object.keys(groupedByKorlap).length > 0 ? (
-            (Object.entries(groupedByKorlap) as [string, SOSchedule[]][]).map(([korlapName, korlapSchedules]) => {
-              const isExpanded = expandedKorlaps[korlapName] !== false;
-              const completedInKorlap = korlapSchedules.filter(s => s.status === 'Selesai').length;
+        {/* Tab Selection: Hari-H vs H-1 vs Semua September */}
+        <div className="mt-4 pt-3 border-t border-white/10 grid grid-cols-1 sm:grid-cols-3 gap-2">
+          
+          <button
+            onClick={() => {
+              setActiveTab('HARI_H');
+              setSelectedDateSpecific('ALL');
+            }}
+            className={`p-3 rounded-xl text-left transition flex items-center justify-between border ${
+              activeTab === 'HARI_H'
+                ? 'bg-emerald-600 text-white border-emerald-400 shadow-lg'
+                : 'bg-white/5 hover:bg-white/10 text-slate-300 border-white/5'
+            }`}
+          >
+            <div>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-300" />
+                <span className="font-bold text-xs">📍 Jadwal Hari-H (Hari Ini)</span>
+              </div>
+              <p className="text-[10px] opacity-80 mt-0.5">
+                Target: {todayStr} ({getDayNameIndo(todayStr)})
+              </p>
+            </div>
+            {activeTab === 'HARI_H' && (
+              <span className="px-2 py-0.5 rounded-md bg-white/20 text-[10px] font-black">Aktif</span>
+            )}
+          </button>
 
-              return (
-                <div key={korlapName} className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
-                  
-                  {/* Korlap Accordion Header */}
-                  <div 
-                    onClick={() => toggleKorlapExpand(korlapName)}
-                    className={`p-3.5 flex items-center justify-between cursor-pointer transition select-none ${
-                      isExpanded ? 'bg-slate-900 text-white' : 'bg-slate-50 hover:bg-slate-100 text-slate-800'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs transition ${
-                          isExpanded ? 'bg-emerald-500 text-slate-950' : 'bg-slate-200 text-slate-700'
-                        }`}
-                      >
-                        {isExpanded ? <Minus className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-                      </button>
+          <button
+            onClick={() => {
+              setActiveTab('H_MINUS_1');
+              setSelectedDateSpecific('ALL');
+            }}
+            className={`p-3 rounded-xl text-left transition flex items-center justify-between border ${
+              activeTab === 'H_MINUS_1'
+                ? 'bg-indigo-600 text-white border-indigo-400 shadow-lg'
+                : 'bg-white/5 hover:bg-white/10 text-slate-300 border-white/5'
+            }`}
+          >
+            <div>
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-amber-400" />
+                <span className="font-bold text-xs">📅 Jadwal H-1 (Persiapan Besok)</span>
+              </div>
+              <p className="text-[10px] opacity-80 mt-0.5">
+                Target: {targetDateForView} ({getDayNameIndo(targetDateForView)})
+              </p>
+            </div>
+            {activeTab === 'H_MINUS_1' && (
+              <span className="px-2 py-0.5 rounded-md bg-white/20 text-[10px] font-black">Aktif</span>
+            )}
+          </button>
 
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className={`font-extrabold text-sm ${isExpanded ? 'text-white' : 'text-slate-900'}`}>
-                            {korlapName}
-                          </span>
-                          <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
-                            isExpanded ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-indigo-50 text-indigo-700 border border-indigo-100'
-                          }`}>
-                            {korlapSchedules.length} Toko SO
-                          </span>
-                        </div>
-                        <p className={`text-[11px] ${isExpanded ? 'text-slate-400' : 'text-slate-500'}`}>
-                          Selesai: {completedInKorlap} / {korlapSchedules.length} Toko
-                        </p>
-                      </div>
-                    </div>
+          <button
+            onClick={() => {
+              setActiveTab('ALL_SEPTEMBER');
+              setSelectedDateSpecific('ALL');
+            }}
+            className={`p-3 rounded-xl text-left transition flex items-center justify-between border ${
+              activeTab === 'ALL_SEPTEMBER'
+                ? 'bg-purple-600 text-white border-purple-400 shadow-lg'
+                : 'bg-white/5 hover:bg-white/10 text-slate-300 border-white/5'
+            }`}
+          >
+            <div>
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="w-4 h-4 text-purple-300" />
+                <span className="font-bold text-xs">🗓️ Semua Jadwal September</span>
+              </div>
+              <p className="text-[10px] opacity-80 mt-0.5">
+                Total {schedules.length} Toko Master Terhubung
+              </p>
+            </div>
+            {activeTab === 'ALL_SEPTEMBER' && (
+              <span className="px-2 py-0.5 rounded-md bg-white/20 text-[10px] font-black">Aktif</span>
+            )}
+          </button>
 
+        </div>
+      </div>
+
+      {/* Summary Stat Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+          <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Target Toko</span>
+          <div className="flex items-baseline gap-1 mt-0.5">
+            <span className="text-xl font-black text-slate-900">{totalTargetStores}</span>
+            <span className="text-[10px] text-slate-500">Toko</span>
+          </div>
+        </div>
+
+        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+          <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider block">SO Selesai</span>
+          <div className="flex items-baseline gap-1 mt-0.5">
+            <span className="text-xl font-black text-emerald-700">{completedStores}</span>
+            <span className="text-[10px] text-emerald-600">Toko</span>
+          </div>
+        </div>
+
+        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+          <span className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider block">Total Stock Rp</span>
+          <div className="text-xs sm:text-sm font-mono font-black text-indigo-900 truncate mt-1">
+            {formatRupiah(totalStockRp)}
+          </div>
+        </div>
+
+        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+          <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider block">Total Kas Toko</span>
+          <div className="text-xs sm:text-sm font-mono font-black text-emerald-700 truncate mt-1">
+            {formatRupiah(totalKasToko)}
+          </div>
+        </div>
+      </div>
+
+      {/* Filter & Control Bar */}
+      <div className="bg-white rounded-2xl p-3.5 sm:p-4 border border-slate-200 shadow-xs space-y-3">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          
+          {/* Korlap Group Dropdown */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-700 whitespace-nowrap flex items-center gap-1">
+              <Users className="w-3.5 h-3.5 text-indigo-600" />
+              Group Korlap:
+            </span>
+            <select
+              value={selectedOfficer}
+              onChange={(e) => setSelectedOfficer(e.target.value)}
+              className="bg-slate-50 border border-slate-300 text-slate-900 text-xs rounded-xl px-3 py-2 font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none max-w-[220px]"
+            >
+              <option value="ALL">Semua Korlap Bali ({primaryKorlaps.length} Group)</option>
+              {primaryKorlaps.map(k => (
+                <option key={k} value={k}>{k}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Search Box */}
+          <div className="relative flex-1 max-w-md">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Cari kode (F010), nama toko, zona, notes..."
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-8 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+            {searchQuery && (
+              <button 
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* View Layout Toggle */}
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl shrink-0 self-start md:self-auto">
+            <button
+              type="button"
+              onClick={() => setViewLayout('cards')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition ${
+                viewLayout === 'cards'
+                  ? 'bg-white text-indigo-900 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span>Kartu Mobile</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewLayout('table')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition ${
+                viewLayout === 'table'
+                  ? 'bg-white text-indigo-900 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <TableIcon className="w-3.5 h-3.5" />
+              <span>Tabel Ringkas</span>
+            </button>
+          </div>
+
+        </div>
+
+        {/* Status Pill Filters */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-xs">
+          <span className="text-[11px] font-bold text-slate-500 mr-1 shrink-0">Filter Status:</span>
+          <button
+            onClick={() => setStatusFilter('ALL')}
+            className={`px-3 py-1 rounded-full text-xs font-bold shrink-0 transition ${
+              statusFilter === 'ALL'
+                ? 'bg-slate-900 text-white shadow-2xs'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            Semua ({filteredSchedules.length})
+          </button>
+          <button
+            onClick={() => setStatusFilter('BELUM_SO')}
+            className={`px-3 py-1 rounded-full text-xs font-bold shrink-0 transition ${
+              statusFilter === 'BELUM_SO'
+                ? 'bg-indigo-600 text-white shadow-2xs'
+                : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+            }`}
+          >
+            Belum Selesai ({inProgressStores})
+          </button>
+          <button
+            onClick={() => setStatusFilter('SELESAI')}
+            className={`px-3 py-1 rounded-full text-xs font-bold shrink-0 transition ${
+              statusFilter === 'SELESAI'
+                ? 'bg-emerald-600 text-white shadow-2xs'
+                : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+            }`}
+          >
+            Selesai ({completedStores})
+          </button>
+          {failedOrMovedStores > 0 && (
+            <button
+              onClick={() => setStatusFilter('KENDALA')}
+              className={`px-3 py-1 rounded-full text-xs font-bold shrink-0 transition ${
+                statusFilter === 'KENDALA'
+                  ? 'bg-rose-600 text-white shadow-2xs'
+                  : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+              }`}
+            >
+              Gagal/Pindah ({failedOrMovedStores})
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Main Content Area */}
+      {filteredSchedules.length === 0 ? (
+        <div className="bg-white rounded-2xl p-10 text-center border border-slate-200 shadow-xs space-y-2">
+          <Calendar className="w-10 h-10 mx-auto text-slate-300 stroke-1" />
+          <h4 className="text-sm font-bold text-slate-800">Tidak ada jadwal SO yang sesuai</h4>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto">
+            {activeTab === 'HARI_H' 
+              ? 'Tidak ada jadwal yang terdaftar untuk hari ini pada group korlap yang dipilih. Silakan cek tab Jadwal H-1 atau Rencana September.'
+              : 'Coba ubah filter Korlap atau kata kunci pencarian.'}
+          </p>
+        </div>
+      ) : viewLayout === 'cards' ? (
+        
+        /* ============================================================ */
+        /* MOBILE-FIRST INTERACTIVE CARD VIEW                            */
+        /* ============================================================ */
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
+          {filteredSchedules.map((s, idx) => {
+            const store = getStoreDetail(s);
+            const isBlackZone = (s.zona || store?.zona || '').toUpperCase().includes('HITAM') || store?.isZonaHitam;
+            const isAktiva = (s.soAktiva || store?.soAktiva || '').toUpperCase().includes('YA') || (s.soAktiva === 'Ya' || s.soAktiva === 'YA');
+            const notesSPV = s.notes || store?.keterangan || '';
+            const assignedMembers = s.assignedPersonnelNames || [];
+            const personilLeaderText = s.personilLeader || (assignedMembers.length > 0 ? assignedMembers[0] : (s.groupName || 'Tim Korlap'));
+            const isCompleted = s.status === 'Selesai';
+            const isFailedOrMoved = s.status === 'Gagal SO' || s.status === 'Pindah Toko' || s.status === 'Dibatalkan';
+
+            return (
+              <div
+                key={s.id}
+                className={`bg-white rounded-2xl border transition-all duration-200 overflow-hidden shadow-xs hover:shadow-md flex flex-col justify-between ${
+                  isCompleted 
+                    ? 'border-emerald-200 ring-1 ring-emerald-400/20 bg-emerald-50/10' 
+                    : isFailedOrMoved 
+                    ? 'border-rose-200 bg-rose-50/10' 
+                    : isBlackZone 
+                    ? 'border-amber-300/80 bg-amber-50/10' 
+                    : 'border-slate-200 hover:border-indigo-300'
+                }`}
+              >
+                {/* Card Top Header */}
+                <div className="p-4 border-b border-slate-100 bg-slate-50/60 flex items-start justify-between gap-2">
+                  <div className="space-y-1 overflow-hidden flex-1">
                     <div className="flex items-center gap-2">
-                      <span className={`text-xs font-bold px-2.5 py-1 rounded-lg ${
-                        isExpanded ? 'bg-slate-800 text-emerald-400' : 'bg-white text-slate-600 border border-slate-200'
+                      <span className="px-2 py-0.5 rounded-lg bg-indigo-900 text-white font-mono font-black text-xs shadow-2xs">
+                        {s.storeCode}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                        isBlackZone 
+                          ? 'bg-rose-100 text-rose-800 border border-rose-300' 
+                          : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                       }`}>
-                        {isExpanded ? 'Tutup Detail (-)' : 'Buka Detail Toko (+)'}
+                        {s.zona || (isBlackZone ? 'ZONA HITAM' : 'NON ZONA HITAM')}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                        isAktiva
+                          ? 'bg-purple-100 text-purple-800 border-purple-300'
+                          : 'bg-slate-100 text-slate-600 border-slate-200'
+                      }`}>
+                        Aktiva: {isAktiva ? 'Ya' : 'Tidak'}
+                      </span>
+                    </div>
+                    
+                    <h3 className="font-extrabold text-slate-900 text-sm leading-snug pt-0.5">
+                      {s.storeName}
+                    </h3>
+                    
+                    <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                      <span className="flex items-center gap-0.5">
+                        <MapPin className="w-3 h-3 text-slate-400" />
+                        {s.region || store?.region || 'Bali'}
+                      </span>
+                      <span>•</span>
+                      <span className="font-semibold text-slate-700">
+                        {s.dayName || getDayNameIndo(s.scheduledDate)}, {formatDateIndo(s.scheduledDate)}
                       </span>
                     </div>
                   </div>
 
-                  {/* Korlap Stores Grid - Expandable */}
-                  {isExpanded && (
-                    <div className="p-4 bg-slate-50/50 border-t border-slate-200 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {korlapSchedules.map((s) => {
-                        const isCompleted = s.status === 'Selesai';
-                        const isFailedOrMoved = s.status === 'Gagal SO' || s.status === 'Pindah Toko' || s.status === 'Dibatalkan';
-                        const hasPersonnel = s.assignedPersonnelNames && s.assignedPersonnelNames.length > 0;
+                  {/* Status Badge */}
+                  <span className={`px-2.5 py-1 rounded-xl text-[10px] font-black shrink-0 ${getStatusBadgeClass(s.status)}`}>
+                    {s.status}
+                  </span>
+                </div>
 
-                        return (
-                          <div 
-                            key={s.id} 
-                            className={`rounded-xl border p-4 space-y-3 transition flex flex-col justify-between ${
-                              isCompleted 
-                                ? 'bg-emerald-50/40 border-emerald-200' 
-                                : isFailedOrMoved
-                                ? 'bg-rose-50/40 border-rose-200'
-                                : 'bg-white border-slate-200 hover:shadow-md'
-                            }`}
-                          >
-                            <div className="space-y-2">
-                              
-                              {/* Header */}
-                              <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-2">
-                                <div>
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="text-[10px] font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
-                                      {s.storeCode}
-                                    </span>
-                                    <span className="text-[10px] font-semibold text-slate-500">{s.region}</span>
-                                  </div>
-                                  <h4 className="font-extrabold text-sm text-slate-900 mt-1">{s.storeName}</h4>
-                                </div>
+                {/* Card Body: Key Data (Stock, Kas Toko, Keterangan SPV) */}
+                <div className="p-4 space-y-3 text-xs flex-1">
+                  
+                  {/* Financial Grid: Stock Rp and Kas Toko */}
+                  <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200/80">
+                    <div className="space-y-0.5">
+                      <span className="text-[10px] text-slate-500 uppercase font-bold block">
+                        Saldo Stock Rp
+                      </span>
+                      <span className="font-mono font-bold text-slate-900 text-xs sm:text-sm block">
+                        {formatRupiah(Number(s.stockRp) || Number(store?.saldoToko) || 0)}
+                      </span>
+                    </div>
+                    <div className="space-y-0.5 border-l border-slate-200 pl-2.5">
+                      <span className="text-[10px] text-slate-500 uppercase font-bold block">
+                        Kas Toko
+                      </span>
+                      <span className="font-mono font-bold text-emerald-700 text-xs sm:text-sm block">
+                        {formatRupiah(Number(s.kasToko) || Number(store?.kasToko) || 0)}
+                      </span>
+                    </div>
+                  </div>
 
-                                <span className={`px-2.5 py-0.5 text-[10px] rounded-full border font-bold ${getStatusBadgeClass(s.status)}`}>
-                                  {s.status}
-                                </span>
-                              </div>
+                  {/* Operational Group & Personnel Assigned */}
+                  <div className="space-y-1 text-[11px]">
+                    <div className="flex items-center justify-between text-slate-600">
+                      <span className="text-slate-400 font-medium">Group Korlap:</span>
+                      <span className="font-bold text-slate-800">{s.groupName || s.officerInCharge || 'I WAYAN ANGGA RISTA'}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-slate-600">
+                      <span className="text-slate-400 font-medium">Personil Leader:</span>
+                      <span className="font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
+                        👤 {personilLeaderText}
+                        {assignedMembers.length > 1 && ` (+${assignedMembers.length - 1})`}
+                      </span>
+                    </div>
+                  </div>
 
-                              {/* Officer & Schedule Info */}
-                              <div className="space-y-1.5 text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100">
-                                <div className="flex justify-between items-center">
-                                  <span className="text-slate-400">Korlap In Charge:</span>
-                                  <span className="font-bold text-slate-800 text-right">{s.officerInCharge || 'Unassigned'}</span>
-                                </div>
-                                <div className="flex justify-between items-center">
-                                  <span className="text-slate-400">Tanggal & Jam:</span>
-                                  <span className="font-mono font-bold text-slate-800">{formatDateIndo(s.scheduledDate)} ({s.scheduledTime} WIB)</span>
-                                </div>
-                                <div className="flex justify-between items-center">
-                                  <span className="text-slate-400">Tim Audit:</span>
-                                  <span className="font-semibold text-indigo-700">{s.teamName}</span>
-                                </div>
-                              </div>
+                  {/* Keterangan / Notes dari SPV */}
+                  <div className="p-2.5 rounded-xl bg-amber-50/70 border border-amber-200/80 text-[11px] text-amber-950 space-y-0.5">
+                    <div className="flex items-center gap-1 font-bold text-amber-900 text-[10px] uppercase">
+                      <MessageSquare className="w-3 h-3 text-amber-700" />
+                      <span>Keterangan / Notes (SPV):</span>
+                    </div>
+                    <p className="text-amber-900 leading-relaxed">
+                      {notesSPV ? notesSPV : <span className="text-amber-600/80 italic">Tidak ada instruksi khusus dari SPV</span>}
+                    </p>
+                  </div>
 
-                              {/* Assigned Personnel Badges */}
-                              <div className="p-2.5 bg-indigo-50/50 rounded-xl border border-indigo-100 space-y-1">
-                                <div className="flex items-center justify-between text-[11px] font-bold text-indigo-900">
-                                  <span className="flex items-center gap-1">
-                                    <Users className="w-3.5 h-3.5 text-indigo-600" />
-                                    List Personil Auditing ({s.assignedPersonnelNames?.length || 0}):
-                                  </span>
-                                  {!isFailedOrMoved && (
-                                    <button
-                                      onClick={() => onOpenAssignPersonnel(s)}
-                                      className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold underline cursor-pointer"
-                                    >
-                                      {hasPersonnel ? 'Edit Personil' : '+ Alokasi'}
-                                    </button>
-                                  )}
-                                </div>
-
-                                {hasPersonnel ? (
-                                  <div className="flex flex-wrap gap-1 mt-1">
-                                    {s.assignedPersonnelNames?.map((name, idx) => (
-                                      <span 
-                                        key={idx}
-                                        className="px-2 py-0.5 bg-white border border-indigo-200 rounded text-[10px] text-indigo-800 font-medium"
-                                      >
-                                        {name}
-                                      </span>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <p className="text-[10px] text-slate-400 italic">
-                                    {isFailedOrMoved 
-                                      ? 'Tidak memerlukan alokasi personil (Toko Gagal / Pindah).'
-                                      : 'Belum ada personil yang dicentang. Klik "+ Alokasi" di atas.'}
-                                  </p>
-                                )}
-                              </div>
-
-                              {/* Trouble / Failure / Moved Explanations */}
-                              {(s.failureOrMoveReason || s.notes) && (
-                                <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-900 space-y-1">
-                                  <span className="font-bold flex items-center gap-1 text-amber-800">
-                                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                                    Penjelasan / Catatan Korlap:
-                                  </span>
-                                  <p className="italic text-amber-950 font-medium">
-                                    "{s.failureOrMoveReason || s.notes}"
-                                  </p>
-                                  {s.replacementStoreCode && (
-                                    <div className="mt-1 font-bold text-indigo-700 text-[10px]">
-                                      👉 Toko Pengganti: {s.replacementStoreCode} - {s.replacementStoreName}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-
-                            </div>
-
-                            {/* Action Buttons for Korlap (Omit for Gagal SO / Pindah Toko) */}
-                            {!isFailedOrMoved && (
-                              <div className="pt-2 border-t border-slate-100 space-y-2">
-                                
-                                {!isCompleted && (
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <button
-                                      onClick={() => {
-                                        setConfirmingSchedule(s);
-                                        setConfirmInputText('');
-                                      }}
-                                      className="py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs shadow-xs transition flex items-center justify-center gap-1 active:scale-95 cursor-pointer"
-                                      title="Konfirmasi SO Selesai"
-                                    >
-                                      <CheckCircle2 className="w-3.5 h-3.5" />
-                                      <span>SO Selesai</span>
-                                    </button>
-
-                                    <button
-                                      onClick={() => onOpenGagalPindahModal(s)}
-                                      className="py-2 px-3 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-bold text-xs shadow-xs transition flex items-center justify-center gap-1 cursor-pointer"
-                                      title="Input Pindah Toko / Gagal SO"
-                                    >
-                                      <AlertTriangle className="w-3.5 h-3.5" />
-                                      <span>Pindah / Gagal</span>
-                                    </button>
-                                  </div>
-                                )}
-
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    onClick={() => onOpenInputResultModal(s)}
-                                    className="w-1/2 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 shadow-xs cursor-pointer"
-                                    title="Input Rekapan Hasil SO & Share Format Teks WA Group"
-                                  >
-                                    <ClipboardList className="w-3.5 h-3.5" />
-                                    <span>Hasil Rekapan SO</span>
-                                  </button>
-
-                                  <button
-                                    onClick={() => onOpenAssignPersonnel(s)}
-                                    className="w-1/2 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer"
-                                  >
-                                    <Users className="w-3.5 h-3.5 text-indigo-600" />
-                                    <span>Alokasikan Personil</span>
-                                  </button>
-                                </div>
-
-                              </div>
-                            )}
-
-                          </div>
-                        );
-                      })}
+                  {/* Coordinates & Google Maps Link if available */}
+                  {store && store.latitude && store.longitude && (
+                    <div className="flex items-center justify-between text-[10px] text-slate-500 pt-0.5">
+                      <span className="font-mono">
+                        GPS: {store.latitude.toFixed(4)}, {store.longitude.toFixed(4)}
+                      </span>
+                      <a
+                        href={`https://www.google.com/maps/dir/?api=1&destination=${store.latitude},${store.longitude}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1"
+                      >
+                        <Navigation className="w-2.5 h-2.5" />
+                        <span>Buka Rute Maps</span>
+                      </a>
                     </div>
                   )}
 
                 </div>
-              );
-            })
-          ) : (
-            <div className="py-12 text-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-              Belum ada jadwal toko terdaftar untuk pilihan Korlap / Filter ini.
-            </div>
-          )}
+
+                {/* Card Action Footer: 44px Touch Targets for Mobile */}
+                <div className="p-3 bg-slate-50/80 border-t border-slate-100 flex flex-wrap items-center gap-1.5">
+                  
+                  {/* 1. Alokasi Personil */}
+                  <button
+                    type="button"
+                    onClick={() => onOpenAssignPersonnel(s)}
+                    className="flex-1 min-h-[40px] px-3 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 active:scale-98 text-indigo-800 text-xs font-bold border border-indigo-200 flex items-center justify-center gap-1.5 transition"
+                    title="Alokasi Personil Tim"
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    <span>Personil</span>
+                  </button>
+
+                  {/* 2. Input Rekap SO / Hasil */}
+                  <button
+                    type="button"
+                    onClick={() => onOpenInputResultModal(s)}
+                    className="flex-1 min-h-[40px] px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 transition"
+                    title="Input Rekap Hasil SO"
+                  >
+                    <ClipboardList className="w-3.5 h-3.5" />
+                    <span>Rekap SO</span>
+                  </button>
+
+                  {/* 3. Pindah / Gagal SO Modal */}
+                  <button
+                    type="button"
+                    onClick={() => onOpenGagalPindahModal(s)}
+                    className="min-h-[40px] px-3 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 active:scale-98 text-amber-800 text-xs font-bold border border-amber-200 flex items-center justify-center gap-1 transition"
+                    title="Opsi Pindah Toko / Lapor Gagal SO"
+                  >
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                    <span className="hidden sm:inline">Pindah/Gagal</span>
+                  </button>
+
+                  {/* 4. Konfirmasi Selesai jika belum selesai */}
+                  {!isCompleted && (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingSchedule(s)}
+                      className="min-h-[40px] px-2.5 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 active:scale-98 text-slate-800 text-xs font-bold flex items-center justify-center transition"
+                      title="Tandai Selesai Audit"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    </button>
+                  )}
+
+                </div>
+              </div>
+            );
+          })}
         </div>
 
-      </div>
+      ) : (
 
-      {/* Log Table of Toko Gagal & Pindah Toko */}
-      <div className="bg-white rounded-xl border border-slate-200/90 shadow-sm overflow-hidden p-5 space-y-3">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-          <div>
-            <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-rose-600" />
-              Log & Rekapan Toko Gagal / Pindah Toko (Sync Supervisor & Admin)
+        /* ============================================================ */
+        /* DESKTOP TABLE VIEW (Formatted strictly per requirements)      */
+        /* ============================================================ */
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+          
+          <div className="p-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+            <h3 className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
+              <TableIcon className="w-4 h-4 text-indigo-600" />
+              <span>Tabel Jadwal SO Hari-H Korlap ({filteredSchedules.length} Toko)</span>
             </h3>
-            <p className="text-xs text-slate-500">
-              Setiap kendala yang diinput Korlap otomatis terhubung dengan dashboard umum dan Supervisor.
-            </p>
+            <span className="text-[11px] text-slate-500 font-mono">
+              Fokus: Kode • Nama • Stock • Kas • Tgl+Hari • SO Aktiva • Zona • Notes SPV
+            </span>
           </div>
-          <span className="px-3 py-1 bg-rose-50 text-rose-700 font-mono font-bold text-xs rounded-full border border-rose-200">
-            {failureMoveLogs.length} Catatan Kendala
-          </span>
-        </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
-                <th className="py-2.5 px-3">Toko Asal</th>
-                <th className="py-2.5 px-3">Tgl SO</th>
-                <th className="py-2.5 px-3">Korlap In Charge</th>
-                <th className="py-2.5 px-3">Status Kendala</th>
-                <th className="py-2.5 px-3">Penjelasan / Alasan Korlap</th>
-                <th className="py-2.5 px-3">Toko Pengganti</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {failureMoveLogs.length > 0 ? (
-                failureMoveLogs.map((log) => (
-                  <tr key={log.id} className="hover:bg-slate-50 transition">
-                    <td className="py-2.5 px-3 font-bold text-slate-900">
-                      [{log.storeCode}] {log.storeName}
-                    </td>
-                    <td className="py-2.5 px-3 font-mono text-slate-600">
-                      {log.scheduledDate}
-                    </td>
-                    <td className="py-2.5 px-3 font-semibold text-slate-800">
-                      {log.officerInCharge || '-'}
-                    </td>
-                    <td className="py-2.5 px-3">
-                      <span className={`px-2 py-0.5 text-[10px] font-bold rounded border ${getStatusBadgeClass(log.status)}`}>
-                        {log.status}
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-3 text-slate-700 italic max-w-xs">
-                      {log.failureOrMoveReason || log.notes || '-'}
-                    </td>
-                    <td className="py-2.5 px-3 font-bold text-indigo-700 font-mono">
-                      {log.replacementStoreCode ? `${log.replacementStoreCode} - ${log.replacementStoreName}` : '-'}
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={6} className="py-6 text-center text-slate-400">
-                    Belum ada kejadian Toko Gagal atau Pindah Toko.
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-100/90 text-slate-700 font-black uppercase text-[10px] tracking-wider border-b border-slate-200">
+                  <th className="py-3 px-3 w-8 text-center">No</th>
+                  <th className="py-3 px-3">Kode Toko</th>
+                  <th className="py-3 px-3">Nama Toko</th>
+                  <th className="py-3 px-3 text-right">Stock Rp</th>
+                  <th className="py-3 px-3 text-right">Kas Toko</th>
+                  <th className="py-3 px-3">Tgl SO + Hari</th>
+                  <th className="py-3 px-3 text-center">SO Aktiva</th>
+                  <th className="py-3 px-3">Zona</th>
+                  <th className="py-3 px-3 min-w-[180px]">Keterangan / Notes (SPV)</th>
+                  <th className="py-3 px-3">Personil</th>
+                  <th className="py-3 px-3">Status</th>
+                  <th className="py-3 px-3 text-center">Aksi Korlap</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {filteredSchedules.map((s, idx) => {
+                  const store = getStoreDetail(s);
+                  const isBlackZone = (s.zona || store?.zona || '').toUpperCase().includes('HITAM') || store?.isZonaHitam;
+                  const isAktiva = (s.soAktiva || store?.soAktiva || '').toUpperCase().includes('YA') || (s.soAktiva === 'Ya' || s.soAktiva === 'YA');
+                  const notesSPV = s.notes || store?.keterangan || '-';
+                  const assignedMembers = s.assignedPersonnelNames || [];
+                  const personilLeaderText = s.personilLeader || (assignedMembers.length > 0 ? assignedMembers[0] : (s.groupName || 'Tim'));
 
-      {/* Confirmation Dialog Modal for SO Selesai */}
+                  return (
+                    <tr 
+                      key={s.id}
+                      className={`hover:bg-slate-50 transition ${
+                        isBlackZone ? 'bg-rose-50/20' : ''
+                      }`}
+                    >
+                      <td className="py-3 px-3 text-center font-mono font-bold text-slate-400">
+                        {idx + 1}
+                      </td>
+
+                      <td className="py-3 px-3 font-mono font-black text-indigo-900 whitespace-nowrap">
+                        <span className="px-1.5 py-0.5 rounded bg-indigo-50 border border-indigo-200">
+                          {s.storeCode}
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-3 font-bold text-slate-900">
+                        <div>{s.storeName}</div>
+                        <div className="text-[10px] text-slate-400 font-normal">{s.region || store?.region || 'Bali'}</div>
+                      </td>
+
+                      <td className="py-3 px-3 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
+                        {formatRupiah(Number(s.stockRp) || Number(store?.saldoToko) || 0)}
+                      </td>
+
+                      <td className="py-3 px-3 text-right font-mono text-emerald-700 font-bold whitespace-nowrap">
+                        {formatRupiah(Number(s.kasToko) || Number(store?.kasToko) || 0)}
+                      </td>
+
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        <span className="font-bold text-slate-800 block">
+                          {s.dayName || getDayNameIndo(s.scheduledDate)}
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-mono">
+                          {s.scheduledDate}
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-3 text-center whitespace-nowrap">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          isAktiva
+                            ? 'bg-purple-100 text-purple-800 border border-purple-300'
+                            : 'bg-slate-100 text-slate-600 border border-slate-200'
+                        }`}>
+                          {isAktiva ? 'Ya' : 'Tidak'}
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          isBlackZone
+                            ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                            : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                        }`}>
+                          {s.zona || (isBlackZone ? 'ZONA HITAM' : 'NON ZONA HITAM')}
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-3 text-slate-700 text-[11px] leading-snug">
+                        {notesSPV}
+                      </td>
+
+                      <td className="py-3 px-3 text-slate-800 whitespace-nowrap">
+                        <span className="font-bold text-xs">{personilLeaderText}</span>
+                        <span className="text-[10px] text-slate-400 block">{s.groupName || s.officerInCharge}</span>
+                      </td>
+
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-black ${getStatusBadgeClass(s.status)}`}>
+                          {s.status}
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-3 text-center whitespace-nowrap">
+                        <div className="flex items-center justify-center gap-1">
+                          
+                          {/* Alokasi Personil */}
+                          <button
+                            onClick={() => onOpenAssignPersonnel(s)}
+                            title="Alokasi Personil Tim"
+                            className="p-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition"
+                          >
+                            <Users className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Input Rekap SO */}
+                          <button
+                            onClick={() => onOpenInputResultModal(s)}
+                            title="Input Rekap Hasil SO"
+                            className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 transition"
+                          >
+                            <ClipboardList className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Pindah / Gagal SO */}
+                          <button
+                            onClick={() => onOpenGagalPindahModal(s)}
+                            title="Pindah Toko / Lapor Gagal SO"
+                            className="p-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 transition"
+                          >
+                            <AlertTriangle className="w-3.5 h-3.5" />
+                          </button>
+
+                        </div>
+                      </td>
+
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+        </div>
+      )}
+
+      {/* Confirmation Modal for Marking Schedule Finished */}
       {confirmingSchedule && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-100">
-            
-            <div className="flex items-center gap-3 text-emerald-600 border-b border-slate-100 pb-3">
-              <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
-                <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center gap-3 text-emerald-700">
+              <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
+                <CheckCircle2 className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="font-extrabold text-base text-slate-900">Konfirmasi SO Selesai — Validasi Korlap</h3>
-                <p className="text-xs text-slate-500">Verifikasi fisik pelaksanaan Stock Opname</p>
+                <h3 className="font-bold text-slate-900 text-sm">Konfirmasi SO Selesai</h3>
+                <p className="text-xs text-slate-500">
+                  [{confirmingSchedule.storeCode}] {confirmingSchedule.storeName}
+                </p>
               </div>
             </div>
 
-            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-1.5 text-xs">
-              <div className="flex justify-between">
-                <span className="text-slate-500 font-medium">Toko:</span>
-                <strong className="text-slate-900 font-bold">{confirmingSchedule.storeCode} - {confirmingSchedule.storeName}</strong>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500 font-medium">Tanggal SO:</span>
-                <strong className="text-slate-800 font-mono">{formatDateIndo(confirmingSchedule.scheduledDate)}</strong>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500 font-medium">Korlap In Charge:</span>
-                <strong className="text-emerald-700 font-bold">{confirmingSchedule.officerInCharge || 'Korlap'}</strong>
-              </div>
+            <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl text-xs text-emerald-900 space-y-1">
+              <p>Pastikan seluruh penghitungan fisik, scanning aktiva, dan kas toko telah direkapitulasi secara akurat bersama tim toko.</p>
             </div>
 
-            <div className="space-y-2">
-              <p className="text-xs text-slate-700 font-medium leading-relaxed">
-                Apakah benar Stock Opname pada toko <strong className="text-slate-900">{confirmingSchedule.storeName}</strong> telah selesai dilaksanakan secara lengkap & akurat?
-              </p>
-              
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
-                <label className="block text-[11px] text-amber-900 font-bold">
-                  Ketik kata <span className="underline decoration-2 text-rose-600 font-black px-1.5 py-0.5 bg-amber-100 rounded">"ya"</span> di bawah ini untuk konfirmasi validasi:
-                </label>
-                <input
-                  type="text"
-                  autoFocus
-                  value={confirmInputText}
-                  onChange={(e) => setConfirmInputText(e.target.value)}
-                  placeholder="Ketik 'ya' di sini..."
-                  className="w-full bg-white border border-amber-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 rounded-lg px-3 py-2 text-sm font-bold text-slate-900 placeholder-slate-400 focus:outline-none"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && confirmInputText.trim().toLowerCase() === 'ya') {
-                      onConfirmScheduleFinished(confirmingSchedule.id);
-                      setConfirmingSchedule(null);
-                      setConfirmInputText('');
-                    }
-                  }}
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+            <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => {
-                  setConfirmingSchedule(null);
-                  setConfirmInputText('');
-                }}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
+                onClick={() => setConfirmingSchedule(null)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition"
               >
                 Batal
               </button>
               <button
                 type="button"
-                disabled={confirmInputText.trim().toLowerCase() !== 'ya'}
                 onClick={() => {
-                  if (confirmInputText.trim().toLowerCase() === 'ya') {
-                    onConfirmScheduleFinished(confirmingSchedule.id);
-                    setConfirmingSchedule(null);
-                    setConfirmInputText('');
-                  }
+                  onConfirmScheduleFinished(confirmingSchedule.id);
+                  setConfirmingSchedule(null);
                 }}
-                className={`px-4 py-2 rounded-xl text-xs font-extrabold shadow-sm transition flex items-center gap-1.5 ${
-                  confirmInputText.trim().toLowerCase() === 'ya'
-                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer active:scale-95'
-                    : 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
-                }`}
+                className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs transition flex items-center gap-1.5"
               >
                 <CheckCircle2 className="w-4 h-4" />
-                <span>Konfirmasi SO Selesai</span>
+                <span>Ya, Tandai Selesai</span>
               </button>
             </div>
-
           </div>
         </div>
       )}

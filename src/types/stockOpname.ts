@@ -44,6 +44,7 @@ export interface Store {
   am?: string; // AM
   as?: string; // AS
   saldoToko?: number | string; // SALDO TOKO (e.g. 346801712)
+  kasToko?: number; // KAS TOKO e.g. 2500000
   kecamatan?: string; // KECAMATAN
   kabupaten?: string; // KABUPATEN
   coverage?: string; // COVERAGE: DC / IGR
@@ -173,6 +174,16 @@ export interface SOSchedule {
   teamName: string;
   spvInCharge: string;
   officerInCharge?: string; // Korlap / Officer Penanggung Jawab
+  groupName?: string; // GROUP (Korlap from sheet JADWAL e.g. ANGGA RISTA, ODI TRI, etc.)
+  personilLeader?: string; // PERSONIL (Leader / Auditor from sheet JADWAL)
+  teamCategory?: string; // TEAM (e.g. TEAM 1, TEAM 2, TEAM 3, TEAM GABUNG)
+  dayName?: string; // HARI (e.g. SENIN, SELASA, RABU, KAMIS, JUMAT, SABTU, MINGGU)
+  stockRp?: number | string; // STOCK RP from Master Toko
+  kasToko?: number | string; // KAS TOKO from Master Toko
+  typeSo?: string; // Q/M (M / Q3) from Master Toko
+  zona?: string; // ZONA (ZONA HITAM / NON ZONA HITAM) from Master Toko
+  asInitial?: string; // AS from Master Toko
+  soAktiva?: string; // SO_AKTIVA
   status: ScheduleStatus;
   notes?: string;
   troubleNote?: string; // Kendala H-Day

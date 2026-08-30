@@ -45,7 +45,7 @@ import {
 } from './services/storageService';
 import { ensureStoreCoordinates, autoSyncStoreRegionAndKabupaten } from './utils/geoUtils';
 import { formatSmartSODate } from './utils/formatters';
-import { autoSyncStoreWithApprovedSchedule, syncSchedulesFromMasterStores } from './utils/storeSyncUtils';
+import { autoSyncStoreWithApprovedSchedule, syncSchedulesFromMasterStores, twoWaySyncStoresAndSchedules, enrichScheduleWithMasterStore } from './utils/storeSyncUtils';
 import { 
   Store, 
   SOSchedule, 
@@ -525,21 +525,73 @@ export default function App() {
   const summary = getDashboardSummary(stores, filteredSchedules, filteredResults, targetSoTypes);
 
   // Handlers for Schedules
+  const handleTwoWaySync = () => {
+    const { updatedStores, updatedSchedules } = twoWaySyncStoresAndSchedules(stores, schedules, '09', '2026');
+    setStores(updatedStores);
+    setSchedules(updatedSchedules);
+    saveStores(updatedStores);
+    saveSchedules(updatedSchedules);
+  };
+
   const handleCreateSchedule = (newSched: Omit<SOSchedule, 'id' | 'createdAt'>) => {
     const created: SOSchedule = {
       ...newSched,
       id: `SCHED-${Date.now()}`,
       createdAt: new Date().toISOString().slice(0, 10)
     };
-    const updated = [created, ...schedules];
-    setSchedules(updated);
-    saveSchedules(updated);
+    
+    // Enrich with Store Master data
+    const targetStore = stores.find(st => st.id === created.storeId || st.code === created.storeCode);
+    const enrichedSched = enrichScheduleWithMasterStore(created, targetStore);
+
+    const updatedSchedules = [enrichedSched, ...schedules];
+    setSchedules(updatedSchedules);
+    saveSchedules(updatedSchedules);
+
+    // Sync back to Master Toko Bali (SO September)
+    if (targetStore) {
+      const updatedStores = stores.map(st => {
+        if (st.id === targetStore.id || st.code === targetStore.code) {
+          const smartDate = formatSmartSODate(enrichedSched.scheduledDate);
+          return {
+            ...st,
+            soSeptember: smartDate,
+            tglSoApproved: enrichedSched.scheduledDate
+          };
+        }
+        return st;
+      });
+      setStores(updatedStores);
+      saveStores(updatedStores);
+    }
   };
 
   const handleBatchCreateSchedules = (newSchedules: SOSchedule[]) => {
-    const updated = [...newSchedules, ...schedules];
+    const enrichedList = newSchedules.map(sched => {
+      const targetStore = stores.find(st => st.id === sched.storeId || st.code === sched.storeCode);
+      return enrichScheduleWithMasterStore(sched, targetStore);
+    });
+
+    const updated = [...enrichedList, ...schedules];
     setSchedules(updated);
     saveSchedules(updated);
+
+    // Sync back to Master Toko Bali (SO September)
+    const newStoreMap = new Map(newSchedules.map(s => [s.storeCode, s.scheduledDate]));
+    const updatedStores = stores.map(st => {
+      if (newStoreMap.has(st.code)) {
+        const schedDate = newStoreMap.get(st.code)!;
+        const smartDate = formatSmartSODate(schedDate);
+        return {
+          ...st,
+          soSeptember: smartDate,
+          tglSoApproved: schedDate
+        };
+      }
+      return st;
+    });
+    setStores(updatedStores);
+    saveStores(updatedStores);
   };
 
   const handleUpdateScheduleStatus = (scheduleId: string, status: SOSchedule['status']) => {
@@ -1169,6 +1221,7 @@ export default function App() {
               onConfirmScheduleFinished={handleConfirmScheduleFinished}
               onApproveSchedule={handleApproveSchedule}
               onRejectSchedule={handleRejectSchedule}
+              onTwoWaySync={handleTwoWaySync}
             />
           )}
 
@@ -1439,6 +1492,7 @@ export default function App() {
         existingSchedules={schedules}
         personnel={personnel}
         onCreateSchedule={handleCreateSchedule}
+        onBatchCreateSchedules={handleBatchCreateSchedules}
       />
 
       <AutoGeneratorModal

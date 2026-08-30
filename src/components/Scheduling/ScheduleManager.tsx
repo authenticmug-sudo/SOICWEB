@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   Calendar as CalendarIcon, 
   Plus, 
@@ -16,11 +16,17 @@ import {
   UserCheck,
   ClipboardList,
   Sparkles,
-  ArrowRight
+  ArrowRight,
+  RefreshCw,
+  Layers,
+  MapPin,
+  DollarSign,
+  ShieldAlert
 } from 'lucide-react';
 import { SOSchedule, Store, SOTeam, RegionArea, UserRole, AuditorPersonnel } from '../../types/stockOpname';
 import { REGIONS } from '../../data/initialData';
-import { getStatusBadgeClass, formatDateIndo } from '../../utils/formatters';
+import { getStatusBadgeClass, formatDateIndo, formatRupiah } from '../../utils/formatters';
+import { getDayNameIndo } from '../../utils/storeSyncUtils';
 import { exportToCSV } from '../../services/storageService';
 import { KorlapDashboard } from './KorlapDashboard';
 import { ConfirmDeleteModal } from '../Common/ConfirmDeleteModal';
@@ -43,6 +49,7 @@ interface ScheduleManagerProps {
   onConfirmScheduleFinished?: (scheduleId: string) => void;
   onApproveSchedule?: (scheduleId: string) => void;
   onRejectSchedule?: (scheduleId: string, reason?: string) => void;
+  onTwoWaySync?: () => void;
 }
 
 export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
@@ -61,11 +68,15 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
   onOpenGagalPindahModal,
   onConfirmScheduleFinished,
   onApproveSchedule,
-  onRejectSchedule
+  onRejectSchedule,
+  onTwoWaySync
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRegion, setSelectedRegion] = useState<string>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
+  const [selectedGroupKorlap, setSelectedGroupKorlap] = useState<string>('ALL');
+  const [tableLayoutMode, setTableLayoutMode] = useState<'SHEET_JADWAL' | 'COMPACT'>('SHEET_JADWAL');
+  
   const [superAdminRoleMode, setSuperAdminRoleMode] = useState<'SUPERVISOR' | 'OFFICER'>('SUPERVISOR');
   const [viewMode, setViewMode] = useState<'list' | 'officer' | 'calendar' | 'approval'>(
     currentRole === 'OFFICER' ? 'officer' : 'list'
@@ -74,8 +85,18 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
   const [scheduleToDelete, setScheduleToDelete] = useState<SOSchedule | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // 6 Main Korlap groups from sheet JADWAL & PERSONIL
+  const primaryKorlaps = useMemo(() => [
+    'I WAYAN ANGGA RISTA',
+    'ODI TRI ANGGARA',
+    'ANGGA ARDIYANSYAH',
+    'ABDUL RAHMAN',
+    'I GEDE PASEK SANTIKA',
+    'PUTU BISMA'
+  ], []);
+
   // Compute available regions strictly from store master data
-  const availableRegions = React.useMemo(() => {
+  const availableRegions = useMemo(() => {
     const set = new Set<string>();
     stores.forEach(s => {
       if (s.region) set.add(s.region);
@@ -103,73 +124,75 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
   }, [currentRole, superAdminRoleMode, activeRoleContext, viewMode]);
 
   // Filtered schedules
-  const filteredSchedules = schedules.filter(s => {
-    const matchesSearch = 
-      s.storeCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.storeName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.teamName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.spvInCharge.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    const matchesRegion = selectedRegion === 'ALL' || s.region === selectedRegion;
-    const matchesStatus = selectedStatus === 'ALL' || s.status === selectedStatus;
+  const filteredSchedules = useMemo(() => {
+    return schedules.filter(s => {
+      const matchesSearch = 
+        s.storeCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.storeName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (s.teamName && s.teamName.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (s.teamCategory && s.teamCategory.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (s.groupName && s.groupName.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (s.personilLeader && s.personilLeader.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (s.officerInCharge && s.officerInCharge.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (s.spvInCharge && s.spvInCharge.toLowerCase().includes(searchQuery.toLowerCase()));
+      
+      const matchesRegion = selectedRegion === 'ALL' || s.region === selectedRegion;
+      const matchesStatus = selectedStatus === 'ALL' || s.status === selectedStatus;
+      
+      let matchesGroup = true;
+      if (selectedGroupKorlap !== 'ALL') {
+        const gName = (s.groupName || s.officerInCharge || '').toLowerCase();
+        const selG = selectedGroupKorlap.toLowerCase();
+        matchesGroup = gName.includes(selG) || selG.includes(gName);
+      }
 
-    return matchesSearch && matchesRegion && matchesStatus;
-  });
+      return matchesSearch && matchesRegion && matchesStatus && matchesGroup;
+    });
+  }, [schedules, searchQuery, selectedRegion, selectedStatus, selectedGroupKorlap]);
 
   const getAccurateRegionForSchedule = (s: SOSchedule): string => {
     const matchingStore = stores.find(st => st.code === s.storeCode || st.id === s.storeId);
     if (matchingStore) {
-      const text = `${matchingStore.name || ''} ${matchingStore.code || ''} ${matchingStore.kabupaten || ''} ${matchingStore.city || ''}`.toUpperCase();
-      if (text.includes('BADUNG') || text.includes('TUBAN') || text.includes('KUTA') || text.includes('JIMBARAN')) return 'Kab. Badung';
-      if (text.includes('DENPASAR') || text.includes('RENON') || text.includes('SANUR')) return 'Kota Denpasar';
-      if (text.includes('GIANYAR') || text.includes('UBUD')) return 'Kab. Gianyar';
-      if (text.includes('TABANAN')) return 'Kab. Tabanan';
-      if (text.includes('BULELENG')) return 'Kab. Buleleng';
-      if (text.includes('KARANGASEM')) return 'Kab. Karangasem';
-      if (text.includes('JEMBRANA')) return 'Kab. Jembrana';
-      if (text.includes('KLUNGKUNG')) return 'Kab. Klungkung';
-      if (text.includes('BANGLI')) return 'Kab. Bangli';
-      if (text.includes('MATARAM')) return 'Kota Mataram & Lombok';
-      if (matchingStore.region && !matchingStore.region.includes('Jabodetabek')) return matchingStore.region;
+      if (matchingStore.kabupaten) return matchingStore.kabupaten;
+      if (matchingStore.region) return matchingStore.region;
     }
-    const nameUpper = (s.storeName || '').toUpperCase();
-    if (nameUpper.includes('BADUNG') || nameUpper.includes('TUBAN') || nameUpper.includes('TN5R') || nameUpper.includes('TCUW') || nameUpper.includes('KUTA')) return 'Kab. Badung';
-    if (nameUpper.includes('DENPASAR') || nameUpper.includes('DPS')) return 'Kota Denpasar';
-    if (nameUpper.includes('GIANYAR') || nameUpper.includes('UBUD')) return 'Kab. Gianyar';
-    if (nameUpper.includes('TABANAN')) return 'Kab. Tabanan';
-
-    return s.region && !s.region.includes('Jabodetabek') ? s.region : 'Kab. Badung';
+    return s.region || 'Kab. Badung';
   };
 
   const handleExportSchedules = () => {
-    const data = filteredSchedules.map(s => ({
-      'ID Schedule': s.id,
-      'Kode Toko': s.storeCode,
-      'Nama Toko': s.storeName,
-      'Wilayah': getAccurateRegionForSchedule(s),
-      'Tanggal SC': s.scheduledDate,
-      'Jam': s.scheduledTime,
-      'Tim SO': s.teamName,
-      'SPV In Charge': s.spvInCharge,
-      'Korlap / Officer': s.officerInCharge || 'I GEDE PASEK SANTIKA',
-      'Status': s.status,
-      'Personil Alokasi Korlap': s.assignedPersonnelNames && s.assignedPersonnelNames.length > 0 ? s.assignedPersonnelNames.join('; ') : 'Belum Dialokasikan',
-      'Catatan': s.notes || ''
+    const data = filteredSchedules.map((s, idx) => ({
+      'NO': idx + 1,
+      'TEAM': s.teamCategory || s.teamName || 'TEAM 1',
+      'GROUP': s.groupName || s.officerInCharge || 'I WAYAN ANGGA RISTA',
+      'PERSONIL': s.personilLeader || (s.assignedPersonnelNames && s.assignedPersonnelNames[0]) || '',
+      'HARI': s.dayName || getDayNameIndo(s.scheduledDate),
+      'KODE TOKO': s.storeCode,
+      'NAMA TOKO': s.storeName,
+      'STOCK RP': s.stockRp || 0,
+      'TGL SO': s.scheduledDate,
+      'TYPE SO': s.typeSo || 'M',
+      'KAS TOKO': s.kasToko || 0,
+      'ZONA': s.zona || 'NON ZONA HITAM',
+      'AS': s.asInitial || '',
+      'STATUS': s.status,
+      'WILAYAH': getAccurateRegionForSchedule(s),
+      'ANGGOTA TIM': s.assignedPersonnelNames && s.assignedPersonnelNames.length > 0 ? s.assignedPersonnelNames.join('; ') : 'Belum Dialokasikan',
+      'CATATAN': s.notes || ''
     }));
-    exportToCSV('Penjadwalan_SO.csv', data);
+    exportToCSV('Penjadwalan_SO_Sheet_Jadwal.csv', data);
   };
 
   return (
     <div className="space-y-4">
       
       {/* Header Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
+      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <h2 className="text-base sm:text-lg font-black text-slate-900 flex items-center gap-2">
                 <CalendarIcon className="w-5 h-5 text-indigo-600" />
-                Penjadwalan Stock Opname (SO)
+                Penjadwalan Stock Opname (SO) Harian
               </h2>
               {currentRole === 'ALL' && (
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-purple-100 text-purple-900 border border-purple-200 flex items-center gap-1">
@@ -189,12 +212,12 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
               {activeRoleContext === 'OFFICER' 
-                ? 'Portal Eksekusi & Monitoring Lapangan Hari-H untuk Korlap & Auditor SO'
-                : 'Jadwal audit fisik toko terbitan Supervisor untuk tim Korlap dan Auditor Master Data Bali'}
+                ? 'Portal Eksekusi & Monitoring Lapangan Hari-H & H-1 untuk Korlap & Auditor SO'
+                : 'Struktur Penjadwalan terhubung langsung dengan Sheet Jadwal & Master Toko Bali (VLOOKUP IDM)'}
             </p>
           </div>
 
-          {/* Super Account Dedicated Mode Switcher Toggle Bar */}
+          {/* Role Switcher for Super Account */}
           {currentRole === 'ALL' && (
             <div className="grid grid-cols-2 sm:flex sm:items-center gap-1.5 bg-slate-50 p-1.5 rounded-xl border border-purple-200 shadow-2xs">
               <button
@@ -222,7 +245,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                     : 'text-slate-600 hover:text-emerald-700 hover:bg-emerald-50'
                 }`}
               >
-                <span>📱 Portal Korlap / Officer</span>
+                <span>📱 Portal Korlap (H-1 & Hari-H)</span>
               </button>
             </div>
           )}
@@ -239,7 +262,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
             <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-indigo-500" />
             <input
               type="text"
-              placeholder="Cari toko, kode, tim, atau officer..."
+              placeholder="Cari toko, IDM, personil, group korlap, zona..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-slate-50 border border-slate-300 hover:border-slate-400 focus:border-indigo-500 focus:bg-white rounded-xl text-xs sm:text-sm pl-10 pr-4 py-2.5 text-slate-900 font-medium placeholder-slate-400 transition focus:outline-none focus:ring-2 focus:ring-indigo-100"
@@ -254,8 +277,21 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
             )}
           </div>
 
-          {/* Region & Status Dropdowns */}
+          {/* Group Korlap, Region & Status Dropdowns */}
           <div className="flex flex-wrap items-center gap-2">
+            
+            {/* Group Korlap Filter */}
+            <select
+              value={selectedGroupKorlap}
+              onChange={(e) => setSelectedGroupKorlap(e.target.value)}
+              className="bg-slate-50 border border-indigo-200 hover:border-indigo-400 text-xs sm:text-sm font-bold rounded-xl px-3 py-2 text-indigo-950 focus:outline-none focus:border-indigo-500 cursor-pointer transition"
+            >
+              <option value="ALL">🎯 Semua Group Korlap ({primaryKorlaps.length})</option>
+              {primaryKorlaps.map(k => (
+                <option key={k} value={k}>Group: {k}</option>
+              ))}
+            </select>
+
             <select
               value={selectedRegion}
               onChange={(e) => setSelectedRegion(e.target.value)}
@@ -277,6 +313,8 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
               <option value="Proses SO">Proses SO</option>
               <option value="Menunggu Rekapan">Menunggu Rekapan</option>
               <option value="Selesai">Selesai</option>
+              <option value="Gagal SO">Gagal SO</option>
+              <option value="Pindah Toko">Pindah Toko</option>
             </select>
           </div>
 
@@ -294,7 +332,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                   : 'text-slate-600 hover:text-slate-900 font-bold hover:bg-white/60'
               }`}
             >
-              <span>📋 List Semua</span>
+              <span>📋 List Jadwal SO</span>
             </button>
 
             <button
@@ -306,7 +344,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
               }`}
             >
               <UserCheck className="w-4 h-4" />
-              <span>Jadwal Officer Hari-H</span>
+              <span>Menu Korlap (H-1 & Hari-H)</span>
             </button>
 
             {activeRoleContext !== 'OFFICER' && (
@@ -340,8 +378,23 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
             </button>
           </div>
 
-          {/* Action Buttons: Export, Auto-Schedule, Add Schedule */}
+          {/* Action Buttons: Two-Way Sync, Export, Add Schedule */}
           <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full md:w-auto">
+            
+            {onTwoWaySync && (
+              <button
+                onClick={() => {
+                  onTwoWaySync();
+                  setToastMessage('Sinkronisasi 2-Arah Master Toko Bali & Sheet Jadwal Berhasil!');
+                }}
+                className="w-full sm:w-auto px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-2xs"
+                title="Sinkronkan dua arah jadwal SO dengan kolom SO September di Master Toko Bali"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-emerald-600" />
+                <span>2-Way Sync Master</span>
+              </button>
+            )}
+
             {activeRoleContext !== 'OFFICER' && viewMode !== 'officer' && (
               <>
                 {onOpenKorlapImageModal && (
@@ -358,10 +411,10 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                 <button
                   onClick={onOpenAutoGenerator}
                   className="w-full sm:w-auto px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 active:scale-98 text-white rounded-xl text-xs font-black shadow-xs hover:shadow transition flex items-center justify-center gap-1.5"
-                  title="Generate otomatis jadwal dari 737 toko"
+                  title="Generate otomatis jadwal dari 700+ toko"
                 >
                   <Wand2 className="w-4 h-4 text-purple-200 shrink-0" />
-                  <span className="truncate">Auto-Schedule (700+)</span>
+                  <span className="truncate">Auto-Schedule</span>
                 </button>
 
                 <button
@@ -370,7 +423,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                   title="Tambah 1 jadwal audit toko manual"
                 >
                   <Plus className="w-4 h-4 text-indigo-200 shrink-0" />
-                  <span className="truncate">+ Tambah Manual</span>
+                  <span className="truncate">+ Tambah Jadwal</span>
                 </button>
               </>
             )}
@@ -401,113 +454,290 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
           onConfirmScheduleFinished={onConfirmScheduleFinished || ((id) => onUpdateStatus(id, 'Selesai'))}
         />
       ) : viewMode === 'list' ? (
-        <div className="bg-white rounded-xl border border-slate-200/80 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+          
+          {/* Table Header Controls: Toggle Columns View */}
+          <div className="p-3 px-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-800">
+                Tabel Penjadwalan ({filteredSchedules.length} Toko)
+              </span>
+              <span className="text-[11px] text-slate-500">
+                • {selectedGroupKorlap === 'ALL' ? 'Semua Group' : `Group: ${selectedGroupKorlap}`}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 text-xs">
+              <button
+                type="button"
+                onClick={() => setTableLayoutMode('SHEET_JADWAL')}
+                className={`px-2.5 py-1 rounded-lg font-bold transition ${
+                  tableLayoutMode === 'SHEET_JADWAL'
+                    ? 'bg-indigo-600 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                📊 Format Sheet Jadwal (Lengkap)
+              </button>
+              <button
+                type="button"
+                onClick={() => setTableLayoutMode('COMPACT')}
+                className={`px-2.5 py-1 rounded-lg font-bold transition ${
+                  tableLayoutMode === 'COMPACT'
+                    ? 'bg-indigo-600 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                📱 Format Ringkas
+              </button>
+            </div>
+          </div>
+
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
-                  <th className="py-3 px-4">Toko & Kode</th>
-                  <th className="py-3 px-4">Wilayah</th>
-                  <th className="py-3 px-4">Tanggal & Jam</th>
-                  <th className="py-3 px-4">Tim SO & SPV</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4 text-right">Aksi SPV</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredSchedules.length > 0 ? (
-                  filteredSchedules.map((s) => (
-                    <tr key={s.id} className="hover:bg-slate-50/80 transition">
-                      
-                      <td className="py-3 px-4">
-                        <div className="font-bold text-slate-900">{s.storeName}</div>
-                        <div className="text-[11px] font-mono text-slate-500 flex items-center gap-1">
-                          <Building2 className="w-3 h-3 text-slate-400" /> {s.storeCode}
-                        </div>
-                      </td>
-
-                      <td className="py-3 px-4 text-slate-600 max-w-[180px] truncate">
-                        <span className="font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-[11px]">
-                          {getAccurateRegionForSchedule(s)}
-                        </span>
-                      </td>
-
-                      <td className="py-3 px-4">
-                        <div className="font-medium text-slate-900">{formatDateIndo(s.scheduledDate)}</div>
-                        <div className="text-[10px] text-slate-500 font-mono">{s.scheduledTime} WIB</div>
-                      </td>
-
-                      <td className="py-3 px-4">
-                        <div className="font-medium text-slate-800 flex items-center gap-1">
-                          <Users className="w-3 h-3 text-indigo-500" /> {s.teamName}
-                        </div>
-                        <div className="text-[10px] text-slate-500">SPV: {s.spvInCharge}</div>
-                      </td>
-
-                      <td className="py-3 px-4">
-                        <span className={`px-2.5 py-1 text-[10px] rounded-full border font-semibold ${getStatusBadgeClass(s.status)}`}>
-                          {s.status}
-                        </span>
-                      </td>
-
-                      <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          
-                          {/* Quick Status Changers */}
-                          {s.status === 'Terjadwal' && (
-                            <button
-                              onClick={() => onUpdateStatus(s.id, 'Proses SO')}
-                              className="px-2 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded text-[10px] font-medium transition"
-                            >
-                              Mulai SO
-                            </button>
-                          )}
-
-                          {s.status === 'Proses SO' && (
-                            <button
-                              onClick={() => onUpdateStatus(s.id, 'Menunggu Rekapan')}
-                              className="px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[10px] font-medium transition"
-                            >
-                              Input Rekapan
-                            </button>
-                          )}
-
-                          {s.status === 'Menunggu Rekapan' && (
-                            <button
-                              onClick={() => onUpdateStatus(s.id, 'Selesai')}
-                              className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-medium transition"
-                            >
-                              Tandai Selesai
-                            </button>
-                          )}
-
-                          <button
-                            onClick={() => setScheduleToDelete(s)}
-                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition"
-                            title="Hapus Jadwal"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-
-                        </div>
-                      </td>
-
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={7} className="py-12 text-center text-slate-400">
-                      Tidak ditemukan jadwal SO yang sesuai filter.
-                    </td>
+            {tableLayoutMode === 'SHEET_JADWAL' ? (
+              /* Complete 14-Column Sheet Jadwal View */
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-100/90 border-b border-slate-200 text-slate-700 font-black uppercase text-[10px] tracking-wider">
+                    <th className="py-3 px-3 w-10 text-center">No</th>
+                    <th className="py-3 px-3">Team</th>
+                    <th className="py-3 px-3">Group</th>
+                    <th className="py-3 px-3">Personil</th>
+                    <th className="py-3 px-3">Hari</th>
+                    <th className="py-3 px-3">Kode Toko</th>
+                    <th className="py-3 px-3">Nama Toko</th>
+                    <th className="py-3 px-3 text-right">Stock Rp</th>
+                    <th className="py-3 px-3">Tgl SO</th>
+                    <th className="py-3 px-3 text-center">Type SO</th>
+                    <th className="py-3 px-3 text-right">Kas Toko</th>
+                    <th className="py-3 px-3">Zona</th>
+                    <th className="py-3 px-3">Status</th>
+                    <th className="py-3 px-3 text-right">Aksi</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredSchedules.length > 0 ? (
+                    filteredSchedules.map((s, idx) => {
+                      const isBlackZone = (s.zona || '').toUpperCase().includes('HITAM');
+                      const assignedMembers = s.assignedPersonnelNames || [];
+                      const personilLeaderText = s.personilLeader || (assignedMembers.length > 0 ? assignedMembers[0] : '-');
+
+                      return (
+                        <tr key={s.id} className={`hover:bg-slate-50/80 transition ${isBlackZone ? 'bg-rose-50/30' : ''}`}>
+                          
+                          <td className="py-3 px-3 text-center font-mono font-bold text-slate-500">
+                            {idx + 1}
+                          </td>
+
+                          <td className="py-3 px-3 font-bold text-indigo-950 whitespace-nowrap">
+                            <span className="px-2 py-0.5 rounded bg-indigo-50 border border-indigo-200 text-[11px]">
+                              {s.teamCategory || s.teamName || 'TEAM 1'}
+                            </span>
+                          </td>
+
+                          <td className="py-3 px-3 font-bold text-slate-900 whitespace-nowrap">
+                            {s.groupName || s.officerInCharge || 'I WAYAN ANGGA RISTA'}
+                          </td>
+
+                          <td className="py-3 px-3 text-slate-800">
+                            <div className="font-bold text-slate-900">{personilLeaderText}</div>
+                            {assignedMembers.length > 1 && (
+                              <span className="text-[10px] text-slate-500">+{assignedMembers.length - 1} personil</span>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-3 font-bold text-slate-700 whitespace-nowrap">
+                            <span className="px-2 py-0.5 rounded bg-slate-100 text-[11px]">
+                              {s.dayName || getDayNameIndo(s.scheduledDate) || 'SELASA'}
+                            </span>
+                          </td>
+
+                          <td className="py-3 px-3 font-mono font-black text-indigo-700 whitespace-nowrap">
+                            {s.storeCode}
+                          </td>
+
+                          <td className="py-3 px-3">
+                            <div className="font-bold text-slate-900">{s.storeName}</div>
+                            <div className="text-[10px] text-slate-500">{getAccurateRegionForSchedule(s)} {s.asInitial ? `• AS: ${s.asInitial}` : ''}</div>
+                          </td>
+
+                          <td className="py-3 px-3 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
+                            {formatRupiah(s.stockRp || 0)}
+                          </td>
+
+                          <td className="py-3 px-3 font-mono text-slate-700 whitespace-nowrap">
+                            {s.scheduledDate}
+                          </td>
+
+                          <td className="py-3 px-3 text-center whitespace-nowrap">
+                            <span className="px-2 py-0.5 rounded font-bold text-[10px] bg-blue-50 text-blue-700 border border-blue-200">
+                              {s.typeSo || 'M'}
+                            </span>
+                          </td>
+
+                          <td className="py-3 px-3 text-right font-mono text-emerald-700 font-semibold whitespace-nowrap">
+                            {formatRupiah(s.kasToko || 0)}
+                          </td>
+
+                          <td className="py-3 px-3 whitespace-nowrap">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              isBlackZone 
+                                ? 'bg-rose-100 text-rose-800 border border-rose-300' 
+                                : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                            }`}>
+                              {s.zona || 'NON ZONA HITAM'}
+                            </span>
+                          </td>
+
+                          <td className="py-3 px-3 whitespace-nowrap">
+                            <span className={`px-2.5 py-1 text-[10px] rounded-full font-bold ${getStatusBadgeClass(s.status)}`}>
+                              {s.status}
+                            </span>
+                          </td>
+
+                          <td className="py-3 px-3 text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-1">
+                              {onAssignPersonnel && (
+                                <button
+                                  onClick={() => onAssignPersonnel(s)}
+                                  title="Alokasi Personil Tim"
+                                  className="p-1 text-indigo-600 hover:bg-indigo-50 rounded"
+                                >
+                                  <Users className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
+                              <button
+                                onClick={() => setScheduleToDelete(s)}
+                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition"
+                                title="Hapus Jadwal"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={14} className="py-12 text-center text-slate-400">
+                        Tidak ditemukan jadwal SO yang sesuai filter.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            ) : (
+              /* Compact Table View */
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
+                    <th className="py-3 px-4">Toko & Kode</th>
+                    <th className="py-3 px-4">Wilayah</th>
+                    <th className="py-3 px-4">Tanggal & Jam</th>
+                    <th className="py-3 px-4">Group & Tim</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4 text-right">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredSchedules.length > 0 ? (
+                    filteredSchedules.map((s) => (
+                      <tr key={s.id} className="hover:bg-slate-50/80 transition">
+                        
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-slate-900">{s.storeName}</div>
+                          <div className="text-[11px] font-mono text-slate-500 flex items-center gap-1">
+                            <Building2 className="w-3 h-3 text-slate-400" /> {s.storeCode}
+                          </div>
+                        </td>
+
+                        <td className="py-3 px-4 text-slate-600 max-w-[180px] truncate">
+                          <span className="font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-[11px]">
+                            {getAccurateRegionForSchedule(s)}
+                          </span>
+                        </td>
+
+                        <td className="py-3 px-4">
+                          <div className="font-medium text-slate-900">{formatDateIndo(s.scheduledDate)}</div>
+                          <div className="text-[10px] text-slate-500 font-mono">{s.scheduledTime} WITA</div>
+                        </td>
+
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-slate-900">
+                            {s.groupName || s.officerInCharge || 'I WAYAN ANGGA RISTA'}
+                          </div>
+                          <div className="text-[10px] text-indigo-600 font-medium">
+                            {s.teamCategory || s.teamName} • Leader: {s.personilLeader || '-'}
+                          </div>
+                        </td>
+
+                        <td className="py-3 px-4">
+                          <span className={`px-2.5 py-1 text-[10px] rounded-full border font-semibold ${getStatusBadgeClass(s.status)}`}>
+                            {s.status}
+                          </span>
+                        </td>
+
+                        <td className="py-3 px-4 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            
+                            {s.status === 'Terjadwal' && (
+                              <button
+                                onClick={() => onUpdateStatus(s.id, 'Proses SO')}
+                                className="px-2 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded text-[10px] font-medium transition"
+                              >
+                                Mulai SO
+                              </button>
+                            )}
+
+                            {s.status === 'Proses SO' && (
+                              <button
+                                onClick={() => onUpdateStatus(s.id, 'Menunggu Rekapan')}
+                                className="px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[10px] font-medium transition"
+                              >
+                                Input Rekapan
+                              </button>
+                            )}
+
+                            {s.status === 'Menunggu Rekapan' && (
+                              <button
+                                onClick={() => onUpdateStatus(s.id, 'Selesai')}
+                                className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-medium transition"
+                              >
+                                Tandai Selesai
+                              </button>
+                            )}
+
+                            <button
+                              onClick={() => setScheduleToDelete(s)}
+                              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition"
+                              title="Hapus Jadwal"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+
+                          </div>
+                        </td>
+
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={6} className="py-12 text-center text-slate-400">
+                        Tidak ditemukan jadwal SO yang sesuai filter.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       ) : viewMode === 'approval' ? (
         /* Approval SPV Interactive Dashboard */
-        <div className="bg-white rounded-xl border border-slate-200/80 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
           {/* Approval Header & Sub-Tabs */}
           <div className="p-4 bg-slate-900 text-white border-b border-slate-800">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -707,7 +937,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
         </div>
       ) : (
         /* Calendar View Summary */
-        <div className="bg-white p-6 rounded-xl border border-slate-200/80 shadow-sm">
+        <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs">
           <div className="text-center py-8">
             <CalendarIcon className="w-12 h-12 text-indigo-500 mx-auto mb-3 opacity-80" />
             <h3 className="text-sm font-bold text-slate-800">Visualisasi Kalender Penjadwalan SO</h3>
@@ -718,7 +948,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
               {['Terjadwal', 'Proses SO', 'Menunggu Rekapan', 'Selesai'].map((st) => {
                 const count = filteredSchedules.filter(s => s.status === st).length;
                 return (
-                  <div key={st} className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                  <div key={st} className="p-3 bg-slate-50 rounded-xl border border-slate-200">
                     <span className={`px-2 py-0.5 text-[10px] rounded-full border ${getStatusBadgeClass(st)}`}>
                       {st}
                     </span>
@@ -747,21 +977,21 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
         itemName={scheduleToDelete ? `${scheduleToDelete.storeCode} - ${scheduleToDelete.storeName}` : undefined}
         itemDetails={scheduleToDelete ? [
           { label: 'Tanggal SO', value: formatDateIndo(scheduleToDelete.scheduledDate) },
-          { label: 'Jam Mulai', value: scheduleToDelete.scheduledTime || '21:00 WITA' },
+          { label: 'Jam Mulai', value: scheduleToDelete.scheduledTime || '08:00 WITA' },
           { label: 'Penanggung Jawab / Korlap', value: scheduleToDelete.officerInCharge || scheduleToDelete.spvInCharge || '-' },
           { label: 'Tim SO', value: scheduleToDelete.teamName || '-' },
           { label: 'Status Saat Ini', value: scheduleToDelete.status }
         ] : []}
         confirmText="Ya, Hapus"
         cancelText="Tidak, Batalkan"
-        dangerBadgeText="Toko akan dihapus permanen dari jadwal SO dan tidak akan muncul kembali."
+        dangerBadgeText="Toko akan dihapus permanen dari jadwal SO."
       />
 
       {/* Success Toast Feedback */}
       {toastMessage && (
         <ToastNotification
           type="success"
-          title="Berhasil Dihapus"
+          title="Sinkronisasi / Aksi Berhasil"
           message={toastMessage}
           onClose={() => setToastMessage(null)}
         />
@@ -770,4 +1000,3 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
     </div>
   );
 };
-

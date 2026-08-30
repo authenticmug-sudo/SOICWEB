@@ -267,6 +267,7 @@ export function syncSchedulesFromMasterStores(
       }
     } else {
       // Create new smart schedule for September
+      const dayName = getDayNameIndo(isoDate);
       const newSchedule: SOSchedule = {
         id: `SCHED-${st.code || st.id}-${isoDate}`,
         storeId: st.id,
@@ -275,9 +276,17 @@ export function syncSchedulesFromMasterStores(
         scheduledDate: isoDate,
         scheduledTime: '08:00',
         teamId: 'TEAM-01',
-        teamName: 'Tim SO Bali',
+        teamName: 'TEAM 1',
+        teamCategory: 'TEAM 1',
         spvInCharge: 'I GEDE PASEK SANTIKA',
         officerInCharge: officer,
+        groupName: officer,
+        dayName: dayName,
+        stockRp: st.saldoToko || 0,
+        kasToko: st.kasToko || 0,
+        typeSo: st.typeSo || st.qm || 'M',
+        zona: st.zona || 'NON ZONA HITAM',
+        asInitial: st.as || '',
         region: st.region || st.kabupaten || 'Kota Denpasar',
         status: 'Terjadwal',
         targetSKUCount: st.totalSKUCount || 1000,
@@ -294,4 +303,96 @@ export function syncSchedulesFromMasterStores(
 
   return { updatedSchedules: allSchedules, newlyCreatedCount };
 }
+
+/**
+ * Get Indonesian day name from date string YYYY-MM-DD
+ */
+export function getDayNameIndo(dateStr: string): string {
+  if (!dateStr) return '';
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return '';
+  const dayIndex = date.getDay(); // 0 = Minggu, 1 = Senin, ...
+  const days = ['MINGGU', 'SENIN', 'SELASA', 'RABU', 'KAMIS', 'JUMAT', 'SABTU'];
+  return days[dayIndex] || '';
+}
+
+/**
+ * Enrich schedule object with real-time Master Store data (Lookup VLOOKUP emulation)
+ */
+export function enrichScheduleWithMasterStore(schedule: SOSchedule, store?: Store): SOSchedule {
+  if (!store) return schedule;
+
+  const day = schedule.dayName || getDayNameIndo(schedule.scheduledDate);
+  const stockRp = store.saldoToko !== undefined ? store.saldoToko : schedule.stockRp;
+  const kasToko = store.kasToko !== undefined ? store.kasToko : schedule.kasToko;
+  const typeSo = store.typeSo || store.qm || schedule.typeSo || 'M';
+  const zona = store.zona || (store.isZonaHitam ? 'ZONA HITAM' : 'NON ZONA HITAM') || schedule.zona;
+  const asInitial = store.as || schedule.asInitial || '';
+  const region = store.region || store.kabupaten || schedule.region;
+
+  return {
+    ...schedule,
+    storeName: store.name || schedule.storeName,
+    stockRp,
+    kasToko,
+    typeSo,
+    zona,
+    asInitial,
+    region,
+    dayName: day
+  };
+}
+
+/**
+ * Complete Two-Way Synchronization between Stores and Schedules
+ */
+export function twoWaySyncStoresAndSchedules(
+  stores: Store[],
+  schedules: SOSchedule[],
+  month: string = '09',
+  year: string = '2026'
+): { updatedStores: Store[]; updatedSchedules: SOSchedule[]; changesCount: number } {
+  let changesCount = 0;
+  const storeMap = new Map<string, Store>(stores.map(s => [s.code || s.id, { ...s }]));
+
+  // 1. Sync schedules into stores (Schedule -> Store.soSeptember)
+  schedules.forEach(sched => {
+    if (!sched.scheduledDate) return;
+    const [sYear, sMonth] = sched.scheduledDate.split('-');
+    if (sMonth === month && (year === 'ALL' || sYear === year)) {
+      const matchStore = storeMap.get(sched.storeCode) || Array.from(storeMap.values()).find(s => s.id === sched.storeId || s.code === sched.storeCode);
+      if (matchStore) {
+        const smartDate = formatSmartSODate(sched.scheduledDate);
+        if (matchStore.soSeptember !== smartDate) {
+          matchStore.soSeptember = smartDate;
+          matchStore.tglSoApproved = sched.scheduledDate;
+          changesCount++;
+        }
+        if (sched.officerInCharge && (!matchStore.korlap || matchStore.korlap === 'Petugas SO')) {
+          matchStore.korlap = sched.officerInCharge.split(' (')[0];
+          changesCount++;
+        }
+      }
+    }
+  });
+
+  const updatedStores = Array.from(storeMap.values());
+
+  // 2. Sync stores into schedules (Store.soSeptember -> Schedules)
+  const { updatedSchedules, newlyCreatedCount } = syncSchedulesFromMasterStores(updatedStores, schedules, month, year);
+  changesCount += newlyCreatedCount;
+
+  // 3. Enrich all schedules with latest Master Store details
+  const fullyEnrichedSchedules = updatedSchedules.map(sched => {
+    const st = updatedStores.find(s => s.code === sched.storeCode || s.id === sched.storeId);
+    return enrichScheduleWithMasterStore(sched, st);
+  });
+
+  return {
+    updatedStores,
+    updatedSchedules: fullyEnrichedSchedules,
+    changesCount
+  };
+}
+
 

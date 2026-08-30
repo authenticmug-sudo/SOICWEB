@@ -27,6 +27,9 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
   const [importMode, setImportMode] = useState<'replace' | 'merge'>('replace');
   const [parsedStores, setParsedStores] = useState<Store[]>([]);
   const [fileName, setFileName] = useState<string>('');
+  const [workbookInstance, setWorkbookInstance] = useState<XLSX.WorkBook | null>(null);
+  const [availableSheetNames, setAvailableSheetNames] = useState<string[]>([]);
+  const [selectedSheetName, setSelectedSheetName] = useState<string>('');
   const [csvText, setCsvText] = useState('');
   const [importedCount, setImportedCount] = useState<number | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -394,6 +397,34 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
     return results.length > 0 ? results : XLSX.utils.sheet_to_json<Record<string, any>>(ws);
   };
 
+  const parseSheetData = (wb: XLSX.WorkBook, sheetName: string) => {
+    const ws = wb.Sheets[sheetName];
+    if (!ws) return [];
+    const data = parseComplexSheet(ws);
+    if (!data || data.length === 0) return [];
+    const stores = processRowsToStores(data);
+    const { deduplicated } = deduplicateEntityList('stores', stores);
+    return deduplicated;
+  };
+
+  const handleSelectSheet = (sheetName: string) => {
+    if (!workbookInstance) return;
+    setSelectedSheetName(sheetName);
+    try {
+      const stores = parseSheetData(workbookInstance, sheetName);
+      if (stores.length === 0) {
+        setErrorMessage(`Sheet "${sheetName}" tidak memuat data toko yang valid.`);
+        setParsedStores([]);
+      } else {
+        setErrorMessage(null);
+        setParsedStores(stores);
+      }
+    } catch (err) {
+      setErrorMessage(`Gagal membaca sheet "${sheetName}".`);
+      setParsedStores([]);
+    }
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -417,21 +448,48 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
       try {
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
+        setWorkbookInstance(wb);
         
-        // Use smart complex sheet parsing
-        const data = parseComplexSheet(ws);
+        const sheets = wb.SheetNames || [];
+        setAvailableSheetNames(sheets);
 
-        if (!data || data.length === 0) {
-          setErrorMessage('File Excel kosong atau format tidak sesuai.');
+        if (sheets.length === 0) {
+          setErrorMessage('File Excel tidak memiliki lembar kerja (sheet).');
           setParsedStores([]);
           return;
         }
 
-        const stores = processRowsToStores(data);
-        const { deduplicated } = deduplicateEntityList('stores', stores);
-        setParsedStores(deduplicated);
+        // Smart Sheet Selection: Find the most relevant sheet name
+        let targetSheet = sheets.find(s => /master|toko|bali|store|cabang|data toko/i.test(s.toLowerCase()));
+        
+        // If not found by keyword, test each sheet to pick the one with data
+        if (!targetSheet) {
+          let maxCount = 0;
+          let bestSheet = sheets[0];
+          for (const sName of sheets) {
+            try {
+              const testStores = parseSheetData(wb, sName);
+              if (testStores.length > maxCount) {
+                maxCount = testStores.length;
+                bestSheet = sName;
+              }
+            } catch {
+              // ignore
+            }
+          }
+          targetSheet = bestSheet;
+        }
+
+        setSelectedSheetName(targetSheet);
+        const stores = parseSheetData(wb, targetSheet);
+
+        if (!stores || stores.length === 0) {
+          setErrorMessage(`Sheet "${targetSheet}" kosong atau format kolom toko tidak terdeteksi.`);
+          setParsedStores([]);
+          return;
+        }
+
+        setParsedStores(stores);
       } catch (err) {
         setErrorMessage('Gagal membaca file Excel. Pastikan format file adalah .xlsx atau .xls valid.');
         setParsedStores([]);
@@ -702,12 +760,53 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
                 </div>
               )}
 
+              {/* Interactive Multi-Sheet Selector */}
+              {availableSheetNames.length > 0 && (
+                <div className="p-3 bg-slate-100 rounded-xl border border-slate-200 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                      <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                      <span>Lembar Kerja Excel ({availableSheetNames.length} Sheets Ditemukan):</span>
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-semibold">
+                      Sheet Aktif: <strong className="text-indigo-600 font-bold">{selectedSheetName}</strong>
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {availableSheetNames.map((sName) => {
+                      const isSelected = sName === selectedSheetName;
+                      return (
+                        <button
+                          key={sName}
+                          type="button"
+                          onClick={() => handleSelectSheet(sName)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                            isSelected
+                              ? 'bg-indigo-600 text-white shadow-xs'
+                              : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-300'
+                          }`}
+                        >
+                          <FileSpreadsheet className={`w-3.5 h-3.5 ${isSelected ? 'text-white' : 'text-emerald-600'}`} />
+                          <span>{sName}</span>
+                          {isSelected && (
+                            <span className="text-[10px] bg-white/20 text-white px-1.5 py-0.2 rounded-full">
+                              {parsedStores.length} Toko
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Data Preview Table */}
               {parsedStores.length > 0 && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="font-semibold text-slate-800 text-xs">
-                      Hasil Extract Excel ({parsedStores.length} Toko Terbaca)
+                      Hasil Extract Sheet [{selectedSheetName || 'Excel'}] ({parsedStores.length} Toko Terbaca)
                     </span>
                     <span className="text-[10px] text-slate-500">
                       Siap ditambahkan ke database master

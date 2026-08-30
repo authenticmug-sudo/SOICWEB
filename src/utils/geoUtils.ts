@@ -471,3 +471,104 @@ export function analyzeOfficerClusters(
   // Sort by date descending
   return clusterRoutes.sort((a, b) => b.date.localeCompare(a.date));
 }
+
+/**
+ * Normalizes Kabupaten name from various store fields (kabupaten, region, city).
+ */
+export function normalizeKabupaten(rawKab?: string, rawRegion?: string, rawCity?: string): string {
+  const str = (rawKab || rawRegion || rawCity || '').trim();
+  if (!str) return 'Lainnya';
+  
+  const upper = str.toUpperCase();
+  if (upper.includes('DENPASAR')) return 'Kota Denpasar';
+  if (upper.includes('BADUNG')) return 'Kab. Badung';
+  if (upper.includes('GIANYAR')) return 'Kab. Gianyar';
+  if (upper.includes('TABANAN')) return 'Kab. Tabanan';
+  if (upper.includes('BULELENG') || upper.includes('SINGARAJA')) return 'Kab. Buleleng';
+  if (upper.includes('KARANGASEM') || upper.includes('AMLAPURA')) return 'Kab. Karangasem';
+  if (upper.includes('JEMBRANA') || upper.includes('NEGARA')) return 'Kab. Jembrana';
+  if (upper.includes('KLUNGKUNG') || upper.includes('SEMARAPURA') || upper.includes('NUSA PENIDA')) return 'Kab. Klungkung';
+  if (upper.includes('BANGLI')) return 'Kab. Bangli';
+  if (upper.includes('LOMBOK') || upper.includes('MATARAM')) return 'Kota Mataram & Lombok';
+
+  return str.replace(/^KAB(\.|\s+)?/i, 'Kab. ').replace(/^KOTA(\s+)?/i, 'Kota ').trim();
+}
+
+/**
+ * Normalizes Kecamatan name from store fields (kecamatan, district, storeName).
+ */
+export function normalizeKecamatan(rawKec?: string, rawDistrict?: string, storeName?: string): string {
+  const str = (rawKec || rawDistrict || '').trim();
+  if (str) {
+    const cleaned = str.replace(/^KEC(\.|\s+)?/i, '').trim();
+    if (cleaned) {
+      return cleaned
+        .split(' ')
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(' ');
+    }
+  }
+  
+  // Try extracting from store name suffix e.g. "SUKAWATI - GIANYAR" or "BATUBULAN"
+  if (storeName && storeName.includes('-')) {
+    const parts = storeName.split('-');
+    if (parts.length >= 2) {
+      const candidate = parts[0].trim();
+      if (candidate.length > 2 && !candidate.startsWith('T') && !candidate.startsWith('F')) {
+        return candidate
+          .split(' ')
+          .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+          .join(' ');
+      }
+    }
+  }
+  return 'Lainnya';
+}
+
+/**
+ * Extracts a clean mapping of Kabupaten -> list of Kecamatans from stores array
+ */
+export function extractKabupatenKecamatanMap(stores: Store[]): {
+  kabupatenList: string[];
+  kecamatanByKabupaten: Record<string, string[]>;
+  allKecamatanList: string[];
+} {
+  const kabSet = new Set<string>();
+  const allKecSet = new Set<string>();
+  const kecMap: Record<string, Set<string>> = {};
+
+  stores.forEach(s => {
+    const kab = normalizeKabupaten(s.kabupaten, s.region, s.city);
+    const kec = normalizeKecamatan(s.kecamatan, s.district, s.name);
+
+    kabSet.add(kab);
+    allKecSet.add(kec);
+
+    if (!kecMap[kab]) {
+      kecMap[kab] = new Set<string>();
+    }
+    if (kec && kec !== 'Lainnya') {
+      kecMap[kab].add(kec);
+    }
+  });
+
+  const kabupatenList = Array.from(kabSet).sort((a, b) => {
+    if (a === 'Lainnya') return 1;
+    if (b === 'Lainnya') return -1;
+    return a.localeCompare(b);
+  });
+
+  const kecamatanByKabupaten: Record<string, string[]> = {};
+  kabupatenList.forEach(kab => {
+    kecamatanByKabupaten[kab] = Array.from(kecMap[kab] || []).sort();
+  });
+
+  const allKecamatanList = Array.from(allKecSet).filter(k => k !== 'Lainnya').sort();
+
+  return {
+    kabupatenList,
+    kecamatanByKabupaten,
+    allKecamatanList
+  };
+}
+
