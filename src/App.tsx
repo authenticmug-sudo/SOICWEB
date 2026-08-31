@@ -83,6 +83,7 @@ import { InputResultModal } from './components/Results/InputResultModal';
 import { StoreDirectory } from './components/Stores/StoreDirectory';
 import { MasterTokoManager } from './components/Stores/MasterTokoManager';
 import { ZoneStoreChecklist } from './components/Supervisor/ZoneStoreChecklist';
+import { StoreRelocationAssistant } from './components/Supervisor/StoreRelocationAssistant';
 import { StoreDetailModal } from './components/Stores/StoreDetailModal';
 import { AddEditStoreModal } from './components/Stores/AddEditStoreModal';
 import { ImportStoresModal } from './components/Stores/ImportStoresModal';
@@ -654,16 +655,23 @@ export default function App() {
         storeId: replacementDetails.newStore.id,
         storeCode: replacementDetails.newStore.code,
         storeName: replacementDetails.newStore.name,
-        region: replacementDetails.newStore.region,
+        region: replacementDetails.newStore.region || replacementDetails.newStore.kabupaten || originalSched.region,
         scheduledDate: replacementDetails.newDate,
         scheduledTime: replacementDetails.newTime,
         teamId: originalSched.teamId,
         teamName: originalSched.teamName,
+        teamCategory: originalSched.teamCategory,
         spvInCharge: originalSched.spvInCharge,
         officerInCharge: originalSched.officerInCharge,
+        groupName: originalSched.groupName,
+        stockRp: replacementDetails.newStore.saldoToko || 0,
+        kasToko: replacementDetails.newStore.kasToko || 0,
+        typeSo: replacementDetails.newStore.typeSo || replacementDetails.newStore.qm || 'M',
+        zona: replacementDetails.newStore.zona || (replacementDetails.newStore.isZonaHitam ? 'ZONA HITAM' : 'NON ZONA HITAM'),
+        asInitial: replacementDetails.newStore.as || '',
         status: 'Terjadwal',
         spvApprovalStatus: 'Menunggu Approval SPV',
-        targetSKUCount: replacementDetails.newStore.totalSKUCount,
+        targetSKUCount: replacementDetails.newStore.totalSKUCount || 1000,
         notes: `Pengganti dari pindah toko ${originalSched.storeCode} (${originalSched.storeName}). Alasan: ${reason}`,
         createdAt: new Date().toISOString().slice(0, 10)
       };
@@ -687,6 +695,41 @@ export default function App() {
     const finalSchedules = replacementSched ? [replacementSched, ...updated] : updated;
     setSchedules(finalSchedules);
     saveSchedules(finalSchedules);
+
+    // Synchronize Master Stores (Master Toko Bali)
+    const updatedStores = stores.map(st => {
+      // 1. If this is the original store that failed / moved:
+      if (st.code === originalSched.storeCode || st.id === originalSched.storeId) {
+        const copy = { ...st };
+        if (actionType === 'Gagal SO') {
+          copy.soSeptember = `Gagal SO (${reason || 'Reschedule'})`;
+          copy.keterangan = `Gagal SO: ${reason}`;
+        } else {
+          // Pindah Toko: Mark or swap date
+          copy.soSeptember = `Pindah Toko (ke ${replacementDetails?.newStore.code || '-'})`;
+          copy.keterangan = `Pindah Toko ke ${replacementDetails?.newStore.code} (${replacementDetails?.newStore.name}). Alasan: ${reason}`;
+        }
+        return copy;
+      }
+
+      // 2. If this is the replacement store:
+      if (actionType === 'Pindah Toko' && replacementDetails && (st.code === replacementDetails.newStore.code || st.id === replacementDetails.newStore.id)) {
+        const copy = { ...st };
+        const smartDate = formatSmartSODate(replacementDetails.newDate);
+        copy.soSeptember = smartDate;
+        copy.tglSoApproved = replacementDetails.newDate;
+        copy.keterangan = `Jadwal Pengganti dari [${originalSched.storeCode}] ${originalSched.storeName}`;
+        if (originalSched.officerInCharge && (!copy.korlap || copy.korlap === 'Petugas SO')) {
+          copy.korlap = originalSched.officerInCharge.split(' (')[0];
+        }
+        return copy;
+      }
+
+      return st;
+    });
+
+    setStores(updatedStores);
+    saveStores(updatedStores);
   };
 
   const handleConfirmScheduleFinished = (scheduleId: string) => {
@@ -1289,6 +1332,18 @@ export default function App() {
                 handleOpenInputResultModal(sch);
               }}
               onSelectStore={(st) => setSelectedStoreDetail(st)}
+            />
+          )}
+
+          {/* TAB 4.6: OPSI PINDAH TOKO & REKOMENDASI SPV */}
+          {activeTab === 'opsi_pindah_toko' && (
+            <StoreRelocationAssistant
+              stores={stores}
+              schedules={schedules}
+              personnel={personnel}
+              onApplyRelocation={(scheduleId, actionType, reason, replacementDetails) => {
+                handleGagalAtauPindahToko(scheduleId, actionType, reason, replacementDetails);
+              }}
             />
           )}
 

@@ -21,7 +21,8 @@ import {
   Shirt,
   Database,
   PhoneCall,
-  CheckSquare
+  CheckSquare,
+  ArrowLeftRight
 } from 'lucide-react';
 import { UserRole } from '../types/stockOpname';
 import { ROLE_CONFIGS } from './Role/RoleAuthModal';
@@ -34,6 +35,7 @@ export type ActiveTab =
   | 'stores' 
   | 'master_toko_files' 
   | 'checklist_toko_zona'
+  | 'opsi_pindah_toko'
   | 'teams' 
   | 'oncall_personnel'
   | 'equipment' 
@@ -87,7 +89,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       // Only SPV and Super Admin (ALL) can access Pengaturan & Utilities
       return currentRole === 'SUPERVISOR';
     }
-    if (currentRole === 'SUPERVISOR' && (tab === 'schedules' || tab === 'stores' || tab === 'master_toko_files' || tab === 'checklist_toko_zona' || tab === 'oncall_personnel' || tab === 'admin_rekap_so')) return true;
+    if (currentRole === 'SUPERVISOR' && (tab === 'schedules' || tab === 'stores' || tab === 'master_toko_files' || tab === 'checklist_toko_zona' || tab === 'opsi_pindah_toko' || tab === 'oncall_personnel' || tab === 'admin_rekap_so')) return true;
     if (currentRole === 'OFFICER' && (tab === 'schedules' || tab === 'results' || tab === 'teams' || tab === 'oncall_personnel' || tab === 'equipment')) return true;
     if (currentRole === 'ADMIN' && (tab === 'teams' || tab === 'equipment' || tab === 'leave_recap' || tab === 'uniform_tracking' || tab === 'admin_rekap_so' || tab === 'oncall_personnel' || tab === 'reports')) return true;
     return false;
@@ -399,6 +401,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
                 <span className="px-1.5 py-0.5 text-[9px] rounded-md bg-emerald-500/20 text-emerald-300 font-extrabold border border-emerald-500/30">
                   Ceklist
+                </span>
+              </button>
+
+              <button
+                onClick={() => handleTabClick('opsi_pindah_toko', 'SUPERVISOR')}
+                className={`w-full flex items-center justify-between px-3 py-2.5 text-xs rounded-xl transition ${
+                  activeTab === 'opsi_pindah_toko'
+                    ? 'bg-indigo-600 text-white font-black shadow-md shadow-indigo-900/30'
+                    : !isTabAllowed('opsi_pindah_toko')
+                    ? 'text-slate-400 opacity-75 hover:bg-slate-800/60'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <ArrowLeftRight className={`w-4 h-4 ${activeTab === 'opsi_pindah_toko' ? 'text-white' : 'text-amber-400'}`} />
+                  <span>Cek Opsi Pindah Toko</span>
+                </div>
+                <span className="px-1.5 py-0.5 text-[9px] rounded-md bg-amber-500/20 text-amber-300 font-extrabold border border-amber-500/30">
+                  GPS
                 </span>
               </button>
             </div>

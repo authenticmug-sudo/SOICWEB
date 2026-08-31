@@ -15,19 +15,22 @@ import {
   UserCheck, 
   Layers, 
   BarChart3, 
-  Sparkles,
-  ArrowUpDown,
-  FileSpreadsheet,
-  RefreshCw,
-  ExternalLink,
-  ChevronRight,
-  ShieldAlert,
-  ShieldCheck,
-  Shield
+  Sparkles, 
+  ArrowUpDown, 
+  FileSpreadsheet, 
+  RefreshCw, 
+  ExternalLink, 
+  ChevronRight, 
+  ShieldAlert, 
+  ShieldCheck, 
+  Shield,
+  DollarSign,
+  Briefcase,
+  AlertTriangle
 } from 'lucide-react';
 import { Store, SOSchedule, SOResult, AuditorPersonnel } from '../../types/stockOpname';
 import { exportToExcelWithBackup } from '../../services/storageService';
-import { formatDateIndo, formatRupiah, getZoneBadgeClass, formatZoneText } from '../../utils/formatters';
+import { formatDateIndo, formatRupiah, getZoneBadgeClass, formatZoneText, formatSmartSODate } from '../../utils/formatters';
 
 interface ZoneStoreChecklistProps {
   stores: Store[];
@@ -36,6 +39,7 @@ interface ZoneStoreChecklistProps {
   personnel?: AuditorPersonnel[];
   onOpenInputResultModal?: (scheduleOrId?: SOSchedule | string | null) => void;
   onSelectStore?: (store: Store) => void;
+  onOpenRelocationModal?: (schedule: SOSchedule) => void;
 }
 
 export interface ZoneChecklistItem {
@@ -45,18 +49,41 @@ export interface ZoneChecklistItem {
   storeName: string;
   region: string;
   kabupaten?: string;
-  tanggalSo: string; // ISO date or raw date string (e.g. 2026-08-17)
-  tanggalSoFormatted: string;
-  kriteriaZona: string; // Zona High / Zona Medium / Zona Low / custom
-  isSudahSo: boolean;
-  keteranganSo: 'Sudah SO' | 'Belum SO';
+  district?: string;
+  
+  // Dates
+  tanggalTerjadwal: string; // From active schedule or soSeptember master
+  tanggalTerjadwalFormatted: string;
+  isTerjadwal: boolean;
+
+  tanggalSoApproved?: string; // Tanggal SO aktual yang telah disetujui SPV
+  tanggalSoApprovedFormatted?: string;
+  isApprovedBySPV: boolean;
+  
+  // Status & Classification
+  kriteriaZona: string; // ZONA HITAM vs NON ZONA HITAM
+  isZonaHitam: boolean;
+  typeSo: string;
+  
+  // Master Store Details
+  saldoToko?: number | string;
+  kasToko?: number;
+  soAktiva?: string;
+  am?: string;
+  as?: string;
   officerInCharge?: string;
   teamName?: string;
+  
+  // Schedule & Result References
   scheduleId?: string;
+  scheduleStatus?: string;
+  spvApprovalStatus?: string;
   resultId?: string;
   totalVarianceRp?: number;
   accuracyRate?: number;
-  scheduleStatus?: string;
+  baNumber?: string;
+  notes?: string;
+
   storeObj?: Store;
   scheduleObj?: SOSchedule;
 }
@@ -67,17 +94,18 @@ export const ZoneStoreChecklist: React.FC<ZoneStoreChecklistProps> = ({
   results,
   personnel = [],
   onOpenInputResultModal,
-  onSelectStore
+  onSelectStore,
+  onOpenRelocationModal
 }) => {
-  // Active Filter Month (Default to September 2026 / current active month)
+  // Filters & State
   const [selectedMonth, setSelectedMonth] = useState<string>('2026-09');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [selectedZonaFilter, setSelectedZonaFilter] = useState<string>('ALL');
-  const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('ALL');
+  const [selectedZonaFilter, setSelectedZonaFilter] = useState<'ALL' | 'HITAM' | 'NON'>('HITAM'); // Default to Zona Hitam as requested
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<'ALL' | 'SUDAH_APPROVED' | 'MENUNGGU_APPROVAL' | 'TERJADWAL_BELUM_SO' | 'BELUM_TERJADWAL'>('ALL');
   const [selectedRegionFilter, setSelectedRegionFilter] = useState<string>('ALL');
   const [selectedKorlapFilter, setSelectedKorlapFilter] = useState<string>('ALL');
   const [copiedWA, setCopiedWA] = useState<boolean>(false);
-  const [sortField, setSortField] = useState<'date' | 'code' | 'name' | 'zona'>('date');
+  const [sortField, setSortField] = useState<'date' | 'code' | 'name' | 'zona' | 'saldo'>('code');
   const [sortAsc, setSortAsc] = useState<boolean>(true);
 
   // Available month periods
@@ -95,155 +123,145 @@ export const ZoneStoreChecklist: React.FC<ZoneStoreChecklistProps> = ({
     const map = new Map<string, SOResult>();
     results.forEach(r => {
       if (r.scheduleId) map.set(r.scheduleId, r);
-      if (r.storeCode) map.set(`code_${r.storeCode}_${r.auditDate}`, r);
+      if (r.storeCode) map.set(`code_${r.storeCode}`, r);
     });
     return map;
   }, [results]);
 
-  const resultsByStoreCode = useMemo(() => {
-    const map = new Map<string, SOResult[]>();
-    results.forEach(r => {
-      const code = r.storeCode || '';
-      const list = map.get(code) || [];
-      list.push(r);
-      map.set(code, list);
+  const schedulesByStoreCode = useMemo(() => {
+    const map = new Map<string, SOSchedule>();
+    schedules.forEach(s => {
+      if (s.status !== 'Dibatalkan') {
+        map.set(s.storeCode, s);
+        if (s.storeId) map.set(s.storeId, s);
+      }
     });
     return map;
-  }, [results]);
+  }, [schedules]);
 
-  const storesByCode = useMemo(() => {
-    const map = new Map<string, Store>();
-    stores.forEach(s => {
-      if (s.code) map.set(s.code, s);
-      if (s.id) map.set(s.id, s);
-    });
-    return map;
-  }, [stores]);
-
-  // Build the unified Checklist List
+  // Build the complete Master Store Checklist List (Guaranteed to read ALL Zona Hitam from Master Toko Bali)
   const checklistData = useMemo(() => {
     const items: ZoneChecklistItem[] = [];
-    const processedKeys = new Set<string>();
 
-    // 1. Process from Schedules on selected month or all
-    schedules.forEach(sch => {
-      const schDate = sch.scheduledDate || '';
-      const schMonth = schDate.substring(0, 7); // e.g. 2026-08
-
-      if (selectedMonth !== 'ALL' && schMonth !== selectedMonth) {
-        return;
-      }
-
-      const storeObj = storesByCode.get(sch.storeCode) || storesByCode.get(sch.storeId);
-      const matchedResult = resultsByScheduleId.get(sch.id) || 
-        (sch.storeCode ? resultsByScheduleId.get(`code_${sch.storeCode}_${schDate}`) : undefined);
-
-      const isCompleted = 
-        sch.status === 'Selesai' || 
-        sch.status === 'Menunggu Rekapan' || 
-        !!sch.resultId || 
-        !!matchedResult;
-
-      // Extract Zona Criteria from Store or Schedule
-      const isHitam = Boolean(
-        storeObj?.isZonaHitam ||
-        storeObj?.zona?.toUpperCase().includes('HITAM') ||
-        storeObj?.keterangan?.toUpperCase().includes('ZONA HITAM')
-      );
-      const kriteriaZona = isHitam ? 'ZONA HITAM' : (storeObj?.zona || 'NON ZONA HITAM');
-
-      const itemKey = `${sch.storeCode}_${schDate}`;
-      processedKeys.add(itemKey);
-
-      items.push({
-        id: `sch_${sch.id}`,
-        storeId: sch.storeId,
-        storeCode: sch.storeCode || storeObj?.code || '-',
-        storeName: sch.storeName || storeObj?.name || '-',
-        region: storeObj?.region || sch.region || 'Kota Denpasar',
-        kabupaten: storeObj?.kabupaten || storeObj?.city || sch.region,
-        tanggalSo: schDate,
-        tanggalSoFormatted: schDate ? formatDateIndo(schDate) : 'Belum Ditentukan',
-        kriteriaZona,
-        isSudahSo: isCompleted,
-        keteranganSo: isCompleted ? 'Sudah SO' : 'Belum SO',
-        officerInCharge: sch.officerInCharge || storeObj?.korlap || '-',
-        teamName: sch.assignedTeamName || '-',
-        scheduleId: sch.id,
-        resultId: matchedResult?.id || sch.resultId,
-        totalVarianceRp: matchedResult?.totalVarianceRp,
-        accuracyRate: matchedResult?.accuracyRate,
-        scheduleStatus: sch.status,
-        storeObj,
-        scheduleObj: sch
-      });
-    });
-
-    // 2. Also incorporate Master Store items that have date inputs for the current month but not yet explicitly in schedule table
     stores.forEach(st => {
-      let tglSoInput = '';
-      if (selectedMonth === '2026-09' || (selectedMonth === 'ALL' && st.soSeptember)) {
-        tglSoInput = st.soSeptember || '';
-      } else if (selectedMonth === '2026-08' || (selectedMonth === 'ALL' && st.soAgustus)) {
-        tglSoInput = st.soAgustus || '';
-      } else if (selectedMonth === '2026-07' || (selectedMonth === 'ALL' && st.tglSoJuli)) {
-        tglSoInput = st.tglSoJuli || '';
-      } else if (selectedMonth === '2026-06' || (selectedMonth === 'ALL' && st.tglSoJuni)) {
-        tglSoInput = st.tglSoJuni || '';
-      } else if (selectedMonth === '2026-05' || (selectedMonth === 'ALL' && st.tglSoMei)) {
-        tglSoInput = st.tglSoMei || '';
-      } else if (st.tglSoApproved) {
-        tglSoInput = st.tglSoApproved;
-      }
-
-      if (!tglSoInput || tglSoInput === '-' || tglSoInput === '0' || tglSoInput === '0-Jan-00' || tglSoInput.toLowerCase() === 'belum so') return;
-
-      // Normalize date to standard ISO if written as day number e.g. "17"
-      let normalizedDate = tglSoInput;
-      if (/^\d{1,2}$/.test(tglSoInput.trim())) {
-        const dayNum = tglSoInput.trim().padStart(2, '0');
-        const mPart = selectedMonth !== 'ALL' ? selectedMonth : '2026-09';
-        normalizedDate = `${mPart}-${dayNum}`;
-      }
-
-      const itemKey = `${st.code}_${normalizedDate}`;
-      if (processedKeys.has(itemKey)) return; // Already included from schedule
-
-      const storeResults = resultsByStoreCode.get(st.code) || [];
-      const hasResult = storeResults.some(r => r.auditDate === normalizedDate || (selectedMonth !== 'ALL' && r.auditDate && r.auditDate.startsWith(selectedMonth)));
-
+      // 1. Determine if store is Zona Hitam
+      const zUpper = String(st.zona || '').toUpperCase();
+      const ketUpper = String(st.keterangan || '').toUpperCase();
       const isHitam = Boolean(
         st.isZonaHitam ||
-        st.zona?.toUpperCase().includes('HITAM') ||
-        st.keterangan?.toUpperCase().includes('ZONA HITAM')
+        zUpper.includes('HITAM') ||
+        ketUpper.includes('ZONA HITAM') ||
+        st.riskLevel === 'Tinggi'
       );
       const kriteriaZona = isHitam ? 'ZONA HITAM' : (st.zona || 'NON ZONA HITAM');
 
+      // 2. Find associated active schedule
+      const matchedSchedule = schedulesByStoreCode.get(st.code) || schedulesByStoreCode.get(st.id);
+      
+      // 3. Find associated result
+      const matchedResult = (matchedSchedule && resultsByScheduleId.get(matchedSchedule.id)) || resultsByScheduleId.get(`code_${st.code}`);
+
+      // 4. Resolve Tanggal Terjadwal
+      let schedDate = matchedSchedule?.scheduledDate || '';
+      if (!schedDate) {
+        if (selectedMonth === '2026-09' || selectedMonth === 'ALL') {
+          schedDate = st.soSeptember || '';
+        } else if (selectedMonth === '2026-08') {
+          schedDate = st.soAgustus || '';
+        } else if (selectedMonth === '2026-07') {
+          schedDate = st.tglSoJuli || '';
+        }
+      }
+
+      // Check if scheduled
+      const isSchedFilled = Boolean(
+        schedDate && 
+        schedDate !== '-' && 
+        schedDate !== '0' && 
+        schedDate !== '0-Jan-00' && 
+        !schedDate.toLowerCase().includes('belum')
+      );
+
+      // Normalize date if day number
+      let formattedSchedDate = 'Belum Terjadwal (Blank)';
+      if (isSchedFilled) {
+        if (/^\d{1,2}$/.test(schedDate.trim())) {
+          const day = schedDate.trim().padStart(2, '0');
+          const m = selectedMonth !== 'ALL' ? selectedMonth : '2026-09';
+          schedDate = `${m}-${day}`;
+        }
+        formattedSchedDate = formatDateIndo(schedDate);
+      }
+
+      // 5. Resolve Tanggal SO (Berdasarkan Approval SPV)
+      let approvedDate = '';
+      let isApproved = false;
+
+      if (matchedSchedule?.spvApprovalStatus === 'Disetujui' || matchedSchedule?.status === 'Selesai') {
+        approvedDate = matchedSchedule.scheduledDate;
+        isApproved = true;
+      } else if (matchedResult?.approvalStatus === 'Disetujui' || matchedResult?.baNumber) {
+        approvedDate = matchedResult.auditDate || schedDate;
+        isApproved = true;
+      } else if (st.tglSoApproved && st.tglSoApproved !== '-' && st.tglSoApproved !== '0') {
+        approvedDate = st.tglSoApproved;
+        isApproved = true;
+      }
+
+      const formattedApprovedDate = approvedDate ? formatDateIndo(approvedDate) : undefined;
+
+      // 6. Officer In Charge (Sync with Korlap / Master Personil)
+      const officer = matchedSchedule?.officerInCharge || st.korlap || '-';
+
       items.push({
-        id: `store_${st.id}_${normalizedDate}`,
+        id: `zone_${st.id}`,
         storeId: st.id,
         storeCode: st.code,
         storeName: st.name,
         region: st.region || 'Kota Denpasar',
-        kabupaten: st.kabupaten || st.city,
-        tanggalSo: normalizedDate,
-        tanggalSoFormatted: formatDateIndo(normalizedDate),
+        kabupaten: st.kabupaten || st.city || st.region,
+        district: st.district || st.kecamatan,
+        
+        tanggalTerjadwal: isSchedFilled ? schedDate : '',
+        tanggalTerjadwalFormatted: formattedSchedDate,
+        isTerjadwal: isSchedFilled,
+
+        tanggalSoApproved: approvedDate || undefined,
+        tanggalSoApprovedFormatted: formattedApprovedDate,
+        isApprovedBySPV: isApproved,
+
         kriteriaZona,
-        isSudahSo: hasResult,
-        keteranganSo: hasResult ? 'Sudah SO' : 'Belum SO',
-        officerInCharge: st.korlap || '-',
-        teamName: st.assignedTeamId || '-',
-        scheduleStatus: hasResult ? 'Selesai' : 'Terjadwal (Master)',
-        storeObj: st
+        isZonaHitam: isHitam,
+        typeSo: st.typeSo || st.qm || 'M',
+
+        saldoToko: st.saldoToko,
+        kasToko: st.kasToko,
+        soAktiva: st.soAktiva,
+        am: st.am,
+        as: st.as,
+        officerInCharge: officer,
+        teamName: matchedSchedule?.assignedTeamName,
+
+        scheduleId: matchedSchedule?.id,
+        scheduleStatus: matchedSchedule?.status || (isApproved ? 'Selesai' : (isSchedFilled ? 'Terjadwal (Master)' : 'Belum Terjadwal')),
+        spvApprovalStatus: matchedSchedule?.spvApprovalStatus || (isApproved ? 'Disetujui' : (matchedResult ? 'Menunggu Approval SPV' : undefined)),
+        resultId: matchedResult?.id,
+        totalVarianceRp: matchedResult?.totalVarianceRp,
+        accuracyRate: matchedResult?.accuracyRate,
+        baNumber: matchedResult?.baNumber,
+        notes: matchedSchedule?.notes || st.keterangan,
+
+        storeObj: st,
+        scheduleObj: matchedSchedule
       });
     });
 
     return items;
-  }, [schedules, stores, results, selectedMonth, storesByCode, resultsByScheduleId, resultsByStoreCode]);
+  }, [stores, schedules, results, selectedMonth, schedulesByStoreCode, resultsByScheduleId]);
 
   // Extract unique filter lists
   const availableRegions = useMemo(() => {
-    const set = new Set(checklistData.map(i => i.region).filter(Boolean));
+    const set = new Set(checklistData.map(i => i.kabupaten || i.region).filter(Boolean));
     return Array.from(set).sort();
   }, [checklistData]);
 
@@ -252,52 +270,50 @@ export const ZoneStoreChecklist: React.FC<ZoneStoreChecklistProps> = ({
     return Array.from(set).sort();
   }, [checklistData]);
 
-  const availableZonas = useMemo(() => {
-    const set = new Set(checklistData.map(i => i.kriteriaZona).filter(Boolean));
-    return Array.from(set).sort();
-  }, [checklistData]);
-
   // Filtered & Sorted Checklist
   const filteredData = useMemo(() => {
     return checklistData.filter(item => {
-      // Search match
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
+      // 1. Search match
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
         const mCode = item.storeCode.toLowerCase().includes(q);
         const mName = item.storeName.toLowerCase().includes(q);
         const mKorlap = (item.officerInCharge || '').toLowerCase().includes(q);
-        const mRegion = item.region.toLowerCase().includes(q);
-        const mZona = item.kriteriaZona.toLowerCase().includes(q);
-        if (!mCode && !mName && !mKorlap && !mRegion && !mZona) return false;
+        const mRegion = (item.region || '').toLowerCase().includes(q);
+        const mKab = (item.kabupaten || '').toLowerCase().includes(q);
+        const mAM = (item.am || '').toLowerCase().includes(q);
+        const mAS = (item.as || '').toLowerCase().includes(q);
+        if (!mCode && !mName && !mKorlap && !mRegion && !mKab && !mAM && !mAS) return false;
       }
 
-      // Zona Filter
-      if (selectedZonaFilter !== 'ALL') {
-        const zUpper = item.kriteriaZona.toUpperCase();
-        if (selectedZonaFilter === 'HITAM') {
-          const isHitam = zUpper.includes('HITAM') && !zUpper.includes('NON');
-          if (!isHitam) return false;
-        } else if (selectedZonaFilter === 'NON') {
-          const isNon = zUpper.includes('NON') || !zUpper.includes('HITAM');
-          if (!isNon) return false;
-        }
+      // 2. Zona Filter
+      if (selectedZonaFilter === 'HITAM' && !item.isZonaHitam) return false;
+      if (selectedZonaFilter === 'NON' && item.isZonaHitam) return false;
+
+      // 3. Status Filter based on SPV Approval & Scheduling
+      if (selectedStatusFilter === 'SUDAH_APPROVED' && !item.isApprovedBySPV) return false;
+      if (selectedStatusFilter === 'MENUNGGU_APPROVAL') {
+        const isPending = item.spvApprovalStatus === 'Menunggu Approval SPV' || (item.scheduleStatus === 'Menunggu Rekapan' && !item.isApprovedBySPV);
+        if (!isPending) return false;
+      }
+      if (selectedStatusFilter === 'TERJADWAL_BELUM_SO') {
+        if (!item.isTerjadwal || item.isApprovedBySPV) return false;
+      }
+      if (selectedStatusFilter === 'BELUM_TERJADWAL') {
+        if (item.isTerjadwal || item.isApprovedBySPV) return false;
       }
 
-      // Status Filter
-      if (selectedStatusFilter === 'SUDAH' && !item.isSudahSo) return false;
-      if (selectedStatusFilter === 'BELUM' && item.isSudahSo) return false;
+      // 4. Region Filter
+      if (selectedRegionFilter !== 'ALL' && item.kabupaten !== selectedRegionFilter && item.region !== selectedRegionFilter) return false;
 
-      // Region Filter
-      if (selectedRegionFilter !== 'ALL' && item.region !== selectedRegionFilter) return false;
-
-      // Korlap Filter
+      // 5. Korlap Filter
       if (selectedKorlapFilter !== 'ALL' && item.officerInCharge !== selectedKorlapFilter) return false;
 
       return true;
     }).sort((a, b) => {
       if (sortField === 'date') {
-        const timeA = new Date(a.tanggalSo || '1970-01-01').getTime();
-        const timeB = new Date(b.tanggalSo || '1970-01-01').getTime();
+        const timeA = a.tanggalTerjadwal ? new Date(a.tanggalTerjadwal).getTime() : 0;
+        const timeB = b.tanggalTerjadwal ? new Date(b.tanggalTerjadwal).getTime() : 0;
         return sortAsc ? timeA - timeB : timeB - timeA;
       }
       if (sortField === 'code') {
@@ -309,402 +325,357 @@ export const ZoneStoreChecklist: React.FC<ZoneStoreChecklistProps> = ({
       if (sortField === 'zona') {
         return sortAsc ? a.kriteriaZona.localeCompare(b.kriteriaZona) : b.kriteriaZona.localeCompare(a.kriteriaZona);
       }
+      if (sortField === 'saldo') {
+        const numA = typeof a.saldoToko === 'number' ? a.saldoToko : 0;
+        const numB = typeof b.saldoToko === 'number' ? b.saldoToko : 0;
+        return sortAsc ? numA - numB : numB - numA;
+      }
       return 0;
     });
   }, [checklistData, searchQuery, selectedZonaFilter, selectedStatusFilter, selectedRegionFilter, selectedKorlapFilter, sortField, sortAsc]);
 
   // Aggregate Metrics & Progress based on Master Toko specifications
   const metrics = useMemo(() => {
-    const total = checklistData.length;
-    const sudah = checklistData.filter(i => i.isSudahSo).length;
-    const belum = total - sudah;
-    const percent = total > 0 ? Math.round((sudah / total) * 100) : 0;
+    const totalAll = checklistData.length;
+    
+    // Zona Hitam specific counts
+    const zonaHitamItems = checklistData.filter(i => i.isZonaHitam);
+    const totalZonaHitam = zonaHitamItems.length;
+    const zonaHitamApproved = zonaHitamItems.filter(i => i.isApprovedBySPV).length;
+    const zonaHitamTerjadwalBelumSO = zonaHitamItems.filter(i => i.isTerjadwal && !i.isApprovedBySPV).length;
+    const zonaHitamBelumTerjadwal = zonaHitamItems.filter(i => !i.isTerjadwal && !i.isApprovedBySPV).length;
+    const zonaHitamBelumSO = totalZonaHitam - zonaHitamApproved;
+    const zonaHitamPercent = totalZonaHitam > 0 ? Math.round((zonaHitamApproved / totalZonaHitam) * 100) : 0;
 
-    // Breakdown per Master Toko Zona (ZONA HITAM vs NON ZONA HITAM)
-    let zonaHitamTotal = 0;
-    let zonaHitamSudah = 0;
-    let nonZonaHitamTotal = 0;
-    let nonZonaHitamSudah = 0;
-
-    checklistData.forEach(item => {
-      const zUpper = item.kriteriaZona.toUpperCase();
-      if (zUpper.includes('HITAM') && !zUpper.includes('NON')) {
-        zonaHitamTotal++;
-        if (item.isSudahSo) zonaHitamSudah++;
-      } else {
-        nonZonaHitamTotal++;
-        if (item.isSudahSo) nonZonaHitamSudah++;
-      }
-    });
-
-    const zonaHitamBelum = zonaHitamTotal - zonaHitamSudah;
-    const zonaHitamPercent = zonaHitamTotal > 0 ? Math.round((zonaHitamSudah / zonaHitamTotal) * 100) : 0;
-
-    const nonZonaHitamBelum = nonZonaHitamTotal - nonZonaHitamSudah;
-    const nonZonaHitamPercent = nonZonaHitamTotal > 0 ? Math.round((nonZonaHitamSudah / nonZonaHitamTotal) * 100) : 0;
+    // Non Zona Hitam counts
+    const nonZonaItems = checklistData.filter(i => !i.isZonaHitam);
+    const totalNonZona = nonZonaItems.length;
+    const nonZonaApproved = nonZonaItems.filter(i => i.isApprovedBySPV).length;
+    const nonZonaPercent = totalNonZona > 0 ? Math.round((nonZonaApproved / totalNonZona) * 100) : 0;
 
     return {
-      total,
-      sudah,
-      belum,
-      percent,
-      zonaHitamTotal,
-      zonaHitamSudah,
-      zonaHitamBelum,
+      totalAll,
+      totalZonaHitam,
+      zonaHitamApproved,
+      zonaHitamTerjadwalBelumSO,
+      zonaHitamBelumTerjadwal,
+      zonaHitamBelumSO,
       zonaHitamPercent,
-      nonZonaHitamTotal,
-      nonZonaHitamSudah,
-      nonZonaHitamBelum,
-      nonZonaHitamPercent
+      totalNonZona,
+      nonZonaApproved,
+      nonZonaPercent
     };
   }, [checklistData]);
 
-  // Handle Export to Excel
-  const handleExportExcel = () => {
-    const exportRows = filteredData.map((item, idx) => ({
-      'No': idx + 1,
+  // WhatsApp Summary Copy
+  const generateWASummary = () => {
+    const listToReport = filteredData.slice(0, 30);
+    return `*CEKLIST PELAKSANAAN TOKO ZONA HITAM (BALI)*
+━━━━━━━━━━━━━━━━━━━━
+📅 *Bulan:* September 2026
+🛡️ *Total Toko Zona Hitam:* ${metrics.totalZonaHitam} Toko
+✅ *Sudah Disetujui SPV (Selesai):* ${metrics.zonaHitamApproved} Toko (${metrics.zonaHitamPercent}% Ach)
+⏳ *Terjadwal (Belum SO):* ${metrics.zonaHitamTerjadwalBelumSO} Toko
+❌ *Belum Terjadwal (Blank):* ${metrics.zonaHitamBelumTerjadwal} Toko
+
+*DETAIL CEKLIST TOKO ZONA HITAM:*
+${listToReport.map((i, idx) => {
+  const statusStr = i.isApprovedBySPV 
+    ? `✅ SO Approved (${i.tanggalSoApprovedFormatted || '-'})` 
+    : (i.isTerjadwal ? `⏳ Terjadwal (${i.tanggalTerjadwalFormatted})` : `❌ Belum Terjadwal`);
+  return `${idx + 1}. [${i.storeCode}] ${i.storeName}
+   • Status: ${statusStr}
+   • AM/AS: ${i.am || '-'}/${i.as || '-'} | Korlap: ${i.officerInCharge}
+   • Stock: ${typeof i.saldoToko === 'number' ? formatRupiah(i.saldoToko) : (i.saldoToko || '-')}`;
+}).join('\n\n')}
+
+_Data sinkron dengan Master Toko Bali & Approval SPV._`;
+  };
+
+  const handleCopyWA = () => {
+    const text = generateWASummary();
+    navigator.clipboard.writeText(text);
+    setCopiedWA(true);
+    setTimeout(() => setCopiedWA(false), 3000);
+  };
+
+  const handleExportExcel = async () => {
+    const rows = filteredData.map((item, idx) => ({
+      No: idx + 1,
       'Kode Toko': item.storeCode,
       'Nama Toko': item.storeName,
-      'Tanggal SO': item.tanggalSo,
-      'Tanggal SO (Format)': item.tanggalSoFormatted,
-      'Kriteria Zona': item.kriteriaZona,
-      'Keterangan Status SO': item.keteranganSo,
-      'Status Jadwal': item.scheduleStatus || '-',
-      'Officer / Korlap PIC': item.officerInCharge || '-',
-      'Wilayah / Area': item.region,
       'Kabupaten': item.kabupaten || item.region,
-      'Selisih Audit (Rp)': item.totalVarianceRp !== undefined ? item.totalVarianceRp : '-'
+      'Kriteria Zona': item.kriteriaZona,
+      'Type SO': item.typeSo,
+      'AM': item.am || '',
+      'AS': item.as || '',
+      'Korlap / Officer': item.officerInCharge || '',
+      'Saldo Toko / Stock': typeof item.saldoToko === 'number' ? item.saldoToko : (item.saldoToko || ''),
+      'Kas Toko': item.kasToko || '',
+      'SO Aktiva': item.soAktiva || '',
+      'Tanggal Terjadwal': item.tanggalTerjadwalFormatted,
+      'Tanggal SO (Disetujui SPV)': item.tanggalSoApprovedFormatted || 'Belum Ter-SO',
+      'Status Approval SPV': item.isApprovedBySPV ? 'Disetujui' : (item.spvApprovalStatus || 'Belum SO'),
+      'Nomor BA': item.baNumber || '',
+      'Akurasi (%)': item.accuracyRate !== undefined ? `${item.accuracyRate}%` : '',
+      'Total Selisih (Rp)': item.totalVarianceRp || 0,
+      'Keterangan': item.notes || ''
     }));
 
-    const monthLabel = MONTH_OPTIONS.find(m => m.value === selectedMonth)?.label || selectedMonth;
     exportToExcelWithBackup(
-      `Ceklist_SO_Toko_Zona_${selectedMonth}_${Date.now()}`,
-      `Ceklist Toko Zona ${selectedMonth}`,
-      exportRows
+      `Ceklist_Toko_Zona_Hitam_Bali_${selectedMonth}`,
+      'Ceklist Toko Zona Hitam',
+      rows
     );
   };
 
-  // Handle Copy to WhatsApp
-  const handleCopyWA = () => {
-    const monthLabel = MONTH_OPTIONS.find(m => m.value === selectedMonth)?.label || 'Agustus 2026';
-    let msg = `*📊 REKAP CEKLIST SO TOKO ZONA - SPV IC BALI*\n`;
-    msg += `📅 *Periode:* ${monthLabel}\n`;
-    msg += `🕒 *Waktu Update:* ${new Date().toLocaleString('id-ID')}\n\n`;
-    msg += `📈 *Ringkasan Capaian Pelaksanaan:*\n`;
-    msg += `• Total Toko Terjadwal: *${metrics.total} Toko*\n`;
-    msg += `• ✅ Sudah Selesai SO: *${metrics.sudah} Toko (${metrics.percent}%)*\n`;
-    msg += `• ⏳ Belum Selesai SO: *${metrics.belum} Toko*\n\n`;
-
-    msg += `🏷️ *Capaian per Kategori Zona Toko:*\n`;
-    msg += `🔴 *Toko Zona Hitam:* ${metrics.zonaHitamSudah}/${metrics.zonaHitamTotal} SO (${metrics.zonaHitamPercent}%)\n`;
-    msg += `🟢 *Non Zona Hitam:* ${metrics.nonZonaHitamSudah}/${metrics.nonZonaHitamTotal} SO (${metrics.nonZonaHitamPercent}%)\n\n`;
-
-    const pendingList = filteredData.filter(i => !i.isSudahSo).slice(0, 15);
-    if (pendingList.length > 0) {
-      msg += `📌 *Daftar Toko Belum SO (${pendingList.length} dari ${metrics.belum}):*\n`;
-      pendingList.forEach((item, idx) => {
-        msg += `${idx + 1}. [${item.storeCode}] ${item.storeName} - Tgl: ${item.tanggalSoFormatted} (${item.kriteriaZona}) PIC: ${item.officerInCharge}\n`;
-      });
-      if (metrics.belum > 15) {
-        msg += `_...dan ${metrics.belum - 15} toko lainnya._\n`;
-      }
-    } else {
-      msg += `🎉 *Semua toko pada filter ini telah selesai dilakukan SO!*\n`;
-    }
-
-    msg += `\n_Diperbarui secara otomatis via Portal SPV SO IC Bali_`;
-
-    navigator.clipboard.writeText(msg);
-    setCopiedWA(true);
-    setTimeout(() => setCopiedWA(false), 2500);
-  };
-
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       
-      {/* Top Header Executive Banner */}
-      <div className="bg-gradient-to-r from-indigo-950 via-slate-900 to-indigo-900 text-white p-5 sm:p-6 rounded-2xl border border-indigo-800/60 shadow-lg relative overflow-hidden">
-        <div className="absolute right-0 top-0 opacity-10 translate-x-6 -translate-y-6 pointer-events-none">
-          <CheckSquare className="w-64 h-64 text-indigo-400" />
-        </div>
-
-        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2.5">
-              <span className="p-2 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-400/30">
-                <CheckSquare className="w-5 h-5" />
+      {/* Top Banner & KPI Dashboard */}
+      <div className="bg-gradient-to-r from-slate-900 via-rose-950 to-slate-900 border border-rose-800/50 rounded-2xl p-4 sm:p-5 text-white shadow-md relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-rose-500/10 rounded-full blur-3xl pointer-events-none" />
+        
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 relative z-10">
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="px-2.5 py-0.5 rounded-full bg-rose-600 text-white font-extrabold text-[10px] uppercase tracking-wider flex items-center gap-1 shadow-xs">
+                <ShieldAlert className="w-3.5 h-3.5" /> MASTER TOKO BALI
               </span>
-              <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2">
-                Ceklist SO Toko Zona
-                <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[11px] font-extrabold px-2 py-0.5 rounded-full">
-                  Portal SPV
-                </span>
-              </h1>
+              <span className="text-xs text-rose-200 font-mono font-bold">
+                Sinkronisasi Master Toko Bali & Approval SPV
+              </span>
             </div>
-            <p className="text-xs sm:text-sm text-indigo-200/80 max-w-3xl">
-              Monitoring checklist pelaksanaan Stock Opname per Toko berdasarkan <strong>Tanggal SO</strong> &amp; <strong>Kriteria Zona</strong> dari inputan Master Toko bulan berjalan secara real-time.
+
+            <h2 className="text-lg sm:text-xl font-black text-white mt-1 flex items-center gap-2">
+              <CheckSquare className="w-5 h-5 text-rose-400" />
+              Ceklist Toko Zona Hitam (Audit Prioritas)
+            </h2>
+            <p className="text-xs text-slate-300 max-w-2xl mt-0.5">
+              Daftar seluruh toko Zona Hitam yang dibaca langsung dari <strong>Master Toko Bali</strong>. Dilengkapi tanggal terjadwal, tanggal SO hasil persetujuan SPV, serta saldo stock & kasir.
             </p>
           </div>
 
-          {/* Quick Action Buttons */}
-          <div className="flex flex-wrap items-center gap-2.5">
-            {/* Periode Month Selector */}
-            <div className="bg-slate-800/90 border border-indigo-500/30 rounded-xl px-3 py-1.5 flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-indigo-400 shrink-0" />
-              <select
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                className="bg-transparent border-none text-white text-xs font-bold focus:outline-none cursor-pointer"
-              >
-                {MONTH_OPTIONS.map(opt => (
-                  <option key={opt.value} value={opt.value} className="bg-slate-900 text-white">
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
+          {/* Action Buttons */}
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={handleCopyWA}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600/50 hover:bg-indigo-600/70 text-indigo-100 border border-indigo-400/30 text-xs font-bold transition active:scale-95 shadow-sm"
-              title="Salin ringkasan ceklist ke format WhatsApp"
+              className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition flex items-center gap-1.5 border border-slate-700 shadow-xs cursor-pointer"
             >
-              {copiedWA ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
-              <span>{copiedWA ? 'Tersalin!' : 'Salin Format WA'}</span>
+              {copiedWA ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{copiedWA ? 'Tersalin' : 'Format WA'}</span>
             </button>
 
             <button
               onClick={handleExportExcel}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black transition active:scale-95 shadow-sm shadow-emerald-900/30"
-              title="Download Ceklist Toko Zona ke Excel"
+              className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
             >
-              <Download className="w-4 h-4" />
+              <Download className="w-3.5 h-3.5" />
               <span>Export Excel</span>
             </button>
           </div>
         </div>
 
-        {/* Analytics Progress Bar & KPI Cards */}
-        <div className="mt-5 pt-5 border-t border-indigo-800/50 space-y-4">
+        {/* KPI Mini-Cards Bar */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 mt-4 pt-4 border-t border-rose-800/40">
           
-          {/* Progress Bar */}
-          <div className="bg-slate-900/80 p-3 rounded-xl border border-indigo-700/40 space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-indigo-200 font-bold flex items-center gap-1.5">
-                <BarChart3 className="w-4 h-4 text-indigo-400" />
-                Progress Penyelesaian SO Toko Zona:
-              </span>
-              <span className="font-extrabold text-emerald-400 text-sm">
-                {metrics.sudah} / {metrics.total} Toko ({metrics.percent}%)
-              </span>
-            </div>
-            <div className="w-full bg-slate-800 h-3 rounded-full overflow-hidden border border-slate-700">
+          <div className="p-3 bg-slate-900/80 rounded-xl border border-rose-500/30">
+            <span className="text-[10px] uppercase font-bold text-slate-400 block">Total Zona Hitam</span>
+            <p className="text-xl font-black text-white mt-0.5">{metrics.totalZonaHitam} Toko</p>
+          </div>
+
+          <div className="p-3 bg-emerald-950/70 rounded-xl border border-emerald-500/40">
+            <span className="text-[10px] uppercase font-bold text-emerald-300 block">Sudah Disetujui SPV</span>
+            <p className="text-xl font-black text-emerald-400 mt-0.5">{metrics.zonaHitamApproved} Toko</p>
+            <span className="text-[10px] text-emerald-300 font-bold">{metrics.zonaHitamPercent}% Ach</span>
+          </div>
+
+          <div className="p-3 bg-amber-950/70 rounded-xl border border-amber-500/40">
+            <span className="text-[10px] uppercase font-bold text-amber-300 block">Terjadwal (Belum SO)</span>
+            <p className="text-xl font-black text-amber-400 mt-0.5">{metrics.zonaHitamTerjadwalBelumSO} Toko</p>
+          </div>
+
+          <div className="p-3 bg-rose-950/70 rounded-xl border border-rose-500/40">
+            <span className="text-[10px] uppercase font-bold text-rose-300 block">Belum Terjadwal (Blank)</span>
+            <p className="text-xl font-black text-rose-400 mt-0.5">{metrics.zonaHitamBelumTerjadwal} Toko</p>
+          </div>
+
+          <div className="p-3 bg-indigo-950/70 rounded-xl border border-indigo-500/40 col-span-2 sm:col-span-1">
+            <span className="text-[10px] uppercase font-bold text-indigo-300 block">% Capaian Realisasi</span>
+            <p className="text-xl font-black text-indigo-300 mt-0.5">{metrics.zonaHitamPercent}%</p>
+            <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mt-1.5">
               <div 
-                className="bg-gradient-to-r from-emerald-500 to-teal-400 h-full rounded-full transition-all duration-700"
-                style={{ width: `${Math.min(100, metrics.percent)}%` }}
+                className="bg-emerald-400 h-full rounded-full transition-all duration-500" 
+                style={{ width: `${metrics.zonaHitamPercent}%` }}
               />
             </div>
           </div>
 
-          {/* KPI Mini-Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-            <div className="p-2.5 bg-slate-900/70 rounded-xl border border-indigo-500/20">
-              <span className="text-[10px] uppercase font-bold text-slate-400">Total Toko Zona</span>
-              <p className="text-lg font-black text-white">{metrics.total}</p>
-            </div>
-            <div className="p-2.5 bg-emerald-950/60 rounded-xl border border-emerald-500/30">
-              <span className="text-[10px] uppercase font-bold text-emerald-300">Sudah SO</span>
-              <p className="text-lg font-black text-emerald-400">{metrics.sudah}</p>
-            </div>
-            <div className="p-2.5 bg-amber-950/60 rounded-xl border border-amber-500/30">
-              <span className="text-[10px] uppercase font-bold text-amber-300">Belum SO</span>
-              <p className="text-lg font-black text-amber-400">{metrics.belum}</p>
-            </div>
-            
-            {/* Toko Zona Hitam KPI */}
-            <div className="p-2.5 bg-rose-950/60 rounded-xl border border-rose-500/40">
-              <span className="text-[10px] uppercase font-extrabold text-rose-300 flex items-center gap-1">
-                <ShieldAlert className="w-3.5 h-3.5 text-rose-400" /> ZONA HITAM
-              </span>
-              <p className="text-sm font-black text-rose-200">
-                {metrics.zonaHitamSudah} / {metrics.zonaHitamTotal}
-                <span className="text-[10px] font-bold text-rose-300 ml-1">
-                  ({metrics.zonaHitamPercent}%)
-                </span>
-              </p>
-            </div>
+        </div>
 
-            {/* Non Zona Hitam KPI */}
-            <div className="p-2.5 bg-emerald-950/50 rounded-xl border border-emerald-500/30">
-              <span className="text-[10px] uppercase font-bold text-emerald-300 flex items-center gap-1">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" /> NON ZONA HITAM
-              </span>
-              <p className="text-sm font-black text-emerald-300">
-                {metrics.nonZonaHitamSudah} / {metrics.nonZonaHitamTotal}
-                <span className="text-[10px] font-bold text-emerald-200 ml-1">
-                  ({metrics.nonZonaHitamPercent}%)
-                </span>
-              </p>
-            </div>
+      </div>
 
-            {/* Total Capaian */}
-            <div className="p-2.5 bg-indigo-950/60 rounded-xl border border-indigo-500/30">
-              <span className="text-[10px] uppercase font-bold text-indigo-300 flex items-center gap-1">
-                <BarChart3 className="w-3.5 h-3.5 text-indigo-400" /> % CAPAIAN TOTAL
-              </span>
-              <p className="text-lg font-black text-indigo-300">
-                {metrics.percent}%
-              </p>
-            </div>
+      {/* Filter & Search Navigation Bar */}
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+        
+        {/* Quick Filter Tabs */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs font-bold">
+          <button
+            type="button"
+            onClick={() => setSelectedStatusFilter('ALL')}
+            className={`px-3 py-1.5 rounded-xl transition shrink-0 ${
+              selectedStatusFilter === 'ALL' ? 'bg-slate-900 text-white shadow-xs' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            Semua ({filteredData.length})
+          </button>
+          
+          <button
+            type="button"
+            onClick={() => setSelectedStatusFilter('SUDAH_APPROVED')}
+            className={`px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 shrink-0 ${
+              selectedStatusFilter === 'SUDAH_APPROVED' ? 'bg-emerald-600 text-white shadow-xs' : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+            }`}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>Sudah Disetujui SPV ({metrics.zonaHitamApproved})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSelectedStatusFilter('TERJADWAL_BELUM_SO')}
+            className={`px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 shrink-0 ${
+              selectedStatusFilter === 'TERJADWAL_BELUM_SO' ? 'bg-amber-500 text-white shadow-xs' : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
+            }`}
+          >
+            <Clock className="w-3.5 h-3.5" />
+            <span>Terjadwal Belum SO ({metrics.zonaHitamTerjadwalBelumSO})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSelectedStatusFilter('BELUM_TERJADWAL')}
+            className={`px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 shrink-0 ${
+              selectedStatusFilter === 'BELUM_TERJADWAL' ? 'bg-rose-600 text-white shadow-xs' : 'bg-rose-50 text-rose-800 hover:bg-rose-100'
+            }`}
+          >
+            <AlertCircle className="w-3.5 h-3.5" />
+            <span>Belum Terjadwal / Blank ({metrics.zonaHitamBelumTerjadwal})</span>
+          </button>
+        </div>
+
+        {/* Search & Dropdown Filters Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 text-xs">
+          
+          {/* Search Box */}
+          <div className="sm:col-span-4 relative">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+            <input
+              type="text"
+              placeholder="Cari kode toko, nama toko, AM, AS, Korlap..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-rose-500 outline-hidden"
+            />
+          </div>
+
+          {/* Kriteria Zona Switcher */}
+          <div className="sm:col-span-3">
+            <select
+              value={selectedZonaFilter}
+              onChange={(e) => setSelectedZonaFilter(e.target.value as any)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 font-bold text-slate-800 focus:ring-2 focus:ring-rose-500"
+            >
+              <option value="HITAM">🔴 HANYA ZONA HITAM ({metrics.totalZonaHitam})</option>
+              <option value="NON">🟢 NON ZONA HITAM ({metrics.totalNonZona})</option>
+              <option value="ALL">SEMUA TOKO ({metrics.totalAll})</option>
+            </select>
+          </div>
+
+          {/* Region / Kabupaten */}
+          <div className="sm:col-span-3">
+            <select
+              value={selectedRegionFilter}
+              onChange={(e) => setSelectedRegionFilter(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 font-medium text-slate-800 focus:ring-2 focus:ring-rose-500"
+            >
+              <option value="ALL">Semua Kabupaten ({availableRegions.length})</option>
+              {availableRegions.map(r => (
+                <option key={r} value={r}>{r}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Korlap / Officer */}
+          <div className="sm:col-span-2">
+            <select
+              value={selectedKorlapFilter}
+              onChange={(e) => setSelectedKorlapFilter(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 font-medium text-slate-800 focus:ring-2 focus:ring-rose-500"
+            >
+              <option value="ALL">Semua Korlap</option>
+              {availableKorlaps.map(k => (
+                <option key={k} value={k}>{k}</option>
+              ))}
+            </select>
           </div>
 
         </div>
-      </div>
-
-      {/* Filter & Search Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
-        
-        {/* Instant Search Bar */}
-        <div className="flex flex-1 min-w-[260px] items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
-          <Search className="w-4 h-4 text-slate-400 shrink-0" />
-          <input
-            type="text"
-            placeholder="Cari Kode Toko, Nama Toko, Korlap PIC, Wilayah, atau Zona..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-transparent border-none outline-hidden text-slate-800 placeholder-slate-400 text-xs font-medium"
-          />
-          {searchQuery && (
-            <button onClick={() => setSearchQuery('')} className="text-slate-400 hover:text-slate-600 font-bold px-1">
-              ×
-            </button>
-          )}
-        </div>
-
-        {/* Dropdown Filters */}
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          
-          {/* Filter Status SO */}
-          <select
-            value={selectedStatusFilter}
-            onChange={(e) => setSelectedStatusFilter(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            <option value="ALL">Semua Status (Sudah & Belum)</option>
-            <option value="SUDAH">✅ Sudah SO ({metrics.sudah})</option>
-            <option value="BELUM">⏳ Belum SO ({metrics.belum})</option>
-          </select>
-
-          {/* Filter Kriteria Zona */}
-          <select
-            value={selectedZonaFilter}
-            onChange={(e) => setSelectedZonaFilter(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-          >
-            <option value="ALL">Semua Kriteria Zona</option>
-            <option value="HITAM">🔴 ZONA HITAM ({metrics.zonaHitamTotal})</option>
-            <option value="NON">🟢 NON ZONA HITAM ({metrics.nonZonaHitamTotal})</option>
-          </select>
-
-          {/* Filter Wilayah / Kabupaten */}
-          <select
-            value={selectedRegionFilter}
-            onChange={(e) => setSelectedRegionFilter(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-700 font-medium focus:outline-none"
-          >
-            <option value="ALL">Semua Wilayah ({availableRegions.length})</option>
-            {availableRegions.map(r => (
-              <option key={r} value={r}>{r}</option>
-            ))}
-          </select>
-
-          {/* Filter Korlap */}
-          <select
-            value={selectedKorlapFilter}
-            onChange={(e) => setSelectedKorlapFilter(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-700 font-medium focus:outline-none"
-          >
-            <option value="ALL">Semua Korlap ({availableKorlaps.length})</option>
-            {availableKorlaps.map(k => (
-              <option key={k} value={k}>{k}</option>
-            ))}
-          </select>
-
-          {/* Reset Filters */}
-          {(selectedStatusFilter !== 'ALL' || selectedZonaFilter !== 'ALL' || selectedRegionFilter !== 'ALL' || selectedKorlapFilter !== 'ALL' || searchQuery) && (
-            <button
-              onClick={() => {
-                setSelectedStatusFilter('ALL');
-                setSelectedZonaFilter('ALL');
-                setSelectedRegionFilter('ALL');
-                setSelectedKorlapFilter('ALL');
-                setSearchQuery('');
-              }}
-              className="px-2.5 py-2 text-[11px] font-bold text-rose-600 hover:bg-rose-50 rounded-xl border border-rose-200 transition"
-            >
-              Reset Filter
-            </button>
-          )}
-
-        </div>
 
       </div>
 
-      {/* Ceklist Table Card */}
+      {/* Main Checklist Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
         
         {/* Table Top Header */}
-        <div className="p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3 bg-slate-50/50">
+        <div className="p-3.5 sm:p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3 bg-slate-50/60">
           <div className="flex items-center gap-2">
-            <Layers className="w-4 h-4 text-indigo-600" />
-            <h3 className="font-extrabold text-slate-900 text-sm">
-              Daftar Ceklist Pelaksanaan Toko Zona ({filteredData.length} Toko)
+            <ShieldAlert className="w-4 h-4 text-rose-600" />
+            <h3 className="font-extrabold text-slate-900 text-xs sm:text-sm">
+              Tabel Ceklist Toko Zona Hitam ({filteredData.length} Toko)
             </h3>
           </div>
-          <div className="flex items-center gap-3 text-xs text-slate-500 font-medium">
-            <span className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Sudah SO: <strong>{filteredData.filter(i => i.isSudahSo).length}</strong>
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Belum SO: <strong>{filteredData.filter(i => !i.isSudahSo).length}</strong>
-            </span>
+          <div className="text-xs text-slate-500 font-medium flex items-center gap-2">
+            <span>Disetujui: <strong className="text-emerald-600">{filteredData.filter(i => i.isApprovedBySPV).length}</strong></span>
+            <span>•</span>
+            <span>Belum SO: <strong className="text-rose-600">{filteredData.filter(i => !i.isApprovedBySPV).length}</strong></span>
           </div>
         </div>
 
         {filteredData.length === 0 ? (
-          <div className="py-16 text-center space-y-3">
-            <div className="w-12 h-12 rounded-full bg-indigo-50 text-indigo-600 mx-auto flex items-center justify-center">
+          <div className="py-16 text-center space-y-2">
+            <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 mx-auto flex items-center justify-center">
               <CheckSquare className="w-6 h-6" />
             </div>
-            <p className="text-sm font-bold text-slate-800">Tidak ada data toko zona yang cocok</p>
+            <p className="text-sm font-bold text-slate-800">Tidak ada toko zona hitam yang cocok</p>
             <p className="text-xs text-slate-500 max-w-sm mx-auto">
-              Silakan sesuaikan filter pencarian, kriteria zona, atau pilihan periode bulan di bagian atas.
+              Silakan sesuaikan filter pencarian atau pilihan status di atas.
             </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="bg-slate-100/80 text-slate-700 font-extrabold border-b border-slate-200 uppercase tracking-wider text-[10px]">
-                  <th className="py-3 px-3.5 text-center w-12">NO</th>
+                <tr className="bg-slate-100/90 text-slate-700 font-extrabold border-b border-slate-200 uppercase tracking-wider text-[10px]">
+                  <th className="py-3 px-3 text-center w-10">NO</th>
                   
                   {/* KODE TOKO */}
                   <th 
-                    className="py-3 px-3.5 cursor-pointer hover:bg-slate-200/60 transition"
+                    className="py-3 px-3 cursor-pointer hover:bg-slate-200/60 transition"
                     onClick={() => {
                       setSortField('code');
                       setSortAsc(sortField === 'code' ? !sortAsc : true);
                     }}
                   >
                     <div className="flex items-center gap-1">
-                      <span>KODE TOKO</span>
+                      <span>KODE</span>
                       <ArrowUpDown className="w-3 h-3 text-slate-400" />
                     </div>
                   </th>
 
                   {/* NAMA TOKO */}
                   <th 
-                    className="py-3 px-3.5 cursor-pointer hover:bg-slate-200/60 transition min-w-[200px]"
+                    className="py-3 px-3 cursor-pointer hover:bg-slate-200/60 transition min-w-[180px]"
                     onClick={() => {
                       setSortField('name');
                       setSortAsc(sortField === 'name' ? !sortAsc : true);
@@ -716,161 +687,178 @@ export const ZoneStoreChecklist: React.FC<ZoneStoreChecklistProps> = ({
                     </div>
                   </th>
 
-                  {/* WILAYAH */}
-                  <th className="py-3 px-3.5 min-w-[130px]">WILAYAH / AREA</th>
+                  <th className="py-3 px-3 min-w-[120px]">KABUPATEN</th>
+                  <th className="py-3 px-3 min-w-[110px]">AM / AS</th>
+                  <th className="py-3 px-3 min-w-[130px]">KORLAP / OFFICER</th>
 
-                  {/* TANGGAL SO */}
+                  {/* STOCK / SALDO */}
                   <th 
-                    className="py-3 px-3.5 cursor-pointer hover:bg-slate-200/60 transition min-w-[140px]"
+                    className="py-3 px-3 cursor-pointer hover:bg-slate-200/60 transition min-w-[120px]"
+                    onClick={() => {
+                      setSortField('saldo');
+                      setSortAsc(sortField === 'saldo' ? !sortAsc : true);
+                    }}
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>SALDO / STOCK</span>
+                      <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                    </div>
+                  </th>
+
+                  {/* TANGGAL TERJADWAL */}
+                  <th 
+                    className="py-3 px-3 cursor-pointer hover:bg-slate-200/60 transition min-w-[130px]"
                     onClick={() => {
                       setSortField('date');
                       setSortAsc(sortField === 'date' ? !sortAsc : true);
                     }}
                   >
                     <div className="flex items-center gap-1">
-                      <span>TANGGAL SO</span>
+                      <span>TGL TERJADWAL</span>
                       <ArrowUpDown className="w-3 h-3 text-slate-400" />
                     </div>
                   </th>
 
-                  {/* KRITERIA ZONA */}
-                  <th 
-                    className="py-3 px-3.5 cursor-pointer hover:bg-slate-200/60 transition min-w-[130px]"
-                    onClick={() => {
-                      setSortField('zona');
-                      setSortAsc(sortField === 'zona' ? !sortAsc : true);
-                    }}
-                  >
-                    <div className="flex items-center gap-1">
-                      <span>KRITERIA ZONA</span>
-                      <ArrowUpDown className="w-3 h-3 text-slate-400" />
-                    </div>
-                  </th>
+                  {/* TANGGAL SO (APPROVED SPV) */}
+                  <th className="py-3 px-3 min-w-[150px]">TGL SO (APPROVED SPV)</th>
 
-                  {/* KORLAP / OFFICER PIC */}
-                  <th className="py-3 px-3.5 min-w-[130px]">KORLAP / PIC</th>
+                  {/* STATUS & HASIL */}
+                  <th className="py-3 px-3 min-w-[130px]">STATUS SO</th>
 
-                  {/* KETERANGAN SUDAH SO / BELUM SO */}
-                  <th className="py-3 px-3.5 text-center min-w-[140px]">KETERANGAN SO</th>
-
-                  {/* AKSI CEPAT */}
-                  <th className="py-3 px-3.5 text-right min-w-[100px] sticky right-0 bg-slate-100/90 shadow-2xs">AKSI</th>
+                  {/* AKSI */}
+                  <th className="py-3 px-3 text-right sticky right-0 bg-slate-100/95 min-w-[90px]">AKSI</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
                 {filteredData.map((item, idx) => {
                   return (
                     <tr 
-                      key={item.id} 
-                      className={`hover:bg-indigo-50/40 transition ${
-                        item.isSudahSo ? 'bg-emerald-50/15' : 'bg-white'
+                      key={item.id}
+                      className={`hover:bg-rose-50/30 transition ${
+                        item.isApprovedBySPV ? 'bg-emerald-50/20' : 'bg-white'
                       }`}
                     >
-                      
                       {/* NO */}
-                      <td className="py-3 px-3.5 text-center font-mono text-slate-400 text-[11px]">
+                      <td className="py-3 px-3 text-center font-mono text-slate-400 text-[11px]">
                         {idx + 1}
                       </td>
 
-                      {/* KODE TOKO */}
-                      <td className="py-3 px-3.5 font-mono font-bold text-indigo-950">
-                        <span className="bg-indigo-50 text-indigo-900 px-2 py-0.5 rounded-md border border-indigo-200">
+                      {/* KODE */}
+                      <td className="py-3 px-3 font-mono font-black text-slate-900">
+                        <span className="bg-slate-100 text-slate-900 px-1.5 py-0.5 rounded border border-slate-200">
                           {item.storeCode}
                         </span>
                       </td>
 
                       {/* NAMA TOKO */}
-                      <td className="py-3 px-3.5">
-                        <span className="font-extrabold text-slate-900 block">
-                          {item.storeName}
-                        </span>
-                        {item.kabupaten && (
-                          <span className="text-[10px] text-slate-500 font-normal">
-                            Kab. {item.kabupaten}
+                      <td className="py-3 px-3">
+                        <div className="font-extrabold text-slate-900 flex items-center gap-1.5">
+                          <span>{item.storeName}</span>
+                          {item.isZonaHitam && (
+                            <span className="text-[9px] font-black bg-rose-600 text-white px-1.5 py-0.2 rounded-full shrink-0">
+                              ZONA HITAM
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-slate-400">Type: <strong>{item.typeSo}</strong></span>
+                      </td>
+
+                      {/* KABUPATEN */}
+                      <td className="py-3 px-3 text-slate-700">
+                        <div className="flex items-center gap-1 text-[11px]">
+                          <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                          <span>{item.kabupaten}</span>
+                        </div>
+                      </td>
+
+                      {/* AM / AS */}
+                      <td className="py-3 px-3 text-slate-700 text-[11px]">
+                        <div>AM: <strong className="text-slate-900">{item.am || '-'}</strong></div>
+                        <div>AS: <strong className="text-slate-900">{item.as || '-'}</strong></div>
+                      </td>
+
+                      {/* KORLAP */}
+                      <td className="py-3 px-3 text-indigo-900 font-bold text-[11px]">
+                        <div className="flex items-center gap-1">
+                          <UserCheck className="w-3 h-3 text-indigo-600 shrink-0" />
+                          <span>{item.officerInCharge}</span>
+                        </div>
+                      </td>
+
+                      {/* SALDO / STOCK */}
+                      <td className="py-3 px-3 font-mono text-[11px] text-slate-800">
+                        {typeof item.saldoToko === 'number' ? formatRupiah(item.saldoToko) : (item.saldoToko || '-')}
+                      </td>
+
+                      {/* TGL TERJADWAL */}
+                      <td className="py-3 px-3 font-mono text-[11px]">
+                        {item.isTerjadwal ? (
+                          <span className="text-indigo-900 font-bold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                            {item.tanggalTerjadwalFormatted}
+                          </span>
+                        ) : (
+                          <span className="text-rose-600 font-bold bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
+                            Belum Terjadwal
                           </span>
                         )}
                       </td>
 
-                      {/* WILAYAH / AREA */}
-                      <td className="py-3 px-3.5 text-slate-700">
-                        <div className="flex items-center gap-1.5">
-                          <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          <span>{item.region}</span>
-                        </div>
-                      </td>
-
-                      {/* TANGGAL SO */}
-                      <td className="py-3 px-3.5">
-                        <div className="flex items-center gap-1.5 font-semibold text-slate-800">
-                          <Calendar className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                          <span>{item.tanggalSoFormatted}</span>
-                        </div>
-                      </td>
-
-                      {/* KRITERIA ZONA */}
-                      <td className="py-3 px-3.5">
-                        {item.kriteriaZona.toUpperCase().includes('HITAM') && !item.kriteriaZona.toUpperCase().includes('NON') ? (
-                          <span className="px-2.5 py-1 rounded-lg text-[10px] font-extrabold border inline-flex items-center gap-1.5 bg-rose-100 border-rose-300 text-rose-800 shadow-2xs">
-                            <ShieldAlert className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                            ZONA HITAM
-                          </span>
+                      {/* TGL SO (APPROVED SPV) */}
+                      <td className="py-3 px-3 font-mono text-[11px]">
+                        {item.isApprovedBySPV ? (
+                          <div className="flex items-center gap-1 text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-300">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <span>{item.tanggalSoApprovedFormatted || 'Approved'}</span>
+                          </div>
                         ) : (
-                          <span className="px-2.5 py-1 rounded-lg text-[10px] font-extrabold border inline-flex items-center gap-1.5 bg-emerald-100 border-emerald-300 text-emerald-800 shadow-2xs">
-                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                            NON ZONA HITAM
+                          <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 text-[10px]">
+                            {item.isTerjadwal ? 'Menunggu Pelaksanaan' : 'Kolom Blank'}
                           </span>
                         )}
                       </td>
 
-                      {/* KORLAP / OFFICER PIC */}
-                      <td className="py-3 px-3.5 text-slate-700 font-semibold">
-                        <div className="flex items-center gap-1.5">
-                          <UserCheck className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          <span>{item.officerInCharge || '-'}</span>
-                        </div>
-                      </td>
-
-                      {/* KETERANGAN SUDAH SO / BELUM SO */}
-                      <td className="py-3 px-3.5 text-center">
-                        {item.isSudahSo ? (
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 font-black text-[11px] shadow-2xs">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                            Sudah SO
+                      {/* STATUS SO */}
+                      <td className="py-3 px-3">
+                        {item.isApprovedBySPV ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            Disetujui SPV
+                          </span>
+                        ) : item.spvApprovalStatus === 'Menunggu Approval SPV' ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                            Review SPV
+                          </span>
+                        ) : item.isTerjadwal ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-300">
+                            Terjadwal
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300 font-black text-[11px] shadow-2xs">
-                            <Clock className="w-3.5 h-3.5 text-amber-600" />
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
                             Belum SO
                           </span>
-                        )}
-                        {item.totalVarianceRp !== undefined && (
-                          <div className="text-[10px] text-slate-500 font-mono mt-0.5">
-                            Selisih: {formatRupiah(item.totalVarianceRp)}
-                          </div>
                         )}
                       </td>
 
                       {/* AKSI */}
-                      <td className="py-3 px-3.5 text-right sticky right-0 bg-white/95 shadow-2xs">
-                        <div className="flex items-center justify-end gap-1.5">
+                      <td className="py-3 px-3 text-right sticky right-0 bg-white/95 shadow-2xs">
+                        <div className="flex items-center justify-end gap-1">
                           {item.storeObj && onSelectStore && (
                             <button
                               type="button"
                               onClick={() => onSelectStore(item.storeObj!)}
-                              className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
+                              className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
                               title="Lihat Detail Toko"
                             >
-                              <Building2 className="w-3.5 h-3.5" />
+                              <ExternalLink className="w-3.5 h-3.5" />
                             </button>
                           )}
+
                           {onOpenInputResultModal && (
                             <button
                               type="button"
-                              onClick={() => onOpenInputResultModal(item.scheduleObj || item.scheduleId || item.storeCode)}
-                              className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-[10px] font-bold border border-indigo-200 transition"
-                              title="Input / Update Rekapan Hasil SO"
+                              onClick={() => onOpenInputResultModal(item.scheduleObj || item.storeCode)}
+                              className="px-2 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-[10px] font-bold transition shadow-xs"
                             >
-                              Hasil SO
+                              Hasil
                             </button>
                           )}
                         </div>

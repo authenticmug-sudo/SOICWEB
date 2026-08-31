@@ -380,6 +380,14 @@ export interface DashboardSummary {
   positiveVarianceRp: number;
   negativeVarianceRp: number;
   highRiskStoreCount: number;
+  // Toko Terjadwal, Belum Terjadwal, Ter-SO & Belum Ter-SO
+  totalMasterStores: number;
+  tokoTerjadwal: number;
+  tokoBelumTerjadwal: number;
+  tokoSudahTerSO: number;
+  tokoBelumTerSO: number;
+  persentaseTerSO: number;
+  persentaseBelumTerSO: number;
   // Zona Hitam Metrics
   totalZonaHitam: number;
   zonaHitamTerSO: number;

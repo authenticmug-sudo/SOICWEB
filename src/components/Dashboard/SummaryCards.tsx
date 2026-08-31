@@ -275,6 +275,103 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
 
       </div>
 
+      {/* Status Progres Toko Global (Terjadwal, Belum Terjadwal, Sudah Ter-SO, Belum Ter-SO) */}
+      <div className="bg-white rounded-xl border border-slate-200/90 shadow-xs p-3 sm:p-4">
+        <div className="flex items-center justify-between mb-2.5 pb-2 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <div className="w-2.5 h-2.5 rounded-full bg-indigo-600" />
+            <h4 className="text-xs sm:text-sm font-bold text-slate-800 uppercase tracking-wider">
+              Status Keseluruhan Master Toko (Jadwal & Realisasi SO)
+            </h4>
+          </div>
+          <span className="text-[11px] text-slate-500 font-medium">
+            Total Basis: <strong className="text-slate-800 font-bold">{formatNumber(summary.totalMasterStores || summary.totalStores)}</strong> Toko Bali
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3">
+          {/* Toko Terjadwal */}
+          <div 
+            onClick={() => onNavigateTab('schedules')}
+            className="p-2.5 sm:p-3 rounded-lg bg-indigo-50/70 border border-indigo-100 hover:bg-indigo-50 transition cursor-pointer flex items-center justify-between"
+          >
+            <div>
+              <span className="text-[10px] sm:text-[11px] font-bold text-indigo-700 uppercase tracking-wider block">
+                Toko Terjadwal
+              </span>
+              <p className="text-lg sm:text-xl font-black text-indigo-900 mt-0.5">
+                {formatNumber(summary.tokoTerjadwal ?? 0)} <span className="text-xs font-semibold text-indigo-600">Toko</span>
+              </p>
+            </div>
+            <div className="text-right">
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-200/60 text-indigo-800">
+                {Math.round(((summary.tokoTerjadwal ?? 0) / Math.max(1, summary.totalMasterStores || summary.totalStores)) * 100)}%
+              </span>
+            </div>
+          </div>
+
+          {/* Toko Belum Terjadwal */}
+          <div 
+            onClick={() => onNavigateTab('stores')}
+            className="p-2.5 sm:p-3 rounded-lg bg-slate-50 border border-slate-200 hover:bg-slate-100/80 transition cursor-pointer flex items-center justify-between"
+          >
+            <div>
+              <span className="text-[10px] sm:text-[11px] font-bold text-slate-600 uppercase tracking-wider block">
+                Belum Terjadwal
+              </span>
+              <p className="text-lg sm:text-xl font-black text-slate-800 mt-0.5">
+                {formatNumber(summary.tokoBelumTerjadwal ?? 0)} <span className="text-xs font-semibold text-slate-500">Toko</span>
+              </p>
+            </div>
+            <div className="text-right">
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-700">
+                {Math.round(((summary.tokoBelumTerjadwal ?? 0) / Math.max(1, summary.totalMasterStores || summary.totalStores)) * 100)}%
+              </span>
+            </div>
+          </div>
+
+          {/* Sudah Ter-SO */}
+          <div 
+            onClick={() => onNavigateTab('results')}
+            className="p-2.5 sm:p-3 rounded-lg bg-emerald-50/70 border border-emerald-100 hover:bg-emerald-50 transition cursor-pointer flex items-center justify-between"
+          >
+            <div>
+              <span className="text-[10px] sm:text-[11px] font-bold text-emerald-700 uppercase tracking-wider block">
+                Sudah Ter-SO
+              </span>
+              <p className="text-lg sm:text-xl font-black text-emerald-900 mt-0.5">
+                {formatNumber(summary.tokoSudahTerSO ?? 0)} <span className="text-xs font-semibold text-emerald-600">Toko</span>
+              </p>
+            </div>
+            <div className="text-right">
+              <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-emerald-600 text-white shadow-xs">
+                {summary.persentaseTerSO ?? 0}%
+              </span>
+            </div>
+          </div>
+
+          {/* Belum Ter-SO */}
+          <div 
+            onClick={() => onNavigateTab('stores')}
+            className="p-2.5 sm:p-3 rounded-lg bg-amber-50/70 border border-amber-100 hover:bg-amber-50 transition cursor-pointer flex items-center justify-between"
+          >
+            <div>
+              <span className="text-[10px] sm:text-[11px] font-bold text-amber-700 uppercase tracking-wider block">
+                Belum Ter-SO
+              </span>
+              <p className="text-lg sm:text-xl font-black text-amber-900 mt-0.5">
+                {formatNumber(summary.tokoBelumTerSO ?? 0)} <span className="text-xs font-semibold text-amber-600">Toko</span>
+              </p>
+            </div>
+            <div className="text-right">
+              <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-amber-600 text-white shadow-xs">
+                {summary.persentaseBelumTerSO ?? 0}%
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Widget Interaktif 1: Kontrol & Monitoring Pencapaian Toko Wajib SO (Type M & Q3) */}
       <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 border border-indigo-800/60 rounded-xl p-3 sm:p-4 text-white shadow-sm flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
         <div className="space-y-1.5 max-w-2xl">

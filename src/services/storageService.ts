@@ -1877,6 +1877,34 @@ export function getDashboardSummary(
   const tokoWajibSOBelumSO = Math.max(0, totalTokoWajibSO - tokoWajibSOTerSO);
   const achievePercentWajibSO = totalTokoWajibSO > 0 ? Math.round((tokoWajibSOTerSO / totalTokoWajibSO) * 100) : 0;
 
+  // ------------------- GLOBAL PROGRESS: TERJADWAL, BELUM TERJADWAL, SUDAH TER-SO & BELUM TER-SO ------------------- //
+  const totalMasterStores = totalStores;
+  
+  // Check if store is scheduled (either in schedule list or has SO date in master store)
+  const isStoreScheduled = (st: Store) => {
+    const hasActiveSchedule = schedules.some(sch => 
+      (sch.storeCode === st.code || sch.storeId === st.id) &&
+      sch.status !== 'Dibatalkan' &&
+      sch.status !== 'Gagal SO'
+    );
+    if (hasActiveSchedule) return true;
+
+    const sepDate = String(st.soSeptember || '').trim();
+    if (sepDate && sepDate !== '-' && sepDate !== '0' && sepDate !== '0-Jan-00' && !sepDate.toLowerCase().includes('belum')) {
+      return true;
+    }
+    return false;
+  };
+
+  const tokoTerjadwal = stores.filter(isStoreScheduled).length;
+  const tokoBelumTerjadwal = Math.max(0, totalMasterStores - tokoTerjadwal);
+
+  const tokoSudahTerSO = stores.filter(isStoreCompletedOrApproved).length;
+  const tokoBelumTerSO = Math.max(0, totalMasterStores - tokoSudahTerSO);
+
+  const persentaseTerSO = totalMasterStores > 0 ? Math.round((tokoSudahTerSO / totalMasterStores) * 100) : 0;
+  const persentaseBelumTerSO = Math.max(0, 100 - persentaseTerSO);
+
   return {
     totalStores,
     completedThisMonth,
@@ -1888,6 +1916,14 @@ export function getDashboardSummary(
     positiveVarianceRp,
     negativeVarianceRp,
     highRiskStoreCount,
+    // Toko Terjadwal, Belum Terjadwal, Ter-SO & Belum Ter-SO
+    totalMasterStores,
+    tokoTerjadwal,
+    tokoBelumTerjadwal,
+    tokoSudahTerSO,
+    tokoBelumTerSO,
+    persentaseTerSO,
+    persentaseBelumTerSO,
     // Zona Hitam Metrics
     totalZonaHitam,
     zonaHitamTerSO,
