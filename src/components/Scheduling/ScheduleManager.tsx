@@ -34,6 +34,12 @@ import { exportToCSV } from '../../services/storageService';
 import { KorlapDashboard } from './KorlapDashboard';
 import { ConfirmDeleteModal } from '../Common/ConfirmDeleteModal';
 import { ToastNotification } from '../Common/ToastNotification';
+import { 
+  getAvailableKorlapList, 
+  isKorlapMatch, 
+  normalizeKorlapName, 
+  resolveSchedulePersonnelDisplay 
+} from '../../utils/korlapUtils';
 
 interface ScheduleManagerProps {
   schedules: SOSchedule[];
@@ -94,15 +100,10 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
   const [scheduleToDelete, setScheduleToDelete] = useState<SOSchedule | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // 6 Main Korlap groups from sheet JADWAL & PERSONIL
-  const primaryKorlaps = useMemo(() => [
-    'I WAYAN ANGGA RISTA',
-    'ODI TRI ANGGARA',
-    'ANGGA ARDIYANSYAH',
-    'ABDUL RAHMAN',
-    'I GEDE PASEK SANTIKA',
-    'PUTU BISMA'
-  ], []);
+  // Main Korlap groups from sheet JADWAL & PERSONIL
+  const primaryKorlaps = useMemo(() => {
+    return getAvailableKorlapList(personnel);
+  }, [personnel]);
 
   // Compute available regions strictly from store master data
   const availableRegions = useMemo(() => {
@@ -210,9 +211,10 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
       
       let matchesGroup = true;
       if (selectedGroupKorlap !== 'ALL') {
-        const gName = (s.groupName || s.officerInCharge || '').toLowerCase();
-        const selG = selectedGroupKorlap.toLowerCase();
-        matchesGroup = gName.includes(selG) || selG.includes(gName);
+        const scheduleOfficer = s.groupName || s.officerInCharge || '';
+        const matchingStore = stores.find(st => st.code === s.storeCode || st.id === s.storeId);
+        const storeOfficer = matchingStore?.korlap || '';
+        matchesGroup = isKorlapMatch(scheduleOfficer, selectedGroupKorlap) || (storeOfficer ? isKorlapMatch(storeOfficer, selectedGroupKorlap) : false);
       }
 
       // Date Filtering Logic

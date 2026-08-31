@@ -46,6 +46,30 @@ interface StoreRelocationAssistantProps {
   onClose?: () => void;
 }
 
+// Helper to extract clean Kabupaten name
+export const getCleanKabupaten = (store?: Partial<Store> | null): string => {
+  if (!store) return '';
+  const raw = store.kabupaten || store.city || store.region || '';
+  if (!raw) return '';
+  let clean = raw.trim().toUpperCase().replace(/^(KABUPATEN|KAB\.?|KOTA)\s+/i, '').trim();
+  if (clean.startsWith('KAB ') || clean.startsWith('KAB. ')) {
+    clean = clean.replace(/^KAB\.?\s+/i, '').trim();
+  }
+  return clean;
+};
+
+// Helper to extract clean Kecamatan name
+export const getCleanKecamatan = (store?: Partial<Store> | null): string => {
+  if (!store) return '';
+  const raw = store.kecamatan || store.district || '';
+  if (!raw) return '';
+  let clean = raw.trim().toUpperCase().replace(/^(KECAMATAN|KEC\.?)\s+/i, '').trim();
+  if (clean.startsWith('KEC ') || clean.startsWith('KEC. ')) {
+    clean = clean.replace(/^KEC\.?\s+/i, '').trim();
+  }
+  return clean;
+};
+
 export interface CandidateStoreRecommendation {
   store: Store;
   distanceKm: number;
@@ -75,6 +99,7 @@ export const StoreRelocationAssistant: React.FC<StoreRelocationAssistantProps> =
   const [selectedSourceScheduleId, setSelectedSourceScheduleId] = useState<string>('');
   const [sourceSearchQuery, setSourceSearchQuery] = useState<string>('');
   const [sourceFilterDate, setSourceFilterDate] = useState<string>('ALL');
+  const [sourceFilterKabupaten, setSourceFilterKabupaten] = useState<string>('ALL');
   
   // Step 2: Reason & Date Configuration
   const [reasonCategory, setReasonCategory] = useState<string>('Akses Jalan / Cuaca Ekstrem');
@@ -85,6 +110,8 @@ export const StoreRelocationAssistant: React.FC<StoreRelocationAssistantProps> =
   // Step 3: Recommendation Filters
   const [candidateSearchQuery, setCandidateSearchQuery] = useState<string>('');
   const [filterScheduleType, setFilterScheduleType] = useState<'ALL' | 'BELUM_TERJADWAL' | 'TERJADWAL_LAIN'>('ALL');
+  const [filterKabupaten, setFilterKabupaten] = useState<string>('ALL');
+  const [filterKecamatan, setFilterKecamatan] = useState<string>('ALL');
   const [filterTypeSo, setFilterTypeSo] = useState<string>('ALL');
   const [filterZonaOnly, setFilterZonaOnly] = useState<boolean>(false);
   const [maxRadiusKm, setMaxRadiusKm] = useState<number>(35);
@@ -117,6 +144,14 @@ export const StoreRelocationAssistant: React.FC<StoreRelocationAssistantProps> =
   const filteredSourceSchedules = useMemo(() => {
     return eligibleSourceSchedules.filter(s => {
       if (sourceFilterDate !== 'ALL' && s.scheduledDate !== sourceFilterDate) return false;
+      
+      if (sourceFilterKabupaten !== 'ALL') {
+        const matchedStore = stores.find(st => st.id === s.storeId || st.code === s.storeCode);
+        const storeKab = getCleanKabupaten(matchedStore) || s.region;
+        const matchesKab = storeKab === sourceFilterKabupaten || storeKab.includes(sourceFilterKabupaten) || sourceFilterKabupaten.includes(storeKab);
+        if (!matchesKab) return false;
+      }
+
       if (sourceSearchQuery.trim()) {
         const q = sourceSearchQuery.toLowerCase();
         return (
@@ -128,7 +163,7 @@ export const StoreRelocationAssistant: React.FC<StoreRelocationAssistantProps> =
       }
       return true;
     });
-  }, [eligibleSourceSchedules, sourceFilterDate, sourceSearchQuery]);
+  }, [eligibleSourceSchedules, sourceFilterDate, sourceFilterKabupaten, sourceSearchQuery, stores]);
 
   // Currently Selected Source Schedule & Store
   const selectedSchedule = useMemo(() => {
@@ -239,6 +274,79 @@ export const StoreRelocationAssistant: React.FC<StoreRelocationAssistantProps> =
     });
   }, [selectedSourceStore, stores, schedules, selectedSchedule]);
 
+  // Extract available Kabupatens with store counts from master stores
+  const availableKabupatens = useMemo(() => {
+    const map = new Map<string, number>();
+    stores.forEach(st => {
+      const kab = getCleanKabupaten(st);
+      if (kab && kab !== 'BALI' && kab !== '-' && kab !== 'NULL' && kab !== 'UNDEFINED') {
+        map.set(kab, (map.get(kab) || 0) + 1);
+      }
+    });
+    return Array.from(map.entries())
+      .map(([kab, count]) => ({ name: kab, count }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [stores]);
+
+  // Extract available Kecamatans dynamically filtered by selected Kabupaten
+  const availableKecamatans = useMemo(() => {
+    const map = new Map<string, number>();
+    stores.forEach(st => {
+      const storeKab = getCleanKabupaten(st);
+      if (filterKabupaten !== 'ALL') {
+        const matchesKab = storeKab === filterKabupaten || storeKab.includes(filterKabupaten) || filterKabupaten.includes(storeKab);
+        if (!matchesKab) return;
+      }
+      const kec = getCleanKecamatan(st);
+      if (kec && kec !== '-' && kec !== 'NULL' && kec !== 'UNDEFINED') {
+        map.set(kec, (map.get(kec) || 0) + 1);
+      }
+    });
+    return Array.from(map.entries())
+      .map(([kec, count]) => ({ name: kec, count }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [stores, filterKabupaten]);
+
+  // Cascading Kabupaten Selection Handler
+  const handleKabupatenChange = (newKab: string) => {
+    setFilterKabupaten(newKab);
+    if (newKab === 'ALL') {
+      setFilterKecamatan('ALL');
+    } else if (filterKecamatan !== 'ALL') {
+      // Reset kecamatan if it doesn't belong to the newly selected kabupaten
+      const existsInNewKab = stores.some(st => {
+        const storeKab = getCleanKabupaten(st);
+        const matchesKab = storeKab === newKab || storeKab.includes(newKab) || newKab.includes(storeKab);
+        if (!matchesKab) return false;
+        const storeKec = getCleanKecamatan(st);
+        return storeKec === filterKecamatan;
+      });
+      if (!existsInNewKab) {
+        setFilterKecamatan('ALL');
+      }
+    }
+  };
+
+  // Reset all candidate filters
+  const hasActiveCandidateFilters = 
+    candidateSearchQuery.trim() !== '' || 
+    filterKabupaten !== 'ALL' || 
+    filterKecamatan !== 'ALL' || 
+    filterTypeSo !== 'ALL' || 
+    filterZonaOnly || 
+    maxRadiusKm !== 35 || 
+    filterScheduleType !== 'ALL';
+
+  const handleResetCandidateFilters = () => {
+    setCandidateSearchQuery('');
+    setFilterKabupaten('ALL');
+    setFilterKecamatan('ALL');
+    setFilterTypeSo('ALL');
+    setFilterZonaOnly(false);
+    setMaxRadiusKm(35);
+    setFilterScheduleType('ALL');
+  };
+
   // Filtered Candidate Stores based on SPV criteria
   const filteredCandidates = useMemo(() => {
     return candidateRecommendations.filter(c => {
@@ -248,6 +356,20 @@ export const StoreRelocationAssistant: React.FC<StoreRelocationAssistantProps> =
       // Filter by Schedule Status (Belum Terjadwal vs Terjadwal di Tanggal Lain)
       if (filterScheduleType === 'BELUM_TERJADWAL' && c.scheduleStatusType !== 'BELUM_TERJADWAL') return false;
       if (filterScheduleType === 'TERJADWAL_LAIN' && c.scheduleStatusType !== 'TERJADWAL_LAIN') return false;
+
+      // Filter by Kabupaten
+      if (filterKabupaten !== 'ALL') {
+        const storeKab = getCleanKabupaten(c.store);
+        const matchesKab = storeKab === filterKabupaten || storeKab.includes(filterKabupaten) || filterKabupaten.includes(storeKab);
+        if (!matchesKab) return false;
+      }
+
+      // Filter by Kecamatan
+      if (filterKecamatan !== 'ALL') {
+        const storeKec = getCleanKecamatan(c.store);
+        const matchesKec = storeKec === filterKecamatan || storeKec.includes(filterKecamatan) || filterKecamatan.includes(storeKec);
+        if (!matchesKec) return false;
+      }
 
       // Filter by Type SO
       if (filterTypeSo !== 'ALL' && c.typeSo.toUpperCase() !== filterTypeSo.toUpperCase()) return false;
@@ -265,6 +387,7 @@ export const StoreRelocationAssistant: React.FC<StoreRelocationAssistantProps> =
           c.store.code.toLowerCase().includes(q) ||
           c.store.name.toLowerCase().includes(q) ||
           (c.store.kabupaten && c.store.kabupaten.toLowerCase().includes(q)) ||
+          (c.store.kecamatan && c.store.kecamatan.toLowerCase().includes(q)) ||
           (c.store.region && c.store.region.toLowerCase().includes(q)) ||
           (c.korlap && c.korlap.toLowerCase().includes(q)) ||
           c.typeSo.toLowerCase().includes(q)
@@ -273,7 +396,7 @@ export const StoreRelocationAssistant: React.FC<StoreRelocationAssistantProps> =
 
       return true;
     });
-  }, [candidateRecommendations, filterScheduleType, filterTypeSo, filterZonaOnly, maxRadiusKm, candidateSearchQuery]);
+  }, [candidateRecommendations, filterScheduleType, filterKabupaten, filterKecamatan, filterTypeSo, filterZonaOnly, maxRadiusKm, candidateSearchQuery]);
 
   // Selected replacement store object
   const selectedCandidateObj = useMemo(() => {
@@ -432,19 +555,35 @@ _Master Toko Bali & Jadwal telah disinkronkan otomatis oleh SPV._`;
               </span>
             </div>
 
-            {/* Date Quick Filter */}
-            <div className="flex items-center gap-1.5 text-xs">
-              <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <select
-                value={sourceFilterDate}
-                onChange={(e) => setSourceFilterDate(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800"
-              >
-                <option value="ALL">Semua Tanggal Jadwal</option>
-                {availableScheduleDates.map(d => (
-                  <option key={d} value={d}>{formatDateIndo(d)}</option>
-                ))}
-              </select>
+            {/* Date & Kabupaten Quick Filter */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs">
+              <div className="flex items-center gap-1">
+                <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <select
+                  value={sourceFilterDate}
+                  onChange={(e) => setSourceFilterDate(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 text-xs font-bold text-slate-800"
+                >
+                  <option value="ALL">Semua Tanggal</option>
+                  {availableScheduleDates.map(d => (
+                    <option key={d} value={d}>{formatDateIndo(d)}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1">
+                <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <select
+                  value={sourceFilterKabupaten}
+                  onChange={(e) => setSourceFilterKabupaten(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 text-xs font-bold text-slate-800"
+                >
+                  <option value="ALL">Semua Kab.</option>
+                  {availableKabupatens.map(k => (
+                    <option key={k.name} value={k.name}>{k.name}</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             {/* Quick Search */}
@@ -672,64 +811,160 @@ _Master Toko Bali & Jadwal telah disinkronkan otomatis oleh SPV._`;
             </div>
 
             {/* Smart Filters Bar */}
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 text-xs">
-              
-              {/* Search */}
-              <div className="relative sm:col-span-2">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
-                <input
-                  type="text"
-                  placeholder="Cari kode toko, nama toko, kabupaten, korlap..."
-                  value={candidateSearchQuery}
-                  onChange={(e) => setCandidateSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-indigo-500 outline-hidden"
-                />
-              </div>
-
-              {/* Type SO Filter */}
-              <div>
-                <select
-                  value={filterTypeSo}
-                  onChange={(e) => setFilterTypeSo(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="ALL">Semua Type SO</option>
-                  <option value="M">Type M (Monthly)</option>
-                  <option value="Q3">Type Q3 (Quarterly 3)</option>
-                  <option value="Q1">Type Q1</option>
-                  <option value="Q2">Type Q2</option>
-                </select>
-              </div>
-
-              {/* Max Radius & Zona Toggle */}
+            <div className="space-y-2.5">
+              {/* Search Bar + Reset Filter Button */}
               <div className="flex items-center gap-2">
-                <select
-                  value={maxRadiusKm}
-                  onChange={(e) => setMaxRadiusKm(Number(e.target.value))}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2 py-2 font-bold text-slate-800"
-                >
-                  <option value={10}>Radius &lt; 10 km</option>
-                  <option value={20}>Radius &lt; 20 km</option>
-                  <option value={35}>Radius &lt; 35 km</option>
-                  <option value={60}>Radius &lt; 60 km</option>
-                  <option value={0}>Semua Jarak</option>
-                </select>
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    placeholder="Cari kode toko, nama toko, alamat, korlap..."
+                    value={candidateSearchQuery}
+                    onChange={(e) => setCandidateSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-indigo-500 outline-hidden"
+                  />
+                  {candidateSearchQuery && (
+                    <button 
+                      onClick={() => setCandidateSearchQuery('')}
+                      className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
 
-                <button
-                  type="button"
-                  onClick={() => setFilterZonaOnly(!filterZonaOnly)}
-                  className={`px-2.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1 shrink-0 border ${
-                    filterZonaOnly
-                      ? 'bg-rose-600 text-white border-rose-700 shadow-xs'
-                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                  }`}
-                  title="Filter Toko Zona Hitam Saja"
-                >
-                  <ShieldAlert className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Zona Hitam</span>
-                </button>
+                {hasActiveCandidateFilters && (
+                  <button
+                    type="button"
+                    onClick={handleResetCandidateFilters}
+                    className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 cursor-pointer shadow-2xs"
+                    title="Reset semua filter pencarian"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Reset Filter</span>
+                  </button>
+                )}
               </div>
 
+              {/* Filter Dropdowns Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 text-xs">
+                
+                {/* Filter Kabupaten */}
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 mb-1 flex items-center gap-1">
+                    <MapPin className="w-3 h-3 text-indigo-600" />
+                    <span>Kabupaten:</span>
+                  </label>
+                  <select
+                    value={filterKabupaten}
+                    onChange={(e) => handleKabupatenChange(e.target.value)}
+                    className={`w-full bg-slate-50 border rounded-xl px-2.5 py-1.5 font-bold text-xs transition ${
+                      filterKabupaten !== 'ALL'
+                        ? 'border-indigo-500 bg-indigo-50/50 text-indigo-900 ring-1 ring-indigo-500'
+                        : 'border-slate-200 text-slate-800'
+                    }`}
+                  >
+                    <option value="ALL">Semua Kabupaten ({stores.length})</option>
+                    {availableKabupatens.map(k => (
+                      <option key={k.name} value={k.name}>
+                        {k.name} ({k.count})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Filter Kecamatan (Dynamic from selected Kabupaten) */}
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 mb-1 flex items-center gap-1">
+                    <Building2 className="w-3 h-3 text-indigo-600" />
+                    <span>Kecamatan:</span>
+                  </label>
+                  <select
+                    value={filterKecamatan}
+                    onChange={(e) => setFilterKecamatan(e.target.value)}
+                    className={`w-full bg-slate-50 border rounded-xl px-2.5 py-1.5 font-bold text-xs transition ${
+                      filterKecamatan !== 'ALL'
+                        ? 'border-indigo-500 bg-indigo-50/50 text-indigo-900 ring-1 ring-indigo-500'
+                        : 'border-slate-200 text-slate-800'
+                    }`}
+                  >
+                    <option value="ALL">
+                      {filterKabupaten !== 'ALL' 
+                        ? `Semua Kec. (${availableKecamatans.reduce((acc, curr) => acc + curr.count, 0)})` 
+                        : `Semua Kecamatan (${availableKecamatans.length})`
+                      }
+                    </option>
+                    {availableKecamatans.map(kc => (
+                      <option key={kc.name} value={kc.name}>
+                        {kc.name} ({kc.count})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Type SO Filter */}
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 mb-1 flex items-center gap-1">
+                    <Layers className="w-3 h-3 text-indigo-600" />
+                    <span>Type SO:</span>
+                  </label>
+                  <select
+                    value={filterTypeSo}
+                    onChange={(e) => setFilterTypeSo(e.target.value)}
+                    className={`w-full bg-slate-50 border rounded-xl px-2.5 py-1.5 font-bold text-xs transition ${
+                      filterTypeSo !== 'ALL'
+                        ? 'border-indigo-500 bg-indigo-50/50 text-indigo-900 ring-1 ring-indigo-500'
+                        : 'border-slate-200 text-slate-800'
+                    }`}
+                  >
+                    <option value="ALL">Semua Type SO</option>
+                    <option value="M">Type M (Monthly)</option>
+                    <option value="Q3">Type Q3 (Quarterly 3)</option>
+                    <option value="Q1">Type Q1</option>
+                    <option value="Q2">Type Q2</option>
+                  </select>
+                </div>
+
+                {/* Max Radius */}
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 mb-1 flex items-center gap-1">
+                    <Navigation className="w-3 h-3 text-indigo-600" />
+                    <span>Radius Jarak:</span>
+                  </label>
+                  <select
+                    value={maxRadiusKm}
+                    onChange={(e) => setMaxRadiusKm(Number(e.target.value))}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 font-bold text-slate-800"
+                  >
+                    <option value={10}>Radius &lt; 10 km</option>
+                    <option value={20}>Radius &lt; 20 km</option>
+                    <option value={35}>Radius &lt; 35 km</option>
+                    <option value={60}>Radius &lt; 60 km</option>
+                    <option value={0}>Semua Jarak</option>
+                  </select>
+                </div>
+
+                {/* Zona Hitam Toggle */}
+                <div className="flex flex-col justify-end">
+                  <label className="block text-[10px] font-bold text-slate-500 mb-1 invisible">
+                    Zona:
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setFilterZonaOnly(!filterZonaOnly)}
+                    className={`w-full py-1.5 px-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 border cursor-pointer ${
+                      filterZonaOnly
+                        ? 'bg-rose-600 text-white border-rose-700 shadow-xs'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                    title="Filter Toko Zona Hitam Saja"
+                  >
+                    <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
+                    <span>{filterZonaOnly ? 'Zona Hitam (Aktif)' : 'Zona Hitam'}</span>
+                  </button>
+                </div>
+
+              </div>
             </div>
 
             {/* Candidates Card List (Scrollable, mobile responsive) */}
@@ -739,13 +974,15 @@ _Master Toko Bali & Jadwal telah disinkronkan otomatis oleh SPV._`;
                   <Navigation className="w-8 h-8 text-slate-400 mx-auto" />
                   <p className="text-sm font-bold text-slate-700">Tidak ada toko rekomendasi yang cocok</p>
                   <p className="text-xs text-slate-500 max-w-md mx-auto">
-                    Coba perluas radius pencarian atau ubah filter status jadwal toko.
+                    Coba sesuaikan filter Kabupaten, Kecamatan, atau perluas radius pencarian.
                   </p>
                 </div>
               ) : (
                 filteredCandidates.map((cand) => {
                   const isSelected = (selectedCandidateStoreId === cand.store.id);
                   const isBelumTerjadwal = cand.scheduleStatusType === 'BELUM_TERJADWAL';
+                  const kabDisplay = getCleanKabupaten(cand.store) || cand.store.region || 'BALI';
+                  const kecDisplay = getCleanKecamatan(cand.store);
 
                   return (
                     <div
@@ -803,9 +1040,21 @@ _Master Toko Bali & Jadwal telah disinkronkan otomatis oleh SPV._`;
                         <h4 className="font-extrabold text-sm text-slate-900">
                           {cand.store.name}
                         </h4>
-                        <p className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5">
-                          <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-                          <span>Kab. {cand.store.kabupaten || cand.store.city || cand.store.region} - {cand.store.address}</span>
+                        <p className="text-xs text-slate-600 flex items-center gap-1.5 mt-0.5 flex-wrap">
+                          <MapPin className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                          <span className="font-bold text-slate-800">
+                            Kab. {kabDisplay}
+                          </span>
+                          {kecDisplay && (
+                            <span className="bg-indigo-50 text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded-md border border-indigo-100">
+                              Kec. {kecDisplay}
+                            </span>
+                          )}
+                          {cand.store.address && (
+                            <span className="text-slate-500 truncate max-w-xs block sm:inline">
+                              - {cand.store.address}
+                            </span>
+                          )}
                         </p>
                       </div>
 

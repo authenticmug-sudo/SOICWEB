@@ -34,6 +34,12 @@ import { formatDateIndo, getStatusBadgeClass, formatDateISO, formatRupiah } from
 import { getDayNameIndo } from '../../utils/storeSyncUtils';
 import { exportToCSV } from '../../services/storageService';
 import { BALI_KORLAP_GROUPS } from '../../data/baliData';
+import { 
+  getAvailableKorlapList, 
+  isKorlapMatch, 
+  normalizeKorlapName, 
+  resolveSchedulePersonnelDisplay 
+} from '../../utils/korlapUtils';
 
 interface KorlapDashboardProps {
   schedules: SOSchedule[];
@@ -56,17 +62,10 @@ export const KorlapDashboard: React.FC<KorlapDashboardProps> = ({
   onOpenInputResultModal,
   onConfirmScheduleFinished
 }) => {
-  // 6 Main Korlap groups from sheet JADWAL & PERSONIL
+  // Main Korlap groups from sheet JADWAL & PERSONIL
   const primaryKorlaps = useMemo(() => {
-    return [
-      'I WAYAN ANGGA RISTA',
-      'ODI TRI ANGGARA',
-      'ANGGA ARDIYANSYAH',
-      'ABDUL RAHMAN',
-      'I GEDE PASEK SANTIKA',
-      'PUTU BISMA'
-    ];
-  }, []);
+    return getAvailableKorlapList(personnel);
+  }, [personnel]);
 
   const [selectedOfficer, setSelectedOfficer] = useState<string>('ALL');
   const [activeTab, setActiveTab] = useState<'HARI_H' | 'H_MINUS_1' | 'ALL_SEPTEMBER'>('HARI_H');
@@ -111,11 +110,12 @@ export const KorlapDashboard: React.FC<KorlapDashboardProps> = ({
   // Filtered schedules for Korlap
   const filteredSchedules = useMemo(() => {
     return schedules.filter(s => {
-      // 1. Filter by Officer / Group
+      // 1. Filter by Officer / Group using strict Korlap matching
       if (selectedOfficer !== 'ALL') {
-        const officerStr = (s.officerInCharge || s.groupName || '').toLowerCase();
-        const selStr = selectedOfficer.toLowerCase();
-        const matches = officerStr.includes(selStr) || selStr.includes(officerStr);
+        const scheduleOfficer = s.officerInCharge || s.groupName || '';
+        const store = getStoreDetail(s);
+        const storeOfficer = store?.korlap || '';
+        const matches = isKorlapMatch(scheduleOfficer, selectedOfficer) || (storeOfficer ? isKorlapMatch(storeOfficer, selectedOfficer) : false);
         if (!matches) return false;
       }
 
@@ -503,7 +503,8 @@ export const KorlapDashboard: React.FC<KorlapDashboardProps> = ({
             const isAktiva = (s.soAktiva || store?.soAktiva || '').toUpperCase().includes('YA') || (s.soAktiva === 'Ya' || s.soAktiva === 'YA');
             const notesSPV = s.notes || store?.keterangan || '';
             const assignedMembers = s.assignedPersonnelNames || [];
-            const personilLeaderText = s.personilLeader || (assignedMembers.length > 0 ? assignedMembers[0] : (s.groupName || 'Tim Korlap'));
+            const personilDisplay = resolveSchedulePersonnelDisplay(s, store, personnel);
+            const personilLeaderText = personilDisplay.leaderName;
             const isCompleted = s.status === 'Selesai';
             const isFailedOrMoved = s.status === 'Gagal SO' || s.status === 'Pindah Toko' || s.status === 'Dibatalkan';
 
@@ -730,7 +731,8 @@ export const KorlapDashboard: React.FC<KorlapDashboardProps> = ({
                   const isAktiva = (s.soAktiva || store?.soAktiva || '').toUpperCase().includes('YA') || (s.soAktiva === 'Ya' || s.soAktiva === 'YA');
                   const notesSPV = s.notes || store?.keterangan || '-';
                   const assignedMembers = s.assignedPersonnelNames || [];
-                  const personilLeaderText = s.personilLeader || (assignedMembers.length > 0 ? assignedMembers[0] : (s.groupName || 'Tim'));
+                  const personilDisplay = resolveSchedulePersonnelDisplay(s, store, personnel);
+                  const personilLeaderText = personilDisplay.leaderName;
 
                   return (
                     <tr 
@@ -796,8 +798,16 @@ export const KorlapDashboard: React.FC<KorlapDashboardProps> = ({
                       </td>
 
                       <td className="py-3 px-3 text-slate-800 whitespace-nowrap">
-                        <span className="font-bold text-xs">{personilLeaderText}</span>
-                        <span className="text-[10px] text-slate-400 block">{s.groupName || s.officerInCharge}</span>
+                        <span className="font-bold text-xs flex items-center gap-1">
+                          <Users className="w-3 h-3 text-indigo-600 shrink-0" />
+                          {personilLeaderText}
+                          {personilDisplay.assignedCount > 1 && (
+                            <span className="text-[10px] text-indigo-600 font-semibold">(+{personilDisplay.assignedCount - 1})</span>
+                          )}
+                        </span>
+                        <span className="text-[10px] font-semibold text-slate-500 block mt-0.5">
+                          Tim {personilDisplay.groupDisplayName}
+                        </span>
                       </td>
 
                       <td className="py-3 px-3 whitespace-nowrap">

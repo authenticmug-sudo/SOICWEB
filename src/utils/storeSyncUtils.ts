@@ -1,5 +1,6 @@
 import { Store, SOSchedule, SOResult } from '../types/stockOpname';
 import { formatSmartSODate, formatDateISO } from './formatters';
+import { normalizeKorlapName } from './korlapUtils';
 
 /**
  * Check if a store belongs to ZONA HITAM (Black Zone)
@@ -249,12 +250,15 @@ export function syncSchedulesFromMasterStores(
       s.scheduledDate.startsWith(isoDate.slice(0, 7))
     );
 
-    const officer = st.korlap && st.korlap !== 'Petugas SO' ? st.korlap : 'I GEDE PASEK SANTIKA (Officer / Korlap)';
+    const canonicalOfficer = st.korlap && st.korlap !== 'Petugas SO' 
+      ? (normalizeKorlapName(st.korlap) || st.korlap) 
+      : 'I GEDE PASEK SANTIKA';
 
     if (existingExact) {
       // If schedule exists, ensure region & officer are in sync
-      if (!existingExact.officerInCharge || existingExact.officerInCharge === 'Petugas SO') {
-        existingExact.officerInCharge = officer;
+      if (!existingExact.officerInCharge || existingExact.officerInCharge === 'Petugas SO' || st.korlap) {
+        existingExact.officerInCharge = canonicalOfficer;
+        existingExact.groupName = canonicalOfficer;
       }
       if (!existingExact.region && st.region) {
         existingExact.region = st.region;
@@ -262,8 +266,9 @@ export function syncSchedulesFromMasterStores(
     } else if (existingInMonth) {
       // If schedule exists in the same month but different date, update its scheduledDate to match the master
       existingInMonth.scheduledDate = isoDate;
-      if (!existingInMonth.officerInCharge || existingInMonth.officerInCharge === 'Petugas SO') {
-        existingInMonth.officerInCharge = officer;
+      if (!existingInMonth.officerInCharge || existingInMonth.officerInCharge === 'Petugas SO' || st.korlap) {
+        existingInMonth.officerInCharge = canonicalOfficer;
+        existingInMonth.groupName = canonicalOfficer;
       }
     } else {
       // Create new smart schedule for September
@@ -279,8 +284,8 @@ export function syncSchedulesFromMasterStores(
         teamName: 'TEAM 1',
         teamCategory: 'TEAM 1',
         spvInCharge: 'I GEDE PASEK SANTIKA',
-        officerInCharge: officer,
-        groupName: officer,
+        officerInCharge: canonicalOfficer,
+        groupName: canonicalOfficer,
         dayName: dayName,
         stockRp: st.saldoToko || 0,
         kasToko: st.kasToko || 0,
@@ -330,6 +335,10 @@ export function enrichScheduleWithMasterStore(schedule: SOSchedule, store?: Stor
   const asInitial = store.as || schedule.asInitial || '';
   const region = store.region || store.kabupaten || schedule.region;
 
+  const canonicalKorlap = store.korlap && store.korlap !== 'Petugas SO'
+    ? normalizeKorlapName(store.korlap)
+    : (schedule.officerInCharge || schedule.groupName);
+
   return {
     ...schedule,
     storeName: store.name || schedule.storeName,
@@ -339,7 +348,9 @@ export function enrichScheduleWithMasterStore(schedule: SOSchedule, store?: Stor
     zona,
     asInitial,
     region,
-    dayName: day
+    dayName: day,
+    officerInCharge: canonicalKorlap || schedule.officerInCharge,
+    groupName: canonicalKorlap || schedule.groupName
   };
 }
 
@@ -369,7 +380,8 @@ export function twoWaySyncStoresAndSchedules(
           changesCount++;
         }
         if (sched.officerInCharge && (!matchStore.korlap || matchStore.korlap === 'Petugas SO')) {
-          matchStore.korlap = sched.officerInCharge.split(' (')[0];
+          const canonical = normalizeKorlapName(sched.officerInCharge);
+          matchStore.korlap = canonical || sched.officerInCharge.split(' (')[0];
           changesCount++;
         }
       }

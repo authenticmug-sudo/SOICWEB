@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Users, UserCheck, Search, Check, AlertCircle } from 'lucide-react';
 import { SOSchedule, AuditorPersonnel } from '../../types/stockOpname';
+import { isKorlapMatch, normalizeKorlapName } from '../../utils/korlapUtils';
 
 interface AssignPersonnelModalProps {
   isOpen: boolean;
@@ -39,11 +40,11 @@ export const AssignPersonnelModal: React.FC<AssignPersonnelModalProps> = ({
   };
 
   const filteredPersonnel = personnel.filter(p => {
-    // Smart Korlap Filter
+    // Smart Korlap Filter (Strict match to avoid Angga vs Odi Tri Anggara contamination)
     if (korlapOnlyFilter && officerCleanName) {
       const matchesKorlap = 
-        (p.korlapName && p.korlapName.toLowerCase().includes(officerCleanName.toLowerCase())) ||
-        (p.name && p.name.toLowerCase().includes(officerCleanName.toLowerCase()));
+        isKorlapMatch(p.korlapName, officerCleanName) ||
+        isKorlapMatch(p.name, officerCleanName);
       if (!matchesKorlap && !selectedIds.includes(p.id)) {
         return false;
       }

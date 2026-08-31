@@ -46,6 +46,7 @@ import {
 import { ensureStoreCoordinates, autoSyncStoreRegionAndKabupaten } from './utils/geoUtils';
 import { formatSmartSODate } from './utils/formatters';
 import { autoSyncStoreWithApprovedSchedule, syncSchedulesFromMasterStores, twoWaySyncStoresAndSchedules, enrichScheduleWithMasterStore } from './utils/storeSyncUtils';
+import { normalizeKorlapName } from './utils/korlapUtils';
 import { 
   Store, 
   SOSchedule, 
@@ -274,10 +275,12 @@ export default function App() {
         let targetOfficer = sch.officerInCharge;
         if (!targetOfficer || targetOfficer === 'Petugas SO') {
           if (matchedStore.korlap && matchedStore.korlap !== 'Petugas SO') {
-            targetOfficer = matchedStore.korlap;
+            targetOfficer = normalizeKorlapName(matchedStore.korlap);
           } else {
-            targetOfficer = 'I GEDE PASEK SANTIKA (Officer / Korlap)';
+            targetOfficer = 'I GEDE PASEK SANTIKA';
           }
+        } else {
+          targetOfficer = normalizeKorlapName(targetOfficer);
         }
 
         if (sch.region !== accurateRegion || sch.officerInCharge !== targetOfficer) {
@@ -300,15 +303,16 @@ export default function App() {
     const scheduleOfficerMap = new Map<string, string>();
     currentSchedules.forEach(sch => {
       if (sch.officerInCharge && sch.officerInCharge !== 'Petugas SO') {
-        scheduleOfficerMap.set(sch.storeId, sch.officerInCharge);
-        if (sch.storeCode) scheduleOfficerMap.set(sch.storeCode, sch.officerInCharge);
+        const canonical = normalizeKorlapName(sch.officerInCharge);
+        scheduleOfficerMap.set(sch.storeId, canonical);
+        if (sch.storeCode) scheduleOfficerMap.set(sch.storeCode, canonical);
       }
     });
 
     let storeChanged = false;
     const updatedStores = currentStores.map(st => {
       const assignedOfficer = scheduleOfficerMap.get(st.id) || scheduleOfficerMap.get(st.code);
-      const effectiveOfficer = assignedOfficer || (st.korlap && st.korlap !== 'Petugas SO' && st.korlap !== 'angga' ? st.korlap : 'I GEDE PASEK SANTIKA');
+      const effectiveOfficer = normalizeKorlapName(assignedOfficer || st.korlap || 'I GEDE PASEK SANTIKA');
       if (st.korlap !== effectiveOfficer) {
         storeChanged = true;
         return {

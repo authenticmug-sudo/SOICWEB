@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import { Store } from '../types/stockOpname';
 import { parseCoordinates, autoSyncStoreRegionAndKabupaten } from './geoUtils';
 import { formatSmartSODate } from './formatters';
+import { normalizeKorlapName } from './korlapUtils';
 
 export interface SheetParseResult {
   sheetName: string;
@@ -225,7 +226,8 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
       const region = findVal(['wilayah', 'cabang', 'region', 'area']) || 'BALI';
       const coverageVal = findVal(['coverage', 'dc/igr', 'dc / igr', 'distribusi']);
       const typeSoVal = findVal(['type so', 'status so', 'type_so', 'q/m', 'qm']);
-      const korlap = findVal(['korlap', 'officer', 'penanggung jawab']);
+      const korlapRaw = findVal(['korlap/officer', 'korlap / officer', 'korlap/officer so', 'korlap / officer so', 'korlap', 'officer', 'penanggung jawab', 'koordinator lapangan']);
+      const korlap = normalizeKorlapName(korlapRaw) || korlapRaw;
       const jop = findVal(['jop']);
       const saldoRaw = findVal(['saldo toko agustus', 'saldo toko', 'saldo_toko', 'saldo']);
       let saldoTokoNum: number | string = saldoRaw;
