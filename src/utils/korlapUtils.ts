@@ -45,11 +45,17 @@ export const KORLAP_PROFILES: KorlapProfile[] = [
     aliases: [
       'angga ardiyansyah',
       'angga ardi',
+      'angga ardian',
       'ardiyansyah',
+      'ardian',
+      'ardi',
       'tim angga ardiyansyah',
       'team angga ardiyansyah',
       'tim ardiyansyah',
-      'group ardiyansyah'
+      'tim ardian',
+      'team ardian',
+      'group ardiyansyah',
+      'group ardian'
     ],
     defaultLeader: 'RAFLI SALMAN ADITYA'
   },
@@ -62,11 +68,11 @@ export const KORLAP_PROFILES: KorlapProfile[] = [
       'wayan angga rista',
       'wayan angga',
       'angga rista',
-      'angga',
-      'tim angga',
-      'team angga',
-      'group angga',
+      'wayan',
+      'rista',
       'tim wayan angga',
+      'tim angga rista',
+      'team wayan angga',
       'team 1',
       'tim 1'
     ],
@@ -169,8 +175,7 @@ export function normalizeKorlapName(rawInput?: string | null): string {
     .replace(/\s+\((officer|korlap|spv|leader)\)$/i, '')
     .trim();
 
-  // 1. Check exact / alias match in KORLAP_PROFILES with priority order
-  // Priority: Check specific compound names first before single words!
+  // 1. Check specific compound names first before generic words!
   
   // A. Check Odi Tri Anggara specifically
   if (
@@ -179,29 +184,37 @@ export function normalizeKorlapName(rawInput?: string | null): string {
     stripped.endsWith(' odi') ||
     stripped === 'odi tri' ||
     stripped === 'odi tri anggara' ||
-    stripped === 'tri anggara'
+    stripped === 'tri anggara' ||
+    stripped.includes('odi')
   ) {
     return 'ODI TRI ANGGARA';
   }
 
-  // B. Check Angga Ardiyansyah specifically
+  // B. Check Angga Ardiyansyah / Ardian specifically (MUST COME BEFORE GENERIC ANGGA)
   if (
     stripped === 'ardiyansyah' ||
+    stripped === 'ardian' ||
+    stripped === 'ardi' ||
     stripped === 'angga ardi' ||
-    stripped.includes('ardiyansyah')
+    stripped === 'angga ardian' ||
+    stripped === 'angga ardiyansyah' ||
+    stripped.includes('ardiyansyah') ||
+    stripped.includes('ardian')
   ) {
     return 'ANGGA ARDIYANSYAH';
   }
 
   // C. Check I Wayan Angga Rista specifically
   if (
-    stripped === 'angga' ||
+    stripped === 'wayan' ||
+    stripped === 'rista' ||
     stripped === 'angga rista' ||
     stripped === 'wayan angga' ||
     stripped === 'wayan angga rista' ||
     stripped === 'i wayan angga' ||
     stripped === 'i wayan angga rista' ||
-    stripped === 'rista'
+    stripped.includes('wayan') ||
+    stripped.includes('rista')
   ) {
     return 'I WAYAN ANGGA RISTA';
   }
@@ -210,7 +223,9 @@ export function normalizeKorlapName(rawInput?: string | null): string {
   if (
     stripped === 'abdul' ||
     stripped === 'abdul rahman' ||
-    stripped === 'rahman'
+    stripped === 'rahman' ||
+    stripped.includes('abdul') ||
+    stripped.includes('rahman')
   ) {
     return 'ABDUL RAHMAN';
   }
@@ -222,7 +237,9 @@ export function normalizeKorlapName(rawInput?: string | null): string {
     stripped === 'pasek santika' ||
     stripped === 'i gede pasek' ||
     stripped === 'i gede pasek santika' ||
-    stripped === 'santika'
+    stripped === 'santika' ||
+    stripped.includes('pasek') ||
+    stripped.includes('santika')
   ) {
     return 'I GEDE PASEK SANTIKA';
   }
@@ -230,7 +247,8 @@ export function normalizeKorlapName(rawInput?: string | null): string {
   // F. Check Putu Bisma
   if (
     stripped === 'bisma' ||
-    stripped === 'putu bisma'
+    stripped === 'putu bisma' ||
+    stripped.includes('bisma')
   ) {
     return 'PUTU BISMA';
   }
@@ -247,10 +265,10 @@ export function normalizeKorlapName(rawInput?: string | null): string {
 }
 
 /**
- * Strict Korlap matching function to prevent false positives (like 'angga' matching 'odi tri anggara').
+ * Strict Korlap matching function to prevent false positives (like 'angga rista' matching 'angga ardiyansyah' or 'odi tri anggara').
  * 
  * @param candidate - The schedule's officerInCharge, groupName, or store's korlap
- * @param targetKorlap - The selected Korlap filter (e.g. 'ODI TRI ANGGARA')
+ * @param targetKorlap - The selected Korlap filter (e.g. 'I WAYAN ANGGA RISTA')
  */
 export function isKorlapMatch(
   candidate?: string | null,
@@ -265,6 +283,10 @@ export function isKorlapMatch(
   // 1. Direct canonical comparison
   if (normTarget && normCandidate) {
     if (normTarget === normCandidate) return true;
+    // If both have distinct canonical names that differ, it's definitely NOT a match
+    if (PRIMARY_BALI_KORLAPS.includes(normTarget) && PRIMARY_BALI_KORLAPS.includes(normCandidate)) {
+      return false;
+    }
   }
 
   // 2. Specific alias check against the target profile
@@ -276,25 +298,27 @@ export function isKorlapMatch(
     }
   }
 
-  // 3. Strict Word-Boundary Token Matching (Never allow substring 'angga' in 'odi tri anggara')
+  // 3. Strict token & exclusion matching
   const candLower = candidate.toLowerCase().trim();
-  const targetLower = targetKorlap.toLowerCase().trim();
 
-  // If searching for ODI, cand must have 'odi'
+  // If searching for ODI TRI ANGGARA
   if (normTarget === 'ODI TRI ANGGARA') {
     return candLower.includes('odi');
   }
 
-  // If searching for ANGGA ARDIYANSYAH, cand must have 'ardiyansyah' or 'ardi'
+  // If searching for ANGGA ARDIYANSYAH
   if (normTarget === 'ANGGA ARDIYANSYAH') {
-    return candLower.includes('ardiyansyah') || candLower.includes('ardi');
+    if (candLower.includes('wayan') || candLower.includes('rista') || candLower.includes('odi')) return false;
+    return candLower.includes('ardiyansyah') || candLower.includes('ardian') || candLower.includes('ardi');
   }
 
   // If searching for I WAYAN ANGGA RISTA:
-  // Must have 'angga' or 'rista' or 'wayan', but MUST NOT have 'odi' or 'ardiyansyah'
+  // Must NOT have 'odi' or 'ardiyansyah' or 'ardian' or 'ardi'
   if (normTarget === 'I WAYAN ANGGA RISTA') {
-    if (candLower.includes('odi') || candLower.includes('ardiyansyah')) return false;
-    return candLower.includes('angga') || candLower.includes('rista') || candLower.includes('wayan');
+    if (candLower.includes('odi') || candLower.includes('ardiyansyah') || candLower.includes('ardian') || candLower.includes('ardi')) {
+      return false;
+    }
+    return candLower.includes('wayan') || candLower.includes('rista') || candLower.includes('angga rista') || candLower === 'angga' || candLower === 'tim angga';
   }
 
   // If searching for ABDUL RAHMAN

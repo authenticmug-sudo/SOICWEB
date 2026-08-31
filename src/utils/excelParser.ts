@@ -319,6 +319,33 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
       const soSeptember = formatSmartSODate(findVal(["so september '26", 'so september', 'tgl so september', 'september']));
       const tglSoApproved = formatSmartSODate(findVal(['tgl so approved', 'so approved', 'approved spv', 'so disetujui', 'tgl so']));
 
+      // Parse status approve SO column (Sudah approve / Belum SO / Belum terapprove)
+      const rawStatusApprove = findVal([
+        'sudah approve so',
+        'status approve so',
+        'status approve',
+        'approve so',
+        'status approval spv',
+        'approval spv',
+        'approval so',
+        'so approve',
+        'sudah approve'
+      ]);
+
+      let statusApproveSO: 'Sudah Approve' | 'Belum SO' | 'Belum Terapprove' = 'Belum SO';
+      if (rawStatusApprove) {
+        const sUpper = rawStatusApprove.toUpperCase();
+        if (sUpper.includes('SUDAH') || sUpper.includes('SETUJU') || sUpper.includes('APPROVED')) {
+          statusApproveSO = 'Sudah Approve';
+        } else if (sUpper.includes('BELUM TERAPPROVE') || sUpper.includes('MENUNGGU') || sUpper.includes('PENDING') || sUpper.includes('BELUM APPROVE')) {
+          statusApproveSO = 'Belum Terapprove';
+        } else {
+          statusApproveSO = 'Belum SO';
+        }
+      } else if (tglSoApproved && tglSoApproved !== '-') {
+        statusApproveSO = 'Sudah Approve';
+      }
+
       // Parse FREKUENSI TIDAK SO
       const freqRaw = findVal(['frekuensi tidak so', 'frekuensi_tidak_so', 'freq tidak so', 'tidak so']);
       let frekuensiTidakSO = 0;
@@ -376,6 +403,7 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
         tglSoJuli: tglSoJuli !== '-' ? tglSoJuli : undefined,
         soAgustus: soAgustus !== '-' ? soAgustus : undefined,
         soSeptember: soSeptember !== '-' ? soSeptember : undefined,
+        statusApproveSO: statusApproveSO,
         tglSoApproved: tglSoApproved !== '-' ? tglSoApproved : undefined,
         storeType: 'Regular Minimarket',
         managerName: korlap || 'Kepala Toko',

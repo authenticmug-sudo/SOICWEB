@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { SOSchedule, Store, AuditorPersonnel } from '../../types/stockOpname';
 import { getStatusBadgeClass, formatDateIndo } from '../../utils/formatters';
+import { isKorlapMatch } from '../../utils/korlapUtils';
 
 interface GeneralScheduleMetricsWidgetProps {
   schedules: SOSchedule[];
@@ -63,8 +64,8 @@ export const GeneralScheduleMetricsWidget: React.FC<GeneralScheduleMetricsWidget
     }
     // Filter Officer
     if (filterOfficer !== 'ALL') {
-      const officerClean = s.officerInCharge?.split(' (')[0] || '';
-      if (!officerClean.toLowerCase().includes(filterOfficer.toLowerCase())) {
+      const match = isKorlapMatch(filterOfficer, `${s.officerInCharge || ''} ${s.groupName || ''}`);
+      if (!match) {
         return false;
       }
     }

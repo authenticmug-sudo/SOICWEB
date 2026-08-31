@@ -55,6 +55,7 @@ export interface Store {
   tglSoJuli?: string; // SO JULI '26
   soAgustus?: string; // SO AGUSTUS '26
   soSeptember?: string; // SO SEPTEMBER '26
+  statusApproveSO?: 'Sudah Approve' | 'Belum SO' | 'Belum Terapprove' | string; // Kolom status approve SO (Sudah Approve / Belum SO / Belum Terapprove)
   soOktober?: string; // SO OKTOBER '26
   soNovember?: string; // SO NOVEMBER '26
   soDesember?: string; // SO DESEMBER '26
@@ -400,6 +401,11 @@ export interface DashboardSummary {
   achievePercentWajibSO: number;
   breakdownTypeSO?: Record<string, { total: number; terSO: number; belumSO: number }>;
   targetTypesUsed?: string[];
+  // Status Approval Breakdown
+  tokoSudahApproveSO?: number;
+  tokoBelumTerapproveSO?: number;
+  tokoBelumSO?: number;
+  tokoSedangSOList?: SOSchedule[];
 }
 
 export interface FilterOptions {

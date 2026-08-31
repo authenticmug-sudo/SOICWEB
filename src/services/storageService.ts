@@ -1,5 +1,6 @@
 import { Store, SOSchedule, SOResult, SOTeam, DashboardSummary, AuditorPersonnel, SOEquipment, EquipmentRepairLog, UniformRecord, MasterTokoDataset, OnCallPersonnelRecord } from '../types/stockOpname';
 import { ensureStoreCoordinates } from '../utils/geoUtils';
+import { getStoreSOApprovalStatus } from '../utils/storeSyncUtils';
 import { db } from './firebase';
 import { collection, doc, setDoc, deleteDoc, onSnapshot, getDocs, getDoc, setLogLevel, disableNetwork, writeBatch } from 'firebase/firestore';
 import { uploadToCloudinary, getCloudinaryConfig, getFormattedDateSuffix, uploadRawJsonToCloudinary, fetchCloudinaryJsonBackup } from './cloudinaryService';
@@ -1772,10 +1773,17 @@ export function getDashboardSummary(
   targetTypes: string[] = ['M', 'Q3']
 ): DashboardSummary {
   const totalStores = stores.length;
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   
+  // Toko Sedang SO (Hari-H Aktif): Schedule status is 'Proses SO' OR today's active schedule
+  const activeHariHSchedules = schedules.filter(s => 
+    s.status === 'Proses SO' || (s.scheduledDate === todayStr && s.status !== 'Dibatalkan' && s.status !== 'Gagal SO')
+  );
+  const inProgressCount = activeHariHSchedules.length;
+
   const completedThisMonth = schedules.filter(s => s.status === 'Selesai' || s.spvApprovalStatus === 'Disetujui').length;
   const scheduledThisMonth = schedules.filter(s => s.status === 'Terjadwal' || s.status === 'Proses SO').length;
-  const inProgressCount = schedules.filter(s => s.status === 'Proses SO').length;
   const pendingApprovalCount = results.filter(r => r.approvalStatus === 'Menunggu Approval SPV').length;
   
   let totalAccuracySum = 0;
@@ -1806,28 +1814,10 @@ export function getDashboardSummary(
   const zonaHitamStores = stores.filter(isZonaHitamStore);
   const totalZonaHitam = zonaHitamStores.length;
 
-  // Check which stores have been SO'd / approved in the active/filtered period
+  // Check which stores have been SO'd / approved by SPV
   const isStoreCompletedOrApproved = (st: Store) => {
-    // 1. Check completed/approved schedule
-    const hasSched = schedules.some(sch => 
-      (sch.storeCode === st.code || sch.storeId === st.id || sch.storeName?.toLowerCase() === st.name?.toLowerCase()) &&
-      (sch.status === 'Selesai' || sch.spvApprovalStatus === 'Disetujui')
-    );
-    if (hasSched) return true;
-
-    // 2. Check result
-    const hasRes = results.some(r => 
-      (r.storeCode === st.code || r.storeId === st.id) &&
-      (r.approvalStatus === 'Disetujui' || !!r.baNumber)
-    );
-    if (hasRes) return true;
-
-    // 3. Check store active month / approved date
-    if (st.soSeptember && st.soSeptember !== '-' && st.soSeptember !== '0' && st.soSeptember !== '0-Jan-00' && st.soSeptember.toLowerCase() !== 'belum so') return true;
-    if (st.soAgustus && st.soAgustus !== '-' && st.soAgustus !== '0' && st.soAgustus !== '0-Jan-00' && st.soAgustus.toLowerCase() !== 'belum so') return true;
-    if (st.tglSoApproved && st.tglSoApproved !== '-') return true;
-
-    return false;
+    const status = getStoreSOApprovalStatus(st, schedules, results);
+    return status === 'Sudah Approve';
   };
 
   const zonaHitamTerSO = zonaHitamStores.filter(isStoreCompletedOrApproved).length;
@@ -1880,8 +1870,13 @@ export function getDashboardSummary(
   // ------------------- GLOBAL PROGRESS: TERJADWAL, BELUM TERJADWAL, SUDAH TER-SO & BELUM TER-SO ------------------- //
   const totalMasterStores = totalStores;
   
-  // Check if store is scheduled (either in schedule list or has SO date in master store)
+  // 1. Check if store is scheduled (Reads column SO SEPTEMBER '26 or active schedule in September)
   const isStoreScheduled = (st: Store) => {
+    const sepDate = String(st.soSeptember || '').trim();
+    if (sepDate && sepDate !== '-' && sepDate !== '0' && sepDate !== '0-Jan-00' && !sepDate.toLowerCase().includes('belum')) {
+      return true;
+    }
+
     const hasActiveSchedule = schedules.some(sch => 
       (sch.storeCode === st.code || sch.storeId === st.id) &&
       sch.status !== 'Dibatalkan' &&
@@ -1889,17 +1884,25 @@ export function getDashboardSummary(
     );
     if (hasActiveSchedule) return true;
 
-    const sepDate = String(st.soSeptember || '').trim();
-    if (sepDate && sepDate !== '-' && sepDate !== '0' && sepDate !== '0-Jan-00' && !sepDate.toLowerCase().includes('belum')) {
-      return true;
-    }
     return false;
   };
 
   const tokoTerjadwal = stores.filter(isStoreScheduled).length;
   const tokoBelumTerjadwal = Math.max(0, totalMasterStores - tokoTerjadwal);
 
-  const tokoSudahTerSO = stores.filter(isStoreCompletedOrApproved).length;
+  // 2. Status Approval SPV Breakdown
+  let countSudahApprove = 0;
+  let countBelumTerapprove = 0;
+  let countBelumSO = 0;
+
+  stores.forEach(st => {
+    const stStatus = getStoreSOApprovalStatus(st, schedules, results);
+    if (stStatus === 'Sudah Approve') countSudahApprove++;
+    else if (stStatus === 'Belum Terapprove') countBelumTerapprove++;
+    else countBelumSO++;
+  });
+
+  const tokoSudahTerSO = countSudahApprove;
   const tokoBelumTerSO = Math.max(0, totalMasterStores - tokoSudahTerSO);
 
   const persentaseTerSO = totalMasterStores > 0 ? Math.round((tokoSudahTerSO / totalMasterStores) * 100) : 0;
@@ -1924,6 +1927,11 @@ export function getDashboardSummary(
     tokoBelumTerSO,
     persentaseTerSO,
     persentaseBelumTerSO,
+    // Status Approval Counts
+    tokoSudahApproveSO: countSudahApprove,
+    tokoBelumTerapproveSO: countBelumTerapprove,
+    tokoBelumSO: countBelumSO,
+    tokoSedangSOList: activeHariHSchedules,
     // Zona Hitam Metrics
     totalZonaHitam,
     zonaHitamTerSO,

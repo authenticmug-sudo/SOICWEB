@@ -277,11 +277,11 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
 
       {/* Status Progres Toko Global (Terjadwal, Belum Terjadwal, Sudah Ter-SO, Belum Ter-SO) */}
       <div className="bg-white rounded-xl border border-slate-200/90 shadow-xs p-3 sm:p-4">
-        <div className="flex items-center justify-between mb-2.5 pb-2 border-b border-slate-100">
+        <div className="flex items-center justify-between mb-2.5 pb-2 border-b border-slate-100 flex-wrap gap-2">
           <div className="flex items-center gap-2">
             <div className="w-2.5 h-2.5 rounded-full bg-indigo-600" />
             <h4 className="text-xs sm:text-sm font-bold text-slate-800 uppercase tracking-wider">
-              Status Keseluruhan Master Toko (Jadwal & Realisasi SO)
+              Status Keseluruhan Master Toko Bali (Jadwal & Realisasi SO)
             </h4>
           </div>
           <span className="text-[11px] text-slate-500 font-medium">
@@ -290,7 +290,7 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3">
-          {/* Toko Terjadwal */}
+          {/* Toko Terjadwal (Membaca SO September '26) */}
           <div 
             onClick={() => onNavigateTab('schedules')}
             className="p-2.5 sm:p-3 rounded-lg bg-indigo-50/70 border border-indigo-100 hover:bg-indigo-50 transition cursor-pointer flex items-center justify-between"
@@ -302,6 +302,7 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
               <p className="text-lg sm:text-xl font-black text-indigo-900 mt-0.5">
                 {formatNumber(summary.tokoTerjadwal ?? 0)} <span className="text-xs font-semibold text-indigo-600">Toko</span>
               </p>
+              <span className="text-[9px] text-indigo-600/80 font-medium">SO September &apos;26</span>
             </div>
             <div className="text-right">
               <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-200/60 text-indigo-800">
@@ -322,6 +323,7 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
               <p className="text-lg sm:text-xl font-black text-slate-800 mt-0.5">
                 {formatNumber(summary.tokoBelumTerjadwal ?? 0)} <span className="text-xs font-semibold text-slate-500">Toko</span>
               </p>
+              <span className="text-[9px] text-slate-500 font-medium">Belum ada tanggal</span>
             </div>
             <div className="text-right">
               <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-700">
@@ -330,18 +332,19 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
             </div>
           </div>
 
-          {/* Sudah Ter-SO */}
+          {/* Sudah Ter-SO (Approval SPV) */}
           <div 
             onClick={() => onNavigateTab('results')}
             className="p-2.5 sm:p-3 rounded-lg bg-emerald-50/70 border border-emerald-100 hover:bg-emerald-50 transition cursor-pointer flex items-center justify-between"
           >
             <div>
               <span className="text-[10px] sm:text-[11px] font-bold text-emerald-700 uppercase tracking-wider block">
-                Sudah Ter-SO
+                Sudah Ter-SO (Approved)
               </span>
               <p className="text-lg sm:text-xl font-black text-emerald-900 mt-0.5">
                 {formatNumber(summary.tokoSudahTerSO ?? 0)} <span className="text-xs font-semibold text-emerald-600">Toko</span>
               </p>
+              <span className="text-[9px] text-emerald-700/80 font-medium">Disetujui SPV</span>
             </div>
             <div className="text-right">
               <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-emerald-600 text-white shadow-xs">
@@ -362,11 +365,50 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
               <p className="text-lg sm:text-xl font-black text-amber-900 mt-0.5">
                 {formatNumber(summary.tokoBelumTerSO ?? 0)} <span className="text-xs font-semibold text-amber-600">Toko</span>
               </p>
+              <span className="text-[9px] text-amber-700/80 font-medium">Sisa Target</span>
             </div>
             <div className="text-right">
               <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-amber-600 text-white shadow-xs">
                 {summary.persentaseBelumTerSO ?? 0}%
               </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Breakdown Status Approve SO & Toko Sedang SO (Hari-H Aktif) */}
+        <div className="mt-3 pt-3 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+          <div className="flex items-center gap-2 p-2 rounded-lg bg-emerald-50/50 border border-emerald-100">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <div>
+              <span className="text-[10px] text-slate-500 font-bold uppercase block">Sudah Approve</span>
+              <span className="font-extrabold text-emerald-800 text-sm">{formatNumber(summary.tokoSudahApproveSO ?? summary.tokoSudahTerSO ?? 0)} Toko</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 p-2 rounded-lg bg-amber-50/50 border border-amber-100">
+            <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+            <div>
+              <span className="text-[10px] text-slate-500 font-bold uppercase block">Belum Terapprove</span>
+              <span className="font-extrabold text-amber-800 text-sm">{formatNumber(summary.tokoBelumTerapproveSO ?? summary.pendingApprovalCount ?? 0)} Toko</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 p-2 rounded-lg bg-slate-50 border border-slate-200">
+            <Layers className="w-4 h-4 text-slate-500 shrink-0" />
+            <div>
+              <span className="text-[10px] text-slate-500 font-bold uppercase block">Belum SO</span>
+              <span className="font-extrabold text-slate-800 text-sm">{formatNumber(summary.tokoBelumSO ?? summary.tokoBelumTerSO ?? 0)} Toko</span>
+            </div>
+          </div>
+
+          <div 
+            onClick={() => onNavigateTab('schedules')}
+            className="flex items-center gap-2 p-2 rounded-lg bg-indigo-50 border border-indigo-200 cursor-pointer hover:bg-indigo-100/70 transition"
+          >
+            <CalendarCheck2 className="w-4 h-4 text-indigo-600 shrink-0" />
+            <div>
+              <span className="text-[10px] text-indigo-700 font-bold uppercase block">Sedang SO (Hari-H)</span>
+              <span className="font-extrabold text-indigo-900 text-sm">{formatNumber(summary.inProgressCount ?? 0)} Jadwal Aktif</span>
             </div>
           </div>
         </div>

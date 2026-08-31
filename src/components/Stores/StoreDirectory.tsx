@@ -21,13 +21,16 @@ import {
   Layers,
   X,
   Settings2,
-  CheckCircle2
+  CheckCircle2,
+  Clock
 } from 'lucide-react';
 import { Store, SOSchedule, RegionArea, StoreType } from '../../types/stockOpname';
 import { REGIONS } from '../../data/initialData';
 import { getRiskBadgeClass, formatDateIndo, formatSmartSODate, formatZoneText } from '../../utils/formatters';
 import { exportToCSV } from '../../services/storageService';
 import { autoSyncStoreRegionAndKabupaten } from '../../utils/geoUtils';
+import { getStoreSOApprovalStatus } from '../../utils/storeSyncUtils';
+import { normalizeKorlapName } from '../../utils/korlapUtils';
 import { ConfirmDeleteModal } from '../Common/ConfirmDeleteModal';
 import { ToastNotification } from '../Common/ToastNotification';
 
@@ -66,6 +69,7 @@ export const ALL_STORE_COLUMNS: ColumnDef[] = [
   { id: 'tglSoJuli', label: "SO JULI '26", category: 'Jadwal SO', defaultVisible: false },
   { id: 'soAgustus', label: "SO AGUSTUS '26", category: 'Jadwal SO', defaultVisible: true },
   { id: 'soSeptember', label: "SO SEPTEMBER '26", category: 'Jadwal SO', defaultVisible: true },
+  { id: 'statusApproveSO', label: 'SUDAH APPROVE SO', category: 'Jadwal SO', defaultVisible: true },
   { id: 'tglSoApproved', label: 'SO APPROVED (SPV)', category: 'Jadwal SO', defaultVisible: false },
   { id: 'frekuensiTidakSO', label: 'FREKUENSI TIDAK SO', category: 'Jadwal SO', defaultVisible: true },
   { id: 'keterangan', label: 'KETERANGAN', category: 'Status & Keuangan', defaultVisible: true },
@@ -79,25 +83,25 @@ const PRESETS = [
     id: 'master_bali',
     name: 'Master Toko Bali (Excel)',
     desc: 'Struktur urutan kolom persis Sheet Master Toko Bali',
-    cols: ['code', 'name', 'koordinat', 'saldoToko', 'am', 'as', 'region', 'kabupaten', 'coverage', 'qm', 'tglSoMei', 'tglSoJuni', 'tglSoJuli', 'soAgustus', 'soSeptember', 'frekuensiTidakSO', 'keterangan', 'zona', 'soAktiva']
+    cols: ['code', 'name', 'koordinat', 'saldoToko', 'am', 'as', 'region', 'kabupaten', 'coverage', 'qm', 'tglSoMei', 'tglSoJuni', 'tglSoJuli', 'soAgustus', 'soSeptember', 'statusApproveSO', 'frekuensiTidakSO', 'keterangan', 'zona', 'soAktiva']
   },
   {
     id: 'zona_hitam',
     name: '🔴 Monitoring Zona Hitam',
     desc: 'Fokus toko high risk, frekuensi tidak SO & jadwal',
-    cols: ['code', 'name', 'zona', 'frekuensiTidakSO', 'soSeptember', 'soAgustus', 'saldoToko', 'kabupaten', 'korlap', 'keterangan']
+    cols: ['code', 'name', 'zona', 'frekuensiTidakSO', 'soSeptember', 'statusApproveSO', 'soAgustus', 'saldoToko', 'kabupaten', 'korlap', 'keterangan']
   },
   {
     id: 'ringkas',
     name: 'Ringkas (Default)',
     desc: 'Tampilan esensial & monitoring cepat',
-    cols: ['code', 'name', 'kabupaten', 'coverage', 'qm', 'zona', 'soSeptember', 'soAgustus', 'frekuensiTidakSO', 'saldoToko', 'korlap']
+    cols: ['code', 'name', 'kabupaten', 'coverage', 'qm', 'zona', 'soSeptember', 'statusApproveSO', 'soAgustus', 'frekuensiTidakSO', 'saldoToko', 'korlap']
   },
   {
     id: 'jadwal',
     name: 'Jadwal SO Mei - Sep',
-    desc: 'Monitoring riwayat tanggal SO per bulan',
-    cols: ['code', 'name', 'qm', 'tglSoMei', 'tglSoJuni', 'tglSoJuli', 'soAgustus', 'soSeptember', 'frekuensiTidakSO', 'zona', 'korlap']
+    desc: 'Monitoring riwayat tanggal SO per bulan & status approval',
+    cols: ['code', 'name', 'qm', 'tglSoMei', 'tglSoJuni', 'tglSoJuli', 'soAgustus', 'soSeptember', 'statusApproveSO', 'frekuensiTidakSO', 'zona', 'korlap']
   },
   {
     id: 'semua',
@@ -512,6 +516,7 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
                 {isColVisible('tglSoJuli') && <th className="py-3 px-3 text-center min-w-[95px]">SO JULI '26</th>}
                 {isColVisible('soAgustus') && <th className="py-3 px-3 text-center min-w-[95px]">SO AGT '26</th>}
                 {isColVisible('soSeptember') && <th className="py-3 px-3 text-center min-w-[110px] bg-emerald-50 text-emerald-900 border-b-2 border-emerald-500">SO SEP '26 (AKTIF)</th>}
+                {isColVisible('statusApproveSO') && <th className="py-3 px-3 text-center min-w-[140px] bg-indigo-50 text-indigo-950 border-b-2 border-indigo-500">STATUS APPROVE SO</th>}
                 {isColVisible('frekuensiTidakSO') && <th className="py-3 px-3 text-center min-w-[100px]">FREKUENSI TDK SO</th>}
                 {isColVisible('keterangan') && <th className="py-3 px-3 min-w-[120px]">KETERANGAN</th>}
                 {isColVisible('zona') && <th className="py-3 px-3 min-w-[120px]">ZONA</th>}
@@ -685,6 +690,36 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
                           ) : (
                             <span className="text-slate-400 font-mono text-[11px]">-</span>
                           )}
+                        </td>
+                      )}
+
+                      {/* STATUS APPROVE SO (SUDAH APPROVE / BELUM TERAPPROVE / BELUM SO) */}
+                      {isColVisible('statusApproveSO') && (
+                        <td className="py-2.5 px-3 text-center">
+                          {(() => {
+                            const status = getStoreSOApprovalStatus(s, schedules);
+                            if (status === 'Sudah Approve') {
+                              return (
+                                <span className="px-2.5 py-1 rounded-md bg-emerald-100 border border-emerald-300 text-emerald-900 font-bold text-[10px] inline-flex items-center gap-1 shadow-2xs">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                  Sudah Approve
+                                </span>
+                              );
+                            } else if (status === 'Belum Terapprove') {
+                              return (
+                                <span className="px-2.5 py-1 rounded-md bg-amber-100 border border-amber-300 text-amber-900 font-bold text-[10px] inline-flex items-center gap-1 shadow-2xs">
+                                  <Clock className="w-3 h-3 text-amber-600" />
+                                  Belum Terapprove
+                                </span>
+                              );
+                            } else {
+                              return (
+                                <span className="px-2.5 py-0.5 rounded text-slate-500 bg-slate-100 border border-slate-200 font-medium text-[10px]">
+                                  Belum SO
+                                </span>
+                              );
+                            }
+                          })()}
                         </td>
                       )}
 

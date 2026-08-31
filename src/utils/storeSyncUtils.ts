@@ -17,7 +17,62 @@ export function isStoreZonaHitam(store: Store): boolean {
 }
 
 /**
+ * Get the unified SPV Approval Status for a Store
+ * Values: 'Sudah Approve' | 'Belum Terapprove' | 'Belum SO'
+ */
+export function getStoreSOApprovalStatus(
+  store: Store,
+  schedules?: SOSchedule[],
+  results?: SOResult[]
+): 'Sudah Approve' | 'Belum SO' | 'Belum Terapprove' {
+  if (!store) return 'Belum SO';
+
+  // 1. Check explicit statusApproveSO property from sheet or direct edit
+  if (store.statusApproveSO) {
+    const s = String(store.statusApproveSO).toLowerCase().trim();
+    if (s.includes('sudah') || s.includes('approved') || s.includes('setuju')) return 'Sudah Approve';
+    if (s.includes('belum terapprove') || s.includes('menunggu') || s.includes('pending') || s.includes('belum approve')) return 'Belum Terapprove';
+    if (s.includes('belum so')) return 'Belum SO';
+  }
+
+  // 2. Check schedules
+  if (schedules && schedules.length > 0) {
+    const matchingSchedules = schedules.filter(sch => 
+      sch.storeCode === store.code || sch.storeId === store.id || (sch.storeName && sch.storeName.toLowerCase() === store.name?.toLowerCase())
+    );
+
+    const hasApproved = matchingSchedules.some(sch => 
+      (sch.spvApprovalStatus as string) === 'Disetujui' || ((sch.status as string) === 'Selesai' && (sch.spvApprovalStatus as string) === 'Disetujui')
+    );
+    if (hasApproved) return 'Sudah Approve';
+
+    const hasPendingApproval = matchingSchedules.some(sch => 
+      (sch.status as string) === 'Selesai' || (sch.status as string) === 'Menunggu Rekapan' || (sch.spvApprovalStatus as string) === 'Menunggu Approval SPV'
+    );
+    if (hasPendingApproval) return 'Belum Terapprove';
+  }
+
+  // 3. Check results
+  if (results && results.length > 0) {
+    const matchingResults = results.filter(r => r.storeCode === store.code || r.storeId === store.id);
+    const hasApprovedResult = matchingResults.some(r => r.approvalStatus === 'Disetujui');
+    if (hasApprovedResult) return 'Sudah Approve';
+
+    const hasPendingResult = matchingResults.some(r => r.approvalStatus === 'Menunggu Approval SPV');
+    if (hasPendingResult) return 'Belum Terapprove';
+  }
+
+  // 4. Check explicit tglSoApproved
+  if (store.tglSoApproved && store.tglSoApproved !== '-' && store.tglSoApproved !== '0' && !store.tglSoApproved.toLowerCase().includes('belum')) {
+    return 'Sudah Approve';
+  }
+
+  return 'Belum SO';
+}
+
+/**
  * Check if a store has been approved / completed SO in a specific month & year
+ * NOTE: Scheduled stores (e.g. only having SO date in soSeptember) are NOT approved until SPV approves!
  */
 export function isStoreSOApprovedInMonth(
   store: Store,
@@ -28,14 +83,14 @@ export function isStoreSOApprovedInMonth(
 ): boolean {
   if (!store) return false;
 
-  // 1. Check matching schedule
+  // 1. Check matching schedule with SPV approval or completed status
   const hasApprovedSchedule = schedules.some(sch => {
     const isMatched = sch.storeCode === store.code || sch.storeId === store.id || sch.storeName?.toLowerCase() === store.name?.toLowerCase();
     if (!isMatched) return false;
 
-    // Check status
-    const isApprovedOrDone = sch.status === 'Selesai' || sch.spvApprovalStatus === 'Disetujui' || !!sch.assignedPersonnelNames?.length;
-    if (!isApprovedOrDone) return false;
+    // Check approval status: MUST be approved by SPV or completed
+    const isApproved = (sch.spvApprovalStatus as string) === 'Disetujui' || ((sch.status as string) === 'Selesai' && (sch.spvApprovalStatus as string) === 'Disetujui');
+    if (!isApproved) return false;
 
     if (targetMonth === 'ALL') return true;
 
@@ -50,12 +105,12 @@ export function isStoreSOApprovedInMonth(
 
   if (hasApprovedSchedule) return true;
 
-  // 2. Check matching results
+  // 2. Check matching results with SPV approval
   if (results && results.length > 0) {
     const hasApprovedResult = results.some(r => {
       const isMatched = r.storeCode === store.code || r.storeId === store.id;
       if (!isMatched) return false;
-      if (r.approvalStatus === 'Disetujui' || !!r.baNumber) {
+      if (r.approvalStatus === 'Disetujui' || (r.approvalStatus !== 'Menunggu Approval SPV' && r.approvalStatus !== 'Ditolak' && !!r.baNumber)) {
         if (targetMonth === 'ALL') return true;
         if (r.soDate) {
           const [rYear, rMonth] = r.soDate.split('-');
@@ -67,28 +122,19 @@ export function isStoreSOApprovedInMonth(
     if (hasApprovedResult) return true;
   }
 
-  // 3. Check monthly column attributes in Store
-  if (targetMonth === '09' || targetMonth === 'SEPTEMBER') {
-    const val = store.soSeptember;
-    if (val && val !== '-' && val !== '0' && val !== '0-Jan-00' && val !== 'Belum SO') return true;
-  } else if (targetMonth === '08' || targetMonth === 'AGUSTUS') {
-    const val = store.soAgustus;
-    if (val && val !== '-' && val !== '0' && val !== '0-Jan-00' && val !== 'Belum SO') return true;
-  } else if (targetMonth === '07' || targetMonth === 'JULI') {
-    const val = store.tglSoJuli;
-    if (val && val !== '-' && val !== '0' && val !== '0-Jan-00' && val !== 'Belum SO') return true;
-  } else if (targetMonth === '06' || targetMonth === 'JUNI') {
-    const val = store.tglSoJuni;
-    if (val && val !== '-' && val !== '0' && val !== '0-Jan-00' && val !== 'Belum SO') return true;
-  } else if (targetMonth === '05' || targetMonth === 'MEI') {
-    const val = store.tglSoMei;
-    if (val && val !== '-' && val !== '0' && val !== '0-Jan-00' && val !== 'Belum SO') return true;
+  // 3. Check explicit statusApproveSO
+  if (store.statusApproveSO) {
+    const s = String(store.statusApproveSO).toLowerCase();
+    if (s.includes('sudah') || s.includes('approved') || s.includes('setuju')) {
+      return true;
+    }
   }
 
-  // 4. Check general tglSoApproved if matches target month
-  if (store.tglSoApproved && store.tglSoApproved !== '-') {
+  // 4. Check general tglSoApproved if explicitly set
+  if (store.tglSoApproved && store.tglSoApproved !== '-' && store.tglSoApproved !== '0' && !store.tglSoApproved.toLowerCase().includes('belum')) {
     if (targetMonth === 'ALL') return true;
     if (store.tglSoApproved.includes(`-${targetMonth}-`)) return true;
+    return true;
   }
 
   return false;
@@ -376,8 +422,21 @@ export function twoWaySyncStoresAndSchedules(
         const smartDate = formatSmartSODate(sched.scheduledDate);
         if (matchStore.soSeptember !== smartDate) {
           matchStore.soSeptember = smartDate;
-          matchStore.tglSoApproved = sched.scheduledDate;
           changesCount++;
+        }
+        if (sched.spvApprovalStatus === 'Disetujui') {
+          if (matchStore.statusApproveSO !== 'Sudah Approve') {
+            matchStore.statusApproveSO = 'Sudah Approve';
+            matchStore.tglSoApproved = sched.scheduledDate;
+            changesCount++;
+          }
+        } else if (sched.status === 'Selesai') {
+          if (matchStore.statusApproveSO !== 'Belum Terapprove' && matchStore.statusApproveSO !== 'Sudah Approve') {
+            matchStore.statusApproveSO = 'Belum Terapprove';
+            changesCount++;
+          }
+        } else if (!matchStore.statusApproveSO) {
+          matchStore.statusApproveSO = 'Belum SO';
         }
         if (sched.officerInCharge && (!matchStore.korlap || matchStore.korlap === 'Petugas SO')) {
           const canonical = normalizeKorlapName(sched.officerInCharge);
