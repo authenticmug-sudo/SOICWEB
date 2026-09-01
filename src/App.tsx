@@ -36,6 +36,7 @@ import {
   getDeterministicScheduleId,
   deleteScheduleFromFirestore,
   deleteStoreFromFirestore,
+  deleteMasterDatasetFromFirestore,
   deletePersonnelFromFirestore,
   deleteEquipmentFromFirestore,
   deleteRepairLogFromFirestore,
@@ -1133,6 +1134,9 @@ export default function App() {
   };
 
   const handleDeleteDataset = (datasetId: string) => {
+    recordDeletedId(STORAGE_KEYS.MASTER_TOKO_DATASETS, datasetId);
+    trackDeletedId(STORAGE_KEYS.MASTER_TOKO_DATASETS, datasetId);
+    deleteMasterDatasetFromFirestore(datasetId).catch(() => {});
     const updated = datasets.filter(d => d.id !== datasetId);
     setDatasets(updated);
     saveMasterTokoDatasets(updated);

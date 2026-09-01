@@ -254,9 +254,10 @@ export interface OperationalCheck {
 }
 
 export interface CCTVCheck {
-  dvrStatus: 'Berfungsi' | 'Tidak';
-  kameraStatus: 'Berfungsi' | 'Tidak';
-  lcdStatus: 'Berfungsi' | 'Tidak';
+  lcdStatus: 'Nyala' | 'Mati' | 'Berfungsi' | 'Tidak' | string;
+  merekamStatus: 'Iya' | 'Tidak' | string;
+  dvrStatus?: 'Berfungsi' | 'Tidak' | string;
+  kameraStatus?: 'Berfungsi' | 'Tidak' | string;
 }
 
 export interface BrankasAuditReport {

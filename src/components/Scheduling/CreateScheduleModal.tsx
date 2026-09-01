@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { Store, SOTeam, SOSchedule, AuditorPersonnel } from '../../types/stockOpname';
 import { formatDateISO, formatRupiah, formatSmartSODate } from '../../utils/formatters';
-import { getDayNameIndo } from '../../utils/storeSyncUtils';
+import { getDayNameIndo, isStoreZonaHitam } from '../../utils/storeSyncUtils';
 import { SearchableStoreSelect } from '../Common/SearchableStoreSelect';
 import { BALI_KORLAP_GROUPS } from '../../data/baliData';
 import { 
@@ -451,7 +451,8 @@ export const CreateScheduleModal: React.FC<CreateScheduleModalProps> = ({
       stockRp: store.saldoToko || 0,
       kasToko: store.kasToko || 0,
       typeSo: store.typeSo || store.qm || 'M',
-      zona: store.zona || (store.isZonaHitam ? 'ZONA HITAM' : 'NON ZONA HITAM'),
+      zona: isStoreZonaHitam(store) ? 'ZONA HITAM' : (store.zona || 'NON ZONA HITAM'),
+      soAktiva: store.soAktiva || 'Tidak',
       asInitial: store.as || '',
       status: 'Terjadwal',
       spvApprovalStatus: 'Menunggu Approval SPV',

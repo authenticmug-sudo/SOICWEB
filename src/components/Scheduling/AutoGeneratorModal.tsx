@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Wand2, Sparkles, Building2, CheckCircle2 } from 'lucide-react';
 import { Store, SOTeam, SOSchedule, AuditorPersonnel } from '../../types/stockOpname';
 import { REGIONS } from '../../data/initialData';
+import { isStoreZonaHitam } from '../../utils/storeSyncUtils';
 
 interface AutoGeneratorModalProps {
   isOpen: boolean;
@@ -75,6 +76,10 @@ export const AutoGeneratorModal: React.FC<AutoGeneratorModalProps> = ({
       const resolvedTeamId = assignedTeam?.id || (assignedOfficer?.teamId || `TEAM-AUTO-${(index % 3) + 1}`);
       const resolvedTeamName = assignedTeam?.name || (assignedOfficer ? `Tim ${assignedOfficer.name.split(' ')[0]}` : `Tim Audit SO ${(index % 3) + 1}`);
 
+      const isHitam = isStoreZonaHitam(store);
+      const storeZona = isHitam ? 'ZONA HITAM' : (store.zona || 'NON ZONA HITAM');
+      const storeAktiva = store.soAktiva || 'Tidak';
+
       newSchedules.push({
         id: `AUTO-SCHED-${Date.now()}-${index}`,
         storeId: store.id,
@@ -90,6 +95,10 @@ export const AutoGeneratorModal: React.FC<AutoGeneratorModalProps> = ({
         status: 'Terjadwal',
         targetSKUCount: store.totalSKUCount,
         notes: `Auto-generated oleh Engine SPV. Prioritas Risk: ${store.riskLevel}`,
+        typeSo: store.typeSo || store.qm || 'M',
+        zona: storeZona,
+        soAktiva: storeAktiva,
+        stockRp: typeof store.saldoToko === 'number' ? store.saldoToko : Number(String(store.saldoToko || '0').replace(/[^0-9.-]/g, '')) || 0,
         createdAt: new Date().toISOString().slice(0, 10)
       });
 

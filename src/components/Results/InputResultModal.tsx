@@ -27,7 +27,10 @@ import {
   HardDrive,
   Smartphone,
   BookmarkCheck,
-  Info
+  Info,
+  Tv,
+  Disc,
+  Video
 } from 'lucide-react';
 import { 
   SOSchedule, 
@@ -194,11 +197,12 @@ export const InputResultModal: React.FC<InputResultModalProps> = ({
   const [wdcpWorking, setWdcpWorking] = useState<number>(0);
   const [wdcpBroken, setWdcpBroken] = useState<number>(0);
 
-  // 9. CCTV Checks
+  // 9. CCTV Checks (Layar LCD: Nyala/Mati, Merekam: Iya/Tidak)
   const [cctvCheck, setCctvCheck] = useState<CCTVCheck>({
+    lcdStatus: 'Nyala',
+    merekamStatus: 'Iya',
     dvrStatus: 'Berfungsi',
-    kameraStatus: 'Berfungsi',
-    lcdStatus: 'Berfungsi'
+    kameraStatus: 'Berfungsi'
   });
 
   // 10. Notes & Photo
@@ -2016,46 +2020,51 @@ export const InputResultModal: React.FC<InputResultModalProps> = ({
 
               {/* CCTV & Hardware Condition */}
               <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-                <h4 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
-                  <Camera className="w-4 h-4 text-indigo-600" />
-                  Kondisi CCTV & Hardware Toko
-                </h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                    <Camera className="w-4 h-4 text-indigo-600" />
+                    Kondisi CCTV & Layar LCD Toko
+                  </h4>
+                  <span className="text-[10px] bg-indigo-100 text-indigo-800 font-bold px-2 py-0.5 rounded-md flex items-center gap-1">
+                    <Disc className="w-3 h-3 text-indigo-600" /> Cek Pita Kaset
+                  </span>
+                </div>
 
-                <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <label className="block text-[10px] font-semibold text-slate-700 mb-1">DVR</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Pilihan 1: Kondisi Layar LCD (Nyala / Mati) */}
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
+                    <label className="block text-xs font-bold text-slate-800 mb-1 flex items-center gap-1.5">
+                      <Tv className="w-3.5 h-3.5 text-indigo-600" />
+                      Layar LCD Monitor
+                    </label>
                     <select
-                      value={cctvCheck.dvrStatus}
-                      onChange={(e) => setCctvCheck({ ...cctvCheck, dvrStatus: e.target.value as any })}
-                      className="w-full bg-white border border-slate-300 rounded-xl p-2 text-xs font-semibold"
+                      value={cctvCheck.lcdStatus === 'Mati' || cctvCheck.lcdStatus === 'Tidak' ? 'Mati' : 'Nyala'}
+                      onChange={(e) => setCctvCheck({ ...cctvCheck, lcdStatus: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-500"
                     >
-                      <option value="Berfungsi">Berfungsi</option>
-                      <option value="Tidak">Tidak</option>
+                      <option value="Nyala">🟢 Nyala</option>
+                      <option value="Mati">🔴 Mati</option>
                     </select>
+                    <p className="text-[10px] text-slate-500 mt-1">Kondisi tampilan monitor layar LCD di toko</p>
                   </div>
 
-                  <div>
-                    <label className="block text-[10px] font-semibold text-slate-700 mb-1">Kamera CCTV</label>
+                  {/* Pilihan 2: Status Merekam (Iya / Tidak) dengan Keterangan Gambar Pita Kaset */}
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
+                    <label className="block text-xs font-bold text-slate-800 mb-1 flex items-center gap-1.5">
+                      <Video className="w-3.5 h-3.5 text-indigo-600" />
+                      Status Merekam CCTV
+                    </label>
                     <select
-                      value={cctvCheck.kameraStatus}
-                      onChange={(e) => setCctvCheck({ ...cctvCheck, kameraStatus: e.target.value as any })}
-                      className="w-full bg-white border border-slate-300 rounded-xl p-2 text-xs font-semibold"
+                      value={cctvCheck.merekamStatus === 'Tidak' ? 'Tidak' : 'Iya'}
+                      onChange={(e) => setCctvCheck({ ...cctvCheck, merekamStatus: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-500"
                     >
-                      <option value="Berfungsi">Berfungsi</option>
-                      <option value="Tidak">Tidak</option>
+                      <option value="Iya">✅ Iya (Merekam)</option>
+                      <option value="Tidak">❌ Tidak (Tidak Merekam)</option>
                     </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-semibold text-slate-700 mb-1">Monitor LCD</label>
-                    <select
-                      value={cctvCheck.lcdStatus}
-                      onChange={(e) => setCctvCheck({ ...cctvCheck, lcdStatus: e.target.value as any })}
-                      className="w-full bg-white border border-slate-300 rounded-xl p-2 text-xs font-semibold"
-                    >
-                      <option value="Berfungsi">Berfungsi</option>
-                      <option value="Tidak">Tidak</option>
-                    </select>
+                    <p className="text-[10px] text-amber-800 font-medium mt-1 bg-amber-50 p-1.5 rounded-lg border border-amber-200 leading-tight">
+                      💡 <strong>Catatan:</strong> Cek gambar/ikon <strong>pita kaset 📼</strong> pada layar untuk indikasi merekam.
+                    </p>
                   </div>
                 </div>
 

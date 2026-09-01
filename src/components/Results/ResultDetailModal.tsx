@@ -18,7 +18,9 @@ import {
   Layers,
   Share2,
   Copy,
-  Check
+  Check,
+  Tv,
+  Disc
 } from 'lucide-react';
 import { SOResult } from '../../types/stockOpname';
 import { formatRupiah, formatDateIndo, getStatusBadgeClass } from '../../utils/formatters';
@@ -539,11 +541,20 @@ export const ResultDetailModal: React.FC<ResultDetailModalProps> = ({
               {result.cctvCheck && (
                 <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
                   <span className="font-bold text-slate-900 uppercase text-[10px] block border-b pb-1 flex items-center gap-1">
-                    <Camera className="w-3 h-3 text-indigo-600" /> CCTV & Hardware
+                    <Camera className="w-3 h-3 text-indigo-600" /> Kondisi CCTV & LCD
                   </span>
-                  <div className="flex justify-between"><span>DVR:</span><strong className="font-semibold">{result.cctvCheck.dvrStatus}</strong></div>
-                  <div className="flex justify-between"><span>Kamera:</span><strong className="font-semibold">{result.cctvCheck.kameraStatus}</strong></div>
-                  <div className="flex justify-between"><span>Layar / LCD:</span><strong className="font-semibold">{result.cctvCheck.lcdStatus}</strong></div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-600 flex items-center gap-1"><Tv className="w-3 h-3 text-slate-500" /> Layar LCD:</span>
+                    <strong className={`font-semibold px-2 py-0.5 rounded text-[11px] ${result.cctvCheck.lcdStatus === 'Mati' || result.cctvCheck.lcdStatus === 'Tidak' ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                      {result.cctvCheck.lcdStatus === 'Mati' || result.cctvCheck.lcdStatus === 'Tidak' ? '🔴 Mati' : '🟢 Nyala'}
+                    </strong>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-600 flex items-center gap-1"><Disc className="w-3 h-3 text-indigo-600" /> Merekam (Pita Kaset):</span>
+                    <strong className={`font-semibold px-2 py-0.5 rounded text-[11px] ${result.cctvCheck.merekamStatus === 'Tidak' ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                      {result.cctvCheck.merekamStatus === 'Tidak' ? '❌ Tidak' : '✅ Iya'}
+                    </strong>
+                  </div>
                 </div>
               )}
 

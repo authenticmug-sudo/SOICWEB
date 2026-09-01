@@ -139,11 +139,13 @@ export function generateWAShareText(data: WAFORMATTERINPUT): string {
 
   // 4. KONDISI CCTV & HARDWARE TOKO
   if (data.cctvCheck) {
-    const { dvrStatus, kameraStatus, lcdStatus } = data.cctvCheck;
-    text += `\n📹 *KONDISI CCTV & MONITOR:*\n`;
-    text += `• DVR: ${dvrStatus || 'Berfungsi'} ${dvrStatus === 'Tidak' ? '❌' : '✅'}\n`;
-    text += `• Kamera CCTV: ${kameraStatus || 'Berfungsi'} ${kameraStatus === 'Tidak' ? '❌' : '✅'}\n`;
-    text += `• Monitor LCD: ${lcdStatus || 'Berfungsi'} ${lcdStatus === 'Tidak' ? '❌' : '✅'}\n`;
+    const { lcdStatus, merekamStatus } = data.cctvCheck;
+    const isLcdNyala = lcdStatus === 'Nyala' || lcdStatus === 'Berfungsi';
+    const isMerekam = merekamStatus === 'Iya' || (!merekamStatus && lcdStatus !== 'Mati');
+    
+    text += `\n📹 *KONDISI CCTV & LAYAR LCD:*\n`;
+    text += `• Layar LCD: ${isLcdNyala ? 'Nyala' : 'Mati'} ${isLcdNyala ? '🟢' : '🔴'}\n`;
+    text += `• Merekam (Indikator Pita Kaset 📼): ${isMerekam ? 'Iya' : 'Tidak'} ${isMerekam ? '✅' : '❌'}\n`;
   }
 
   if (data.opCheck && (data.opCheck.bpbBelumDiproses === 'Ya' || data.opCheck.returBelumDikirimDC === 'Ya')) {

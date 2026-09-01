@@ -912,6 +912,27 @@ export async function saveRepairLogToFirestore(log: EquipmentRepairLog): Promise
   }
 }
 
+export async function saveMasterDatasetToFirestore(dataset: MasterTokoDataset): Promise<void> {
+  if (isFirestoreQuotaExceeded) return;
+  try {
+    const docRef = doc(db, 'master_toko_datasets', dataset.id);
+    await setDoc(docRef, cleanForFirestore(dataset), { merge: true });
+  } catch (err: any) {
+    handleFirestoreError(err);
+  }
+}
+
+export async function deleteMasterDatasetFromFirestore(datasetId: string): Promise<void> {
+  trackDeletedId(STORAGE_KEYS.MASTER_TOKO_DATASETS, datasetId);
+  recordDeletedId(STORAGE_KEYS.MASTER_TOKO_DATASETS, datasetId);
+  if (isFirestoreQuotaExceeded) return;
+  try {
+    await deleteDoc(doc(db, 'master_toko_datasets', datasetId));
+  } catch (err: any) {
+    handleFirestoreError(err);
+  }
+}
+
 export async function deleteRepairLogFromFirestore(logId: string): Promise<void> {
   trackDeletedId(STORAGE_KEYS.REPAIR_LOGS, logId);
   if (isFirestoreQuotaExceeded) return;
@@ -1197,6 +1218,7 @@ export function getStoredMasterTokoDatasets(): MasterTokoDataset[] {
 export async function saveMasterTokoDatasets(datasets: MasterTokoDataset[], isReplaceMode = false): Promise<void> {
   untrackDeletedIdsForItems(STORAGE_KEYS.MASTER_TOKO_DATASETS, datasets.map(d => d.id));
   localStorage.setItem(STORAGE_KEYS.MASTER_TOKO_DATASETS, JSON.stringify(datasets));
+  notifyDataChanged(STORAGE_KEYS.MASTER_TOKO_DATASETS, datasets);
   uploadRawJsonToCloudinary(datasets, 'Master_Toko_Datasets', 'SO Sistem IC BALI/Master Toko').catch(() => {});
   if (!isFirestoreQuotaExceeded) {
     if (isReplaceMode) {

@@ -5,14 +5,51 @@ import { normalizeKorlapName } from './korlapUtils';
 /**
  * Check if a store belongs to ZONA HITAM (Black Zone)
  */
-export function isStoreZonaHitam(store: Store): boolean {
+export function isStoreZonaHitam(store: Partial<Store> | any): boolean {
   if (!store) return false;
-  const zonaStr = String(store.zona || '').toUpperCase();
-  if (zonaStr.includes('HITAM') || zonaStr === 'ZONA HITAM') return true;
+  const zonaStr = String(store.zona || '').toUpperCase().trim();
+  
+  // 1. Explicit NON / BUKAN / AMAN check first (Crucial: 'NON ZONA HITAM' must NOT be classified as Black Zone!)
+  if (
+    zonaStr.includes('NON') || 
+    zonaStr.includes('BUKAN') || 
+    zonaStr.includes('TIDAK') || 
+    zonaStr === 'AMAN' || 
+    zonaStr === 'NO' || 
+    zonaStr === '-' ||
+    zonaStr === 'NON ZONA HITAM'
+  ) {
+    return false;
+  }
+
+  // 2. Explicit ZONA HITAM check
+  if (
+    zonaStr === 'ZONA HITAM' || 
+    zonaStr === 'HITAM' || 
+    zonaStr === 'BLACK' || 
+    zonaStr === 'BLACK ZONE' || 
+    zonaStr === 'YA' || 
+    zonaStr === 'YES' ||
+    zonaStr.startsWith('HITAM') ||
+    zonaStr.endsWith('HITAM')
+  ) {
+    return true;
+  }
+
+  // 3. Check explicit boolean property if available
   if (store.isZonaHitam === true) return true;
-  if (store.riskLevel === 'Tinggi') return true;
-  const ketStr = String(store.keterangan || '').toUpperCase();
-  if (ketStr.includes('ZONA HITAM')) return true;
+  if (store.isZonaHitam === false) return false;
+
+  // 4. Check keterangan field safely
+  const ketStr = String(store.keterangan || '').toUpperCase().trim();
+  if (ketStr.includes('NON ZONA') || ketStr.includes('NON-ZONA') || ketStr.includes('BUKAN ZONA HITAM')) {
+    return false;
+  }
+  if (ketStr.includes('ZONA HITAM')) {
+    return true;
+  }
+
+  if (store.riskLevel === 'Tinggi' && !zonaStr) return true;
   return false;
 }
 

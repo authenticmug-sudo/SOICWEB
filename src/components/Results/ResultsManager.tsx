@@ -185,9 +185,8 @@ export const ResultsManager: React.FC<ResultsManagerProps> = ({
         'Returan Belum Dikirim DC': r.opCheck?.returBelumDikirimDC || 'Tidak',
         'Cek Kiriman Alat': r.opCheck?.cekKirimanDenganAlat || 'Ya',
         'Item Tidak Terdisplay': r.itemTidakTerdisplayCount || 0,
-        'CCTV DVR': r.cctvCheck?.dvrStatus || 'Berfungsi',
-        'CCTV Kamera': r.cctvCheck?.kameraStatus || 'Berfungsi',
-        'CCTV LCD': r.cctvCheck?.lcdStatus || 'Berfungsi',
+        'CCTV Layar LCD': r.cctvCheck?.lcdStatus === 'Mati' || r.cctvCheck?.lcdStatus === 'Tidak' ? 'Mati' : 'Nyala',
+        'CCTV Merekam (Pita Kaset)': r.cctvCheck?.merekamStatus || 'Iya',
 
         'Status Approval': r.approvalStatus,
         'Foto Bukti Cloudinary': r.evidencePhotoUrl || '-',
