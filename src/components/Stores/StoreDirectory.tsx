@@ -125,6 +125,7 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
   const [selectedRegion, setSelectedRegion] = useState('ALL');
   const [selectedQm, setSelectedQm] = useState('ALL');
   const [selectedZona, setSelectedZona] = useState('ALL');
+  const [selectedStatusApprove, setSelectedStatusApprove] = useState('ALL');
   const [selectedKorlap, setSelectedKorlap] = useState('ALL');
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
 
@@ -235,15 +236,18 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
 
     const matchesKorlap = selectedKorlap === 'ALL' || effKorlap === selectedKorlap;
 
+    const z = (s.zona || '').toUpperCase();
     const isStoreZonaHitam = Boolean(
-      s.isZonaHitam ||
-      s.zona?.toUpperCase().includes('HITAM') ||
-      s.keterangan?.toUpperCase().includes('ZONA HITAM')
+      (!z.includes('NON') && !z.includes('BUKAN') && !z.includes('TIDAK') && (z.includes('HITAM') || s.isZonaHitam === true)) ||
+      (s.keterangan?.toUpperCase().includes('ZONA HITAM') && !z.includes('NON'))
     );
     const matchesZona = selectedZona === 'ALL' || 
       (selectedZona === 'HITAM' ? isStoreZonaHitam : !isStoreZonaHitam);
 
-    return matchesSearch && matchesRegion && matchesQm && matchesKorlap && matchesZona;
+    const storeStatusApprove = getStoreSOApprovalStatus(s, schedules);
+    const matchesStatusApprove = selectedStatusApprove === 'ALL' || storeStatusApprove === selectedStatusApprove;
+
+    return matchesSearch && matchesRegion && matchesQm && matchesKorlap && matchesZona && matchesStatusApprove;
   });
 
   const totalPages = Math.ceil(filteredStores.length / pageSize) || 1;
@@ -453,6 +457,20 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
             <option value="Q1">Type Q1 (Triwulan 1)</option>
             <option value="Q2">Type Q2 (Triwulan 2)</option>
             <option value="SEP_FILLED">📅 Terisi Tgl SO September</option>
+          </select>
+
+          <select
+            value={selectedStatusApprove}
+            onChange={(e) => {
+              setSelectedStatusApprove(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="bg-slate-50 border border-slate-200 text-xs rounded-lg px-2.5 py-2 text-slate-700 font-bold focus:outline-none focus:border-amber-500"
+          >
+            <option value="ALL">📋 Semua Status Approve SO</option>
+            <option value="Sudah Approve">✅ Sudah Approve</option>
+            <option value="Belum Terapprove">⏳ Belum Terapprove (Pending)</option>
+            <option value="Belum SO">⚪ Belum SO</option>
           </select>
 
         </div>

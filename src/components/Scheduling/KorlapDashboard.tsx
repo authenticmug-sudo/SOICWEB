@@ -115,7 +115,12 @@ export const KorlapDashboard: React.FC<KorlapDashboardProps> = ({
         const scheduleOfficer = s.officerInCharge || s.groupName || '';
         const store = getStoreDetail(s);
         const storeOfficer = store?.korlap || '';
-        const matches = isKorlapMatch(scheduleOfficer, selectedOfficer) || (storeOfficer ? isKorlapMatch(storeOfficer, selectedOfficer) : false);
+        let matches = false;
+        if (scheduleOfficer && scheduleOfficer.trim() !== '' && scheduleOfficer !== 'PETUGAS SO') {
+          matches = isKorlapMatch(scheduleOfficer, selectedOfficer);
+        } else if (storeOfficer) {
+          matches = isKorlapMatch(storeOfficer, selectedOfficer);
+        }
         if (!matches) return false;
       }
 

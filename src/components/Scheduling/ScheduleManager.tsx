@@ -214,7 +214,13 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
         const scheduleOfficer = s.groupName || s.officerInCharge || '';
         const matchingStore = stores.find(st => st.code === s.storeCode || st.id === s.storeId);
         const storeOfficer = matchingStore?.korlap || '';
-        matchesGroup = isKorlapMatch(scheduleOfficer, selectedGroupKorlap) || (storeOfficer ? isKorlapMatch(storeOfficer, selectedGroupKorlap) : false);
+        if (scheduleOfficer && scheduleOfficer.trim() !== '' && scheduleOfficer !== 'PETUGAS SO') {
+          matchesGroup = isKorlapMatch(scheduleOfficer, selectedGroupKorlap);
+        } else if (storeOfficer) {
+          matchesGroup = isKorlapMatch(storeOfficer, selectedGroupKorlap);
+        } else {
+          matchesGroup = false;
+        }
       }
 
       // Date Filtering Logic
@@ -760,6 +766,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                     <th className="py-3 px-3 text-center">Type SO</th>
                     <th className="py-3 px-3 text-right">Kas Toko</th>
                     <th className="py-3 px-3">Zona</th>
+                    <th className="py-3 px-3 text-center">SO Aktiva</th>
                     <th className="py-3 px-3">Status</th>
                     <th className="py-3 px-3 text-right">Aksi</th>
                   </tr>
@@ -767,7 +774,11 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                 <tbody className="divide-y divide-slate-100">
                   {filteredSchedules.length > 0 ? (
                     filteredSchedules.map((s, idx) => {
-                      const isBlackZone = (s.zona || '').toUpperCase().includes('HITAM');
+                      const matchingStore = stores.find(st => st.code === s.storeCode || st.id === s.storeId);
+                      const zVal = (s.zona || matchingStore?.zona || '').toUpperCase();
+                      const isBlackZone = !zVal.includes('NON') && !zVal.includes('BUKAN') && !zVal.includes('TIDAK') && (zVal.includes('HITAM') || matchingStore?.isZonaHitam === true);
+                      const aktivaVal = (s.soAktiva || matchingStore?.soAktiva || '').toUpperCase();
+                      const isAktiva = aktivaVal === 'YA' || aktivaVal === 'Y' || aktivaVal === 'TRUE' || aktivaVal === '1' || aktivaVal.includes('AKTIVA') || (s.soAktiva === 'Ya' || matchingStore?.soAktiva === 'Ya');
                       const assignedMembers = s.assignedPersonnelNames || [];
                       const personilLeaderText = s.personilLeader || (assignedMembers.length > 0 ? assignedMembers[0] : '-');
 
@@ -831,10 +842,20 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                           <td className="py-3 px-3 whitespace-nowrap">
                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                               isBlackZone 
-                                ? 'bg-rose-100 text-rose-800 border border-rose-300' 
+                                ? 'bg-slate-900 text-rose-300 border border-rose-600 shadow-2xs' 
                                 : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
                             }`}>
-                              {s.zona || 'NON ZONA HITAM'}
+                              {isBlackZone ? 'ZONA HITAM' : 'NON ZONA HITAM'}
+                            </span>
+                          </td>
+
+                          <td className="py-3 px-3 whitespace-nowrap text-center">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              isAktiva
+                                ? 'bg-purple-100 text-purple-800 border border-purple-300'
+                                : 'bg-slate-100 text-slate-600 border border-slate-200'
+                            }`}>
+                              {isAktiva ? 'Ya' : 'Tidak'}
                             </span>
                           </td>
 

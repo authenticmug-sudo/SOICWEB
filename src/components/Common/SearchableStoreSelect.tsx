@@ -396,6 +396,31 @@ export const SearchableStoreSelect: React.FC<SearchableStoreSelectProps> = ({
                 {selectedStore.riskLevel}
               </span>
             )}
+            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-black uppercase shrink-0 border ${
+              (() => {
+                const z = (selectedStore.zona || '').toUpperCase();
+                const isBlack = !z.includes('NON') && !z.includes('BUKAN') && !z.includes('TIDAK') && (z.includes('HITAM') || selectedStore.isZonaHitam === true);
+                return isBlack ? 'bg-slate-900 text-rose-300 border-rose-600' : 'bg-emerald-50 text-emerald-800 border-emerald-200';
+              })()
+            }`}>
+              {(() => {
+                const z = (selectedStore.zona || '').toUpperCase();
+                const isBlack = !z.includes('NON') && !z.includes('BUKAN') && !z.includes('TIDAK') && (z.includes('HITAM') || selectedStore.isZonaHitam === true);
+                return isBlack ? 'ZONA HITAM' : 'NON ZONA';
+              })()}
+            </span>
+            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase shrink-0 border ${
+              (() => {
+                const a = (selectedStore.soAktiva || '').toUpperCase();
+                const isAkt = a === 'YA' || a === 'Y' || a === 'TRUE' || a === '1' || a.includes('AKTIVA');
+                return isAkt ? 'bg-purple-100 text-purple-800 border-purple-300' : 'bg-slate-100 text-slate-600 border-slate-200';
+              })()
+            }`}>
+              Aktiva: {(() => {
+                const a = (selectedStore.soAktiva || '').toUpperCase();
+                return (a === 'YA' || a === 'Y' || a === 'TRUE' || a === '1' || a.includes('AKTIVA')) ? 'Ya' : 'Tidak';
+              })()}
+            </span>
           </div>
         ) : (
           <div className="flex items-center gap-2 text-slate-400">
@@ -578,13 +603,35 @@ export const SearchableStoreSelect: React.FC<SearchableStoreSelectProps> = ({
 
                       {/* Store Name & Meta */}
                       <div className="truncate">
-                        <div className="text-xs text-slate-900 font-bold truncate flex items-center gap-1.5">
+                        <div className="text-xs text-slate-900 font-bold truncate flex items-center gap-1.5 flex-wrap">
                           <span>{highlightMatch(store.name, searchQuery)}</span>
                           {store.storeType && (
                             <span className="text-[9px] px-1 py-0.2 rounded bg-slate-100 text-slate-600 font-normal border border-slate-200">
                               {store.storeType}
                             </span>
                           )}
+                          <span className={`text-[9px] px-1.5 py-0.2 rounded font-black uppercase border ${
+                            (() => {
+                              const z = (store.zona || '').toUpperCase();
+                              const isBlack = !z.includes('NON') && !z.includes('BUKAN') && !z.includes('TIDAK') && (z.includes('HITAM') || store.isZonaHitam === true);
+                              return isBlack ? 'bg-slate-900 text-rose-300 border-rose-600' : 'bg-emerald-50 text-emerald-800 border-emerald-200';
+                            })()
+                          }`}>
+                            {(() => {
+                              const z = (store.zona || '').toUpperCase();
+                              const isBlack = !z.includes('NON') && !z.includes('BUKAN') && !z.includes('TIDAK') && (z.includes('HITAM') || store.isZonaHitam === true);
+                              return isBlack ? 'ZONA HITAM' : 'NON ZONA';
+                            })()}
+                          </span>
+                          {(() => {
+                            const a = (store.soAktiva || '').toUpperCase();
+                            const isAkt = a === 'YA' || a === 'Y' || a === 'TRUE' || a === '1' || a.includes('AKTIVA');
+                            return isAkt ? (
+                              <span className="text-[9px] px-1.5 py-0.2 rounded font-bold uppercase bg-purple-100 text-purple-800 border border-purple-300">
+                                Aktiva: Ya
+                              </span>
+                            ) : null;
+                          })()}
                         </div>
                         <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-0.5">
                           <span className="flex items-center gap-0.5">

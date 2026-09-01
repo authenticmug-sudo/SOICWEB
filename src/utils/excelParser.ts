@@ -226,7 +226,21 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
       const region = findVal(['wilayah', 'cabang', 'region', 'area']) || 'BALI';
       const coverageVal = findVal(['coverage', 'dc/igr', 'dc / igr', 'distribusi']);
       const typeSoVal = findVal(['type so', 'status so', 'type_so', 'q/m', 'qm']);
-      const korlapRaw = findVal(['korlap/officer', 'korlap / officer', 'korlap/officer so', 'korlap / officer so', 'korlap', 'officer', 'penanggung jawab', 'koordinator lapangan']);
+      const korlapRaw = findVal([
+        'korlap/officer so',
+        'korlap / officer so',
+        'korlap/officer',
+        'korlap / officer',
+        'korlap',
+        'officer so',
+        'officer',
+        'petugas korlap',
+        'petugas so',
+        'penanggung jawab',
+        'koordinator lapangan',
+        'group korlap',
+        'nama korlap'
+      ]);
       const korlap = normalizeKorlapName(korlapRaw) || korlapRaw;
       const jop = findVal(['jop']);
       const saldoRaw = findVal(['saldo toko agustus', 'saldo toko', 'saldo_toko', 'saldo']);
@@ -279,19 +293,19 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
       const skuVal = findVal(['totalsku', 'total sku', 'sku']);
       const totalSKUCount = skuVal && !isNaN(Number(skuVal.replace(/[^0-9]/g, ''))) ? Number(skuVal.replace(/[^0-9]/g, '')) : undefined;
 
-      // Parse ZONA (ZONA HITAM vs NON ZONA HITAM)
+      // Parse ZONA (ZONA HITAM vs NON ZONA HITAM - strict check so 'NON ZONA HITAM' is NOT treated as black zone)
       const zonaRaw = findVal(['zona', 'kriteria zona', 'zona toko', 'kriteria_zona', 'status zona']);
       let zonaFormatted = 'NON ZONA HITAM';
       let isZonaHitam = false;
       let riskLevel: 'Tinggi' | 'Sedang' | 'Rendah' = 'Rendah';
 
       if (zonaRaw) {
-        const zUpper = zonaRaw.toUpperCase();
-        if (zUpper.includes('HITAM') || zUpper === 'ZONA HITAM' || zUpper === 'BLACK ZONE') {
-          zonaFormatted = 'ZONA HITAM';
-          isZonaHitam = true;
-          riskLevel = 'Tinggi';
-        } else if (zUpper.includes('TINGGI') || zUpper.includes('HIGH')) {
+        const zUpper = zonaRaw.toUpperCase().trim();
+        if (zUpper.includes('NON') || zUpper.includes('BUKAN') || zUpper.includes('TIDAK') || zUpper === 'AMAN' || zUpper === '-') {
+          zonaFormatted = 'NON ZONA HITAM';
+          isZonaHitam = false;
+          riskLevel = 'Rendah';
+        } else if (zUpper.includes('HITAM') || zUpper === 'BLACK' || zUpper === 'BLACK ZONE' || zUpper === 'TINGGI' || zUpper === 'HIGH') {
           zonaFormatted = 'ZONA HITAM';
           isZonaHitam = true;
           riskLevel = 'Tinggi';
@@ -309,7 +323,19 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
 
       const jenisTokoVal = findVal(['jenis toko', 'jenis_toko', 'tipetoko', 'tipe toko', 'storetype']);
       const ketVal = findVal(['keterangan', 'notes', 'nkl', 'ket']) || 'TOKO EKSIS';
-      const soAktivaVal = findVal(['so aktiva', 'so_aktiva', 'aktiva']);
+      
+      // Parse SO AKTIVA column strictly (Ya vs Tidak)
+      const soAktivaRaw = findVal(['so aktiva', 'so_aktiva', 'aktiva', 'so aktiva tetap', 'aktiva so', 'status aktiva']);
+      let soAktivaVal: string = 'Tidak';
+      if (soAktivaRaw) {
+        const aUpper = soAktivaRaw.toUpperCase().trim();
+        if (aUpper === 'YA' || aUpper === 'Y' || aUpper === 'TRUE' || aUpper === '1' || aUpper.includes('AKTIVA') || aUpper.includes('ADA') || aUpper.includes('YA')) {
+          soAktivaVal = 'Ya';
+        } else {
+          soAktivaVal = 'Tidak';
+        }
+      }
+
       const phoneVal = findVal(['notelp', 'no telp', 'phone', 'telepon']);
 
       const tglSoMei = formatSmartSODate(findVal(["so mei '26", 'so mei', 'tgl so mei', 'mei']));

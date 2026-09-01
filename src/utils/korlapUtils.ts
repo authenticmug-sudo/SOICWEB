@@ -277,8 +277,8 @@ export function isKorlapMatch(
   if (!targetKorlap || targetKorlap === 'ALL') return true;
   if (!candidate) return false;
 
-  const normTarget = normalizeKorlapName(targetKorlap);
-  const normCandidate = normalizeKorlapName(candidate);
+  const normTarget = normalizeKorlapName(targetKorlap) || targetKorlap.trim().toUpperCase();
+  const normCandidate = normalizeKorlapName(candidate) || candidate.trim().toUpperCase();
 
   // 1. Direct canonical comparison
   if (normTarget && normCandidate) {
@@ -318,7 +318,7 @@ export function isKorlapMatch(
     if (candLower.includes('odi') || candLower.includes('ardiyansyah') || candLower.includes('ardian') || candLower.includes('ardi')) {
       return false;
     }
-    return candLower.includes('wayan') || candLower.includes('rista') || candLower.includes('angga rista') || candLower === 'angga' || candLower === 'tim angga';
+    return candLower.includes('wayan') || candLower.includes('rista') || candLower.includes('angga rista') || candLower === 'tim 1' || candLower === 'team 1';
   }
 
   // If searching for ABDUL RAHMAN
@@ -333,7 +333,7 @@ export function isKorlapMatch(
 
   // If searching for PUTU BISMA
   if (normTarget === 'PUTU BISMA') {
-    return candLower.includes('bisma');
+    return candLower.includes('bisma') || candLower.includes('ariasa');
   }
 
   return false;
