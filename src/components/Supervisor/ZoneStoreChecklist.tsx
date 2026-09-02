@@ -31,6 +31,7 @@ import {
 import { Store, SOSchedule, SOResult, AuditorPersonnel } from '../../types/stockOpname';
 import { exportToExcelWithBackup } from '../../services/storageService';
 import { formatDateIndo, formatRupiah, getZoneBadgeClass, formatZoneText, formatSmartSODate } from '../../utils/formatters';
+import { isStoreZonaHitam } from '../../utils/storeSyncUtils';
 
 interface ZoneStoreChecklistProps {
   stores: Store[];
@@ -144,16 +145,9 @@ export const ZoneStoreChecklist: React.FC<ZoneStoreChecklistProps> = ({
     const items: ZoneChecklistItem[] = [];
 
     stores.forEach(st => {
-      // 1. Determine if store is Zona Hitam
-      const zUpper = String(st.zona || '').toUpperCase();
-      const ketUpper = String(st.keterangan || '').toUpperCase();
-      const isHitam = Boolean(
-        st.isZonaHitam ||
-        zUpper.includes('HITAM') ||
-        ketUpper.includes('ZONA HITAM') ||
-        st.riskLevel === 'Tinggi'
-      );
-      const kriteriaZona = isHitam ? 'ZONA HITAM' : (st.zona || 'NON ZONA HITAM');
+      // 1. Determine if store is Zona Hitam based on Master Toko columns
+      const isHitam = isStoreZonaHitam(st);
+      const kriteriaZona = isHitam ? 'ZONA HITAM' : 'NON ZONA HITAM';
 
       // 2. Find associated active schedule
       const matchedSchedule = schedulesByStoreCode.get(st.code) || schedulesByStoreCode.get(st.id);

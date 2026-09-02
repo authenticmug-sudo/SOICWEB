@@ -28,6 +28,7 @@ import {
 import { Store, SOSchedule, AuditorPersonnel } from '../../types/stockOpname';
 import { calculateHaversineDistance } from '../../utils/geoUtils';
 import { formatRupiah, formatDateIndo, formatSmartSODate, formatZoneText } from '../../utils/formatters';
+import { isStoreZonaHitam } from '../../utils/storeSyncUtils';
 
 interface StoreRelocationAssistantProps {
   stores: Store[];
@@ -238,13 +239,8 @@ export const StoreRelocationAssistant: React.FC<StoreRelocationAssistantProps> =
         scheduleStatusType = 'BELUM_TERJADWAL';
       }
 
-      // Check Zona Hitam
-      const isHitam = Boolean(
-        st.isZonaHitam ||
-        String(st.zona || '').toUpperCase().includes('HITAM') ||
-        String(st.keterangan || '').toUpperCase().includes('ZONA HITAM') ||
-        st.riskLevel === 'Tinggi'
-      );
+      // Check Zona Hitam from Master Toko columns
+      const isHitam = isStoreZonaHitam(st);
 
       list.push({
         store: st,
@@ -253,7 +249,7 @@ export const StoreRelocationAssistant: React.FC<StoreRelocationAssistantProps> =
         scheduledDateMaster: masterSepDate || activeSched?.scheduledDate,
         activeSchedule: activeSched,
         typeSo: st.typeSo || st.qm || 'M',
-        zona: isHitam ? 'ZONA HITAM' : (st.zona || 'NON ZONA HITAM'),
+        zona: isHitam ? 'ZONA HITAM' : 'NON ZONA HITAM',
         isZonaHitam: isHitam,
         saldoToko: st.saldoToko || 0,
         kasToko: st.kasToko,
@@ -603,7 +599,7 @@ _Master Toko Bali & Jadwal telah disinkronkan otomatis oleh SPV._`;
               {filteredSourceSchedules.map(sch => {
                 const isSelected = (selectedSchedule?.id === sch.id);
                 const stObj = stores.find(s => s.code === sch.storeCode || s.id === sch.storeId);
-                const isHitam = stObj?.isZonaHitam || String(stObj?.zona || '').toUpperCase().includes('HITAM');
+                const isHitam = isStoreZonaHitam(stObj);
 
                 return (
                   <div

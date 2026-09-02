@@ -4,6 +4,7 @@ import { parseCoordinates, autoSyncStoreRegionAndKabupaten } from './geoUtils';
 import { formatSmartSODate } from './formatters';
 import { normalizeKorlapName } from './korlapUtils';
 import { getDeterministicStoreId } from '../services/storageService';
+import { isStoreZonaHitam } from './storeSyncUtils';
 
 export interface SheetParseResult {
   sheetName: string;
@@ -295,36 +296,31 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
       const skuVal = findVal(['totalsku', 'total sku', 'sku']);
       const totalSKUCount = skuVal && !isNaN(Number(skuVal.replace(/[^0-9]/g, ''))) ? Number(skuVal.replace(/[^0-9]/g, '')) : undefined;
 
-      // Parse ZONA (ZONA HITAM vs NON ZONA HITAM - strict check so 'NON ZONA HITAM' is NOT treated as black zone)
-      const zonaRaw = findVal(['zona', 'kriteria zona', 'zona toko', 'kriteria_zona', 'status zona']);
-      let zonaFormatted = 'NON ZONA HITAM';
-      let isZonaHitam = false;
-      let riskLevel: 'Tinggi' | 'Sedang' | 'Rendah' = 'Rendah';
+      // Parse ZONA / KETERANGAN ZONA HITAM (Strict check: 'NON ZONA HITAM', '-', empty are NOT black zone)
+      const zonaRaw = findVal([
+        'zona - keterangan zona hitam',
+        'zona-keterangan zona hitam',
+        'keterangan zona hitam',
+        'keterangan zona',
+        'zona / keterangan',
+        'zona hitam',
+        'kriteria zona',
+        'zona toko',
+        'kriteria_zona',
+        'status zona',
+        'kategori zona',
+        'zona'
+      ]);
+      const ketVal = findVal(['keterangan', 'notes', 'nkl', 'ket']) || 'TOKO EKSIS';
 
-      if (zonaRaw) {
-        const zUpper = zonaRaw.toUpperCase().trim();
-        if (zUpper.includes('NON') || zUpper.includes('BUKAN') || zUpper.includes('TIDAK') || zUpper === 'AMAN' || zUpper === '-') {
-          zonaFormatted = 'NON ZONA HITAM';
-          isZonaHitam = false;
-          riskLevel = 'Rendah';
-        } else if (zUpper.includes('HITAM') || zUpper === 'BLACK' || zUpper === 'BLACK ZONE' || zUpper === 'TINGGI' || zUpper === 'HIGH') {
-          zonaFormatted = 'ZONA HITAM';
-          isZonaHitam = true;
-          riskLevel = 'Tinggi';
-        } else if (zUpper.includes('SEDANG') || zUpper.includes('MEDIUM')) {
-          zonaFormatted = 'NON ZONA HITAM';
-          riskLevel = 'Sedang';
-        } else {
-          zonaFormatted = 'NON ZONA HITAM';
-          riskLevel = 'Rendah';
-        }
-      }
+      let isZonaHitam = isStoreZonaHitam({ zona: zonaRaw, keterangan: ketVal });
+      let zonaFormatted = isZonaHitam ? 'ZONA HITAM' : 'NON ZONA HITAM';
+      let riskLevel: 'Tinggi' | 'Sedang' | 'Rendah' = isZonaHitam ? 'Tinggi' : 'Rendah';
 
       const accVal = findVal(['akurasi', 'accuracy', 'last accuracy', 'akurasi so']);
       const lastAccuracyRate = accVal && !isNaN(parseFloat(accVal.replace(/[^0-9.]/g, ''))) ? parseFloat(accVal.replace(/[^0-9.]/g, '')) : undefined;
 
       const jenisTokoVal = findVal(['jenis toko', 'jenis_toko', 'tipetoko', 'tipe toko', 'storetype']);
-      const ketVal = findVal(['keterangan', 'notes', 'nkl', 'ket']) || 'TOKO EKSIS';
       
       // Parse SO AKTIVA column strictly (Ya vs Tidak)
       const soAktivaRaw = findVal(['so aktiva', 'so_aktiva', 'aktiva', 'so aktiva tetap', 'aktiva so', 'status aktiva']);

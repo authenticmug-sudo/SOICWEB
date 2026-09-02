@@ -4,12 +4,27 @@ import { normalizeKorlapName } from './korlapUtils';
 
 /**
  * Check if a store belongs to ZONA HITAM (Black Zone)
+ * Strictly adheres to reading column Zona / Keterangan Zona Hitam from Master Toko.
+ * Stores marked with 'NON ZONA HITAM', 'NON HITAM', 'AMAN', '-', empty, etc. will NOT be treated as Zona Hitam.
  */
 export function isStoreZonaHitam(store: Partial<Store> | any): boolean {
   if (!store) return false;
-  const zonaStr = String(store.zona || '').toUpperCase().trim();
-  
-  // 1. Explicit NON / BUKAN / AMAN check first (Crucial: 'NON ZONA HITAM' must NOT be classified as Black Zone!)
+
+  // Extract all potential fields that might hold zona info
+  const zonaStr = String(
+    store.zona || 
+    store.kriteriaZona || 
+    store.keteranganZona || 
+    store.zonaKeterangan || 
+    store['ZONA-KETERANGAN ZONA HITAM'] || 
+    store['ZONA - KETERANGAN ZONA HITAM'] || 
+    store['KETERANGAN ZONA HITAM'] || 
+    ''
+  ).toUpperCase().trim();
+
+  const ketStr = String(store.keterangan || store.notes || '').toUpperCase().trim();
+
+  // 1. Explicit NON / BUKAN / AMAN / REGULER checks FIRST (Must NEVER be classified as Zona Hitam)
   if (
     zonaStr.includes('NON') || 
     zonaStr.includes('BUKAN') || 
@@ -17,12 +32,30 @@ export function isStoreZonaHitam(store: Partial<Store> | any): boolean {
     zonaStr === 'AMAN' || 
     zonaStr === 'NO' || 
     zonaStr === '-' ||
-    zonaStr === 'NON ZONA HITAM'
+    zonaStr === '0' ||
+    zonaStr === 'REGULER' ||
+    zonaStr === 'NORMAL' ||
+    zonaStr === 'RENDAH' ||
+    zonaStr === 'SEDANG' ||
+    zonaStr === 'NON ZONA HITAM' ||
+    zonaStr === 'NON HITAM' ||
+    zonaStr === 'NON ZONA'
   ) {
     return false;
   }
 
-  // 2. Explicit ZONA HITAM check
+  // 2. Explicit check on Keterangan field if it explicitly states NON-ZONA
+  if (
+    ketStr.includes('NON ZONA') || 
+    ketStr.includes('NON-ZONA') || 
+    ketStr.includes('BUKAN ZONA HITAM') || 
+    ketStr.includes('NON HITAM') ||
+    ketStr.includes('BUKAN HITAM')
+  ) {
+    return false;
+  }
+
+  // 3. Positive check: does Zona or Keterangan say ZONA HITAM / HITAM / BLACK ZONE / YA?
   if (
     zonaStr === 'ZONA HITAM' || 
     zonaStr === 'HITAM' || 
@@ -30,26 +63,28 @@ export function isStoreZonaHitam(store: Partial<Store> | any): boolean {
     zonaStr === 'BLACK ZONE' || 
     zonaStr === 'YA' || 
     zonaStr === 'YES' ||
-    zonaStr.startsWith('HITAM') ||
-    zonaStr.endsWith('HITAM')
+    zonaStr === '1' ||
+    zonaStr === 'ZH' ||
+    (zonaStr.includes('HITAM') && !zonaStr.includes('NON') && !zonaStr.includes('BUKAN') && !zonaStr.includes('TIDAK'))
   ) {
     return true;
   }
 
-  // 3. Check explicit boolean property if available
-  if (store.isZonaHitam === true) return true;
-  if (store.isZonaHitam === false) return false;
-
-  // 4. Check keterangan field safely
-  const ketStr = String(store.keterangan || '').toUpperCase().trim();
-  if (ketStr.includes('NON ZONA') || ketStr.includes('NON-ZONA') || ketStr.includes('BUKAN ZONA HITAM')) {
-    return false;
-  }
-  if (ketStr.includes('ZONA HITAM')) {
+  if (
+    ketStr === 'ZONA HITAM' || 
+    ketStr === 'HITAM' || 
+    ketStr === 'BLACK ZONE' ||
+    (ketStr.includes('ZONA HITAM') && !ketStr.includes('NON') && !ketStr.includes('BUKAN') && !ketStr.includes('TIDAK'))
+  ) {
     return true;
   }
 
-  if (store.riskLevel === 'Tinggi' && !zonaStr) return true;
+  // 4. If explicit boolean is set, only trust it if zonaStr was not empty or explicitly indicated
+  if (store.isZonaHitam === true && zonaStr !== '' && !zonaStr.includes('NON') && !zonaStr.includes('BUKAN')) {
+    return true;
+  }
+
+  // Default is false (Regular / Non-Zona Hitam Store)
   return false;
 }
 

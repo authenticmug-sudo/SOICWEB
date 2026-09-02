@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Search, Building2, Check, ChevronDown, X, Sparkles, MapPin, ShieldAlert, Navigation, Compass, Filter, RefreshCw } from 'lucide-react';
 import { Store } from '../../types/stockOpname';
 import { calculateHaversineDistance, extractKabupatenKecamatanMap, normalizeKabupaten, normalizeKecamatan } from '../../utils/geoUtils';
+import { isStoreZonaHitam } from '../../utils/storeSyncUtils';
 
 interface SearchableStoreSelectProps {
   stores: Store[];
@@ -611,17 +612,9 @@ export const SearchableStoreSelect: React.FC<SearchableStoreSelectProps> = ({
                             </span>
                           )}
                           <span className={`text-[9px] px-1.5 py-0.2 rounded font-black uppercase border ${
-                            (() => {
-                              const z = (store.zona || '').toUpperCase();
-                              const isBlack = !z.includes('NON') && !z.includes('BUKAN') && !z.includes('TIDAK') && (z.includes('HITAM') || store.isZonaHitam === true);
-                              return isBlack ? 'bg-slate-900 text-rose-300 border-rose-600' : 'bg-emerald-50 text-emerald-800 border-emerald-200';
-                            })()
+                            isStoreZonaHitam(store) ? 'bg-slate-900 text-rose-300 border-rose-600' : 'bg-emerald-50 text-emerald-800 border-emerald-200'
                           }`}>
-                            {(() => {
-                              const z = (store.zona || '').toUpperCase();
-                              const isBlack = !z.includes('NON') && !z.includes('BUKAN') && !z.includes('TIDAK') && (z.includes('HITAM') || store.isZonaHitam === true);
-                              return isBlack ? 'ZONA HITAM' : 'NON ZONA';
-                            })()}
+                            {isStoreZonaHitam(store) ? 'ZONA HITAM' : 'NON ZONA'}
                           </span>
                           {(() => {
                             const a = (store.soAktiva || '').toUpperCase();

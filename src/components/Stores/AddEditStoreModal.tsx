@@ -3,6 +3,7 @@ import { X, Building2, MapPin, Phone, User, ShieldAlert } from 'lucide-react';
 import { Store, RegionArea, StoreType } from '../../types/stockOpname';
 import { REGIONS } from '../../data/initialData';
 import { parseCoordinates } from '../../utils/geoUtils';
+import { isStoreZonaHitam } from '../../utils/storeSyncUtils';
 
 interface AddEditStoreModalProps {
   isOpen: boolean;
@@ -92,7 +93,7 @@ export const AddEditStoreModal: React.FC<AddEditStoreModalProps> = ({
     const finalLat = parsed.isValid && parsed.latitude !== undefined ? parsed.latitude : (latitude ? Number(latitude) : undefined);
     const finalLng = parsed.isValid && parsed.longitude !== undefined ? parsed.longitude : (longitude ? Number(longitude) : undefined);
 
-    const isHitam = zona.toUpperCase().includes('HITAM');
+    const isHitam = isStoreZonaHitam({ zona });
 
     const newOrUpdatedStore: Store = {
       id: editingStore ? editingStore.id : `STORE-${Date.now()}`,

@@ -26,6 +26,7 @@ import { Store, MasterTokoDataset } from '../../types/stockOpname';
 import { ConfirmDeleteModal } from '../Common/ConfirmDeleteModal';
 import { ToastNotification } from '../Common/ToastNotification';
 import { parseSmartWorkbook, SheetParseResult } from '../../utils/excelParser';
+import { isStoreZonaHitam } from '../../utils/storeSyncUtils';
 
 interface MasterTokoManagerProps {
   datasets: MasterTokoDataset[];
@@ -713,11 +714,7 @@ export const MasterTokoManager: React.FC<MasterTokoManagerProps> = ({
                     )
                     .slice(0, 150)
                     .map((st, idx) => {
-                      const isHitam = Boolean(
-                        st.isZonaHitam ||
-                        st.zona?.toUpperCase().includes('HITAM') ||
-                        st.keterangan?.toUpperCase().includes('ZONA HITAM')
-                      );
+                      const isHitam = isStoreZonaHitam(st);
 
                       const formattedSaldo = typeof st.saldoToko === 'number' 
                         ? `Rp ${st.saldoToko.toLocaleString('id-ID')}` 
@@ -740,7 +737,7 @@ export const MasterTokoManager: React.FC<MasterTokoManagerProps> = ({
                                 ? 'bg-rose-100 border-rose-300 text-rose-800' 
                                 : 'bg-emerald-100 border-emerald-300 text-emerald-800'
                             }`}>
-                              {st.zona || (isHitam ? 'ZONA HITAM' : 'NON ZONA HITAM')}
+                              {isHitam ? 'ZONA HITAM' : 'NON ZONA HITAM'}
                             </span>
                           </td>
                           <td className="p-3 text-slate-700 font-semibold">{st.korlap || '-'}</td>

@@ -203,8 +203,21 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
       const keterangan = getVal(['keterangan', 'ket'], '');
       const jop = getVal(['jop'], '');
 
-      // Parse ZONA
-      const zonaRaw = getVal(['zona', 'kriteria zona', 'zona toko', 'kriteria_zona', 'status zona'], '');
+      // Parse ZONA / KETERANGAN ZONA HITAM
+      const zonaRaw = getVal([
+        'zona - keterangan zona hitam',
+        'zona-keterangan zona hitam',
+        'keterangan zona hitam',
+        'keterangan zona',
+        'zona / keterangan',
+        'zona hitam',
+        'kriteria zona',
+        'zona toko',
+        'kriteria_zona',
+        'status zona',
+        'kategori zona',
+        'zona'
+      ], '');
       let isZonaHitam = isStoreZonaHitam({ zona: zonaRaw, keterangan, riskLevel: riskVal });
       let zonaFormatted = isZonaHitam ? 'ZONA HITAM' : 'NON ZONA HITAM';
       if (isZonaHitam && !riskLevel) {

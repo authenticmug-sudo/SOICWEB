@@ -2,6 +2,7 @@ import React from 'react';
 import { X, Building2, MapPin, Phone, User, Calendar, ShieldAlert, BarChart, History } from 'lucide-react';
 import { Store, SOSchedule, SOResult } from '../../types/stockOpname';
 import { formatDateIndo, getRiskBadgeClass, formatRupiah, formatZoneText } from '../../utils/formatters';
+import { isStoreZonaHitam } from '../../utils/storeSyncUtils';
 
 interface StoreDetailModalProps {
   store: Store | null;
@@ -58,14 +59,14 @@ export const StoreDetailModal: React.FC<StoreDetailModalProps> = ({
             <div>
               <span className="text-[10px] uppercase font-bold text-slate-400">Zona Toko</span>
               <p className="mt-0.5">
-                {(store.isZonaHitam || store.zona?.toUpperCase().includes('HITAM') || store.keterangan?.toUpperCase().includes('ZONA HITAM')) ? (
+                {isStoreZonaHitam(store) ? (
                   <span className="px-2.5 py-1 rounded-md bg-slate-900 border border-rose-600 text-rose-300 font-black text-[10px] inline-flex items-center gap-1 shadow-xs">
                     <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
                     ZONA HITAM
                   </span>
                 ) : (
                   <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 border border-emerald-200 text-emerald-700">
-                    {store.zona || 'NON ZONA HITAM'}
+                    NON ZONA HITAM
                   </span>
                 )}
               </p>

@@ -31,7 +31,7 @@ import {
 } from 'lucide-react';
 import { SOSchedule, Store, AuditorPersonnel, SOResult } from '../../types/stockOpname';
 import { formatDateIndo, getStatusBadgeClass, formatDateISO, formatRupiah } from '../../utils/formatters';
-import { getDayNameIndo } from '../../utils/storeSyncUtils';
+import { getDayNameIndo, isStoreZonaHitam } from '../../utils/storeSyncUtils';
 import { exportToCSV } from '../../services/storageService';
 import { BALI_KORLAP_GROUPS } from '../../data/baliData';
 import { 
@@ -504,7 +504,7 @@ export const KorlapDashboard: React.FC<KorlapDashboardProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
           {filteredSchedules.map((s, idx) => {
             const store = getStoreDetail(s);
-            const isBlackZone = (s.zona || store?.zona || '').toUpperCase().includes('HITAM') || store?.isZonaHitam;
+            const isBlackZone = isStoreZonaHitam(store || s);
             const isAktiva = (s.soAktiva || store?.soAktiva || '').toUpperCase().includes('YA') || (s.soAktiva === 'Ya' || s.soAktiva === 'YA');
             const notesSPV = s.notes || store?.keterangan || '';
             const assignedMembers = s.assignedPersonnelNames || [];
@@ -732,7 +732,7 @@ export const KorlapDashboard: React.FC<KorlapDashboardProps> = ({
               <tbody className="divide-y divide-slate-200">
                 {filteredSchedules.map((s, idx) => {
                   const store = getStoreDetail(s);
-                  const isBlackZone = (s.zona || store?.zona || '').toUpperCase().includes('HITAM') || store?.isZonaHitam;
+                  const isBlackZone = isStoreZonaHitam(store || s);
                   const isAktiva = (s.soAktiva || store?.soAktiva || '').toUpperCase().includes('YA') || (s.soAktiva === 'Ya' || s.soAktiva === 'YA');
                   const notesSPV = s.notes || store?.keterangan || '-';
                   const assignedMembers = s.assignedPersonnelNames || [];

@@ -1,6 +1,6 @@
 import { Store, SOSchedule, SOResult, SOTeam, DashboardSummary, AuditorPersonnel, SOEquipment, EquipmentRepairLog, UniformRecord, MasterTokoDataset, OnCallPersonnelRecord } from '../types/stockOpname';
 import { ensureStoreCoordinates } from '../utils/geoUtils';
-import { getStoreSOApprovalStatus } from '../utils/storeSyncUtils';
+import { getStoreSOApprovalStatus, isStoreZonaHitam } from '../utils/storeSyncUtils';
 import { db } from './firebase';
 import { collection, doc, setDoc, deleteDoc, onSnapshot, getDocs, getDoc, setLogLevel, disableNetwork, writeBatch } from 'firebase/firestore';
 import { uploadToCloudinary, getCloudinaryConfig, getFormattedDateSuffix, uploadRawJsonToCloudinary, fetchCloudinaryJsonBackup } from './cloudinaryService';
@@ -1898,14 +1898,10 @@ export function getDashboardSummary(
   });
 
   const avgAccuracyRate = results.length > 0 ? +(totalAccuracySum / results.length).toFixed(2) : 0;
-  const highRiskStoreCount = stores.filter(s => s.riskLevel === 'Tinggi' || s.zona === 'ZONA HITAM' || (s.zona && s.zona.toUpperCase().includes('HITAM'))).length;
+  const highRiskStoreCount = stores.filter(s => isStoreZonaHitam(s)).length;
 
-  // Zona Hitam Metrics Calculation
-  const isZonaHitamStore = (s: Store) => {
-    const z = String(s.zona || '').toUpperCase();
-    const ket = String(s.keterangan || '').toUpperCase();
-    return z.includes('HITAM') || s.isZonaHitam === true || s.riskLevel === 'Tinggi' || ket.includes('ZONA HITAM');
-  };
+  // Zona Hitam Metrics Calculation strictly from Master Toko columns
+  const isZonaHitamStore = (s: Store) => isStoreZonaHitam(s);
 
   const zonaHitamStores = stores.filter(isZonaHitamStore);
   const totalZonaHitam = zonaHitamStores.length;
