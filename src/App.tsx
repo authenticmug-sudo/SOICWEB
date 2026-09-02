@@ -40,13 +40,21 @@ import {
   deletePersonnelFromFirestore,
   deleteEquipmentFromFirestore,
   deleteRepairLogFromFirestore,
+  saveMasterDatasetToFirestore,
   STORAGE_KEYS,
   getDashboardSummary,
   reconcilePendingExcelBackups
 } from './services/storageService';
 import { ensureStoreCoordinates, autoSyncStoreRegionAndKabupaten } from './utils/geoUtils';
 import { formatSmartSODate } from './utils/formatters';
-import { autoSyncStoreWithApprovedSchedule, syncSchedulesFromMasterStores, twoWaySyncStoresAndSchedules, enrichScheduleWithMasterStore } from './utils/storeSyncUtils';
+import { 
+  autoSyncStoreWithApprovedSchedule, 
+  syncSchedulesFromMasterStores, 
+  twoWaySyncStoresAndSchedules, 
+  enrichScheduleWithMasterStore,
+  calculateStoreFrekuensiTidakSO,
+  getStoreSOApprovalStatus
+} from './utils/storeSyncUtils';
 import { normalizeKorlapName } from './utils/korlapUtils';
 import { 
   Store, 
@@ -653,36 +661,45 @@ export default function App() {
     const originalSched = schedules.find(s => s.id === scheduleId);
     if (!originalSched) return;
 
+    let hasExistingDestSchedule = false;
     let replacementSched: SOSchedule | null = null;
+
     if (actionType === 'Pindah Toko' && replacementDetails) {
-      replacementSched = {
-        id: `SCHED-REPLACE-${Date.now()}`,
-        storeId: replacementDetails.newStore.id,
-        storeCode: replacementDetails.newStore.code,
-        storeName: replacementDetails.newStore.name,
-        region: replacementDetails.newStore.region || replacementDetails.newStore.kabupaten || originalSched.region,
-        scheduledDate: replacementDetails.newDate,
-        scheduledTime: replacementDetails.newTime,
-        teamId: originalSched.teamId,
-        teamName: originalSched.teamName,
-        teamCategory: originalSched.teamCategory,
-        spvInCharge: originalSched.spvInCharge,
-        officerInCharge: originalSched.officerInCharge,
-        groupName: originalSched.groupName,
-        stockRp: replacementDetails.newStore.saldoToko || 0,
-        kasToko: replacementDetails.newStore.kasToko || 0,
-        typeSo: replacementDetails.newStore.typeSo || replacementDetails.newStore.qm || 'M',
-        zona: replacementDetails.newStore.zona || (replacementDetails.newStore.isZonaHitam ? 'ZONA HITAM' : 'NON ZONA HITAM'),
-        asInitial: replacementDetails.newStore.as || '',
-        status: 'Terjadwal',
-        spvApprovalStatus: 'Menunggu Approval SPV',
-        targetSKUCount: replacementDetails.newStore.totalSKUCount || 1000,
-        notes: `Pengganti dari pindah toko ${originalSched.storeCode} (${originalSched.storeName}). Alasan: ${reason}`,
-        createdAt: new Date().toISOString().slice(0, 10)
-      };
+      hasExistingDestSchedule = schedules.some(
+        s => (s.storeCode === replacementDetails.newStore.code || s.storeId === replacementDetails.newStore.id) && s.id !== scheduleId
+      );
+
+      if (!hasExistingDestSchedule) {
+        replacementSched = {
+          id: `SCHED-REPLACE-${Date.now()}`,
+          storeId: replacementDetails.newStore.id,
+          storeCode: replacementDetails.newStore.code,
+          storeName: replacementDetails.newStore.name,
+          region: replacementDetails.newStore.region || replacementDetails.newStore.kabupaten || originalSched.region,
+          scheduledDate: replacementDetails.newDate,
+          scheduledTime: replacementDetails.newTime,
+          teamId: originalSched.teamId,
+          teamName: originalSched.teamName,
+          teamCategory: originalSched.teamCategory,
+          spvInCharge: originalSched.spvInCharge,
+          officerInCharge: originalSched.officerInCharge,
+          groupName: originalSched.groupName,
+          stockRp: replacementDetails.newStore.saldoToko || 0,
+          kasToko: replacementDetails.newStore.kasToko || 0,
+          typeSo: replacementDetails.newStore.typeSo || replacementDetails.newStore.qm || 'M',
+          zona: replacementDetails.newStore.zona || (replacementDetails.newStore.isZonaHitam ? 'ZONA HITAM' : 'NON ZONA HITAM'),
+          asInitial: replacementDetails.newStore.as || '',
+          status: 'Terjadwal',
+          spvApprovalStatus: 'Menunggu Approval SPV',
+          targetSKUCount: replacementDetails.newStore.totalSKUCount || 1000,
+          notes: `Jadwal Pengganti dari pindah toko ${originalSched.storeCode} (${originalSched.storeName}). Alasan: ${reason}`,
+          createdAt: new Date().toISOString().slice(0, 10)
+        };
+      }
     }
 
     const updated = schedules.map(s => {
+      // 1. Original schedule that failed or moved
       if (s.id === scheduleId) {
         return {
           ...s,
@@ -691,9 +708,29 @@ export default function App() {
           failureOrMoveType: actionType,
           failureOrMoveReason: reason,
           replacementStoreCode: replacementDetails?.newStore.code,
-          replacementStoreName: replacementDetails?.newStore.name
+          replacementStoreName: replacementDetails?.newStore.name,
+          notes: actionType === 'Gagal SO' 
+            ? `Laporan Gagal SO: ${reason}` 
+            : `Pindah Toko ke ${replacementDetails?.newStore.code} (${replacementDetails?.newStore.name}). Alasan: ${reason}`
         };
       }
+
+      // 2. If destination store already had a schedule in the list, synchronize it
+      if (
+        actionType === 'Pindah Toko' && 
+        replacementDetails && 
+        (s.storeCode === replacementDetails.newStore.code || s.storeId === replacementDetails.newStore.id)
+      ) {
+        return {
+          ...s,
+          scheduledDate: replacementDetails.newDate,
+          scheduledTime: replacementDetails.newTime,
+          officerInCharge: originalSched.officerInCharge || s.officerInCharge,
+          groupName: originalSched.groupName || s.groupName,
+          notes: `Jadwal Pengganti dari pindah toko ${originalSched.storeCode} (${originalSched.storeName}). Alasan: ${reason}`
+        };
+      }
+
       return s;
     });
 
@@ -704,29 +741,33 @@ export default function App() {
     // Synchronize Master Stores (Master Toko Bali)
     const updatedStores = stores.map(st => {
       // 1. If this is the original store that failed / moved:
+      // Active month date becomes BLANK, status is Belum SO, and Keterangan is populated
       if (st.code === originalSched.storeCode || st.id === originalSched.storeId) {
         const copy = { ...st };
+        copy.soSeptember = ''; // Blank scheduled date for active month
+        copy.tglSoApproved = undefined;
+        copy.statusApproveSO = 'Belum SO';
         if (actionType === 'Gagal SO') {
-          copy.soSeptember = `Gagal SO (${reason || 'Reschedule'})`;
-          copy.keterangan = `Gagal SO: ${reason}`;
+          copy.keterangan = `Gagal SO: ${reason || 'Kondisi Toko Belum Siap'}`;
         } else {
-          // Pindah Toko: Mark or swap date
-          copy.soSeptember = `Pindah Toko (ke ${replacementDetails?.newStore.code || '-'})`;
-          copy.keterangan = `Pindah Toko ke ${replacementDetails?.newStore.code} (${replacementDetails?.newStore.name}). Alasan: ${reason}`;
+          copy.keterangan = `Pindah Toko ke [${replacementDetails?.newStore.code}] ${replacementDetails?.newStore.name} - Alasan: ${reason || 'Perubahan Jadwal'}`;
         }
+        copy.frekuensiTidakSO = calculateStoreFrekuensiTidakSO(copy, '09');
         return copy;
       }
 
-      // 2. If this is the replacement store:
+      // 2. If this is the destination / replacement store:
+      // Synchronize date into active month column, whether it was blank or previously scheduled
       if (actionType === 'Pindah Toko' && replacementDetails && (st.code === replacementDetails.newStore.code || st.id === replacementDetails.newStore.id)) {
         const copy = { ...st };
         const smartDate = formatSmartSODate(replacementDetails.newDate);
         copy.soSeptember = smartDate;
         copy.tglSoApproved = replacementDetails.newDate;
-        copy.keterangan = `Jadwal Pengganti dari [${originalSched.storeCode}] ${originalSched.storeName}`;
-        if (originalSched.officerInCharge && (!copy.korlap || copy.korlap === 'Petugas SO')) {
+        copy.keterangan = `Jadwal Pengganti dari [${originalSched.storeCode}] ${originalSched.storeName} - Alasan: ${reason}`;
+        if (originalSched.officerInCharge && originalSched.officerInCharge !== 'Petugas SO') {
           copy.korlap = originalSched.officerInCharge.split(' (')[0];
         }
+        copy.frekuensiTidakSO = calculateStoreFrekuensiTidakSO(copy, '09');
         return copy;
       }
 
@@ -763,22 +804,28 @@ export default function App() {
     saveSchedules(updated);
 
     if (targetSched) {
-      // 1. Update matching store master with Approved SO date & auto-fill active month column (e.g. September 2026)
-      const approvedDateStr = targetSched.scheduledDate;
-      const updatedStores = stores.map(st => {
-        if (
-          st.code === targetSched.storeCode || 
-          st.id === targetSched.storeId || 
-          (st.name && targetSched.storeName && st.name.toLowerCase() === targetSched.storeName.toLowerCase())
-        ) {
-          return autoSyncStoreWithApprovedSchedule(st, approvedDateStr);
-        }
-        return st;
-      });
-      setStores(updatedStores);
-      saveStores(updatedStores);
+      // 1. If schedule was Gagal SO or Pindah Toko:
+      // Approval marks the report as approved by SPV, but does NOT mark failed/moved store as "Sudah Approve SO"
+      if (targetSched.status === 'Gagal SO' || targetSched.status === 'Pindah Toko') {
+        // Nothing to auto-fill as completed date for failed store
+      } else {
+        // 2. Normal / Selesai schedule: update matching store master with Approved SO date & auto-fill active month column
+        const approvedDateStr = targetSched.scheduledDate;
+        const updatedStores = stores.map(st => {
+          if (
+            st.code === targetSched.storeCode || 
+            st.id === targetSched.storeId || 
+            (st.name && targetSched.storeName && st.name.toLowerCase() === targetSched.storeName.toLowerCase())
+          ) {
+            return autoSyncStoreWithApprovedSchedule(st, approvedDateStr);
+          }
+          return st;
+        });
+        setStores(updatedStores);
+        saveStores(updatedStores);
+      }
 
-      // 2. Update results
+      // 3. Update results if any exist
       const updatedResults = results.map(r => {
         if (r.scheduleId === scheduleId || r.storeCode === targetSched.storeCode) {
           return { ...r, approvalStatus: 'Disetujui' as const, approvedAt: new Date().toISOString().replace('T', ' ').slice(0, 16) };
@@ -1040,24 +1087,35 @@ export default function App() {
 
   // Export Stores CSV Handler
   const handleExportStores = () => {
-    const data = stores.map(s => ({
-      'KD TOKO': s.code,
-      'NAMA': s.name,
-      'WILAYAH/KABUPATEN': s.region || s.kabupaten || s.city,
-      'KOORDINAT': s.koordinat || (s.latitude && s.longitude ? `${s.latitude}, ${s.longitude}` : '-'),
-      'AM': s.am || '-',
-      'AS': s.as || '-',
-      'SALDO TOKO': typeof s.saldoToko === 'number' ? s.saldoToko : s.saldoToko || '0',
-      'KECAMATAN': s.kecamatan || s.district || '-',
-      'KORLAP/OFFICER': s.korlap || s.managerName || '-',
-      'JENIS TOKO': s.jenisToko || s.storeType,
-      'TGL SO MEI': formatSmartSODate(s.tglSoMei),
-      'TGL SO JUNI': formatSmartSODate(s.tglSoJuni),
-      'TGL SO JULI': formatSmartSODate(s.tglSoJuli),
-      'SO BULAN INI (APPROVED SPV)': formatSmartSODate(s.tglSoApproved || s.soAgustus || s.lastSODate),
-      'STATUS APPROVAL SO': (s.tglSoApproved || s.lastSODate) ? 'DISETUJUI SPV' : 'BELUM SO',
-      'KLASIFIKASI KRITERIA': s.smartClassification || 'Toko Ritel Standard'
-    }));
+    const data = stores.map(s => {
+      const approvalStatus = getStoreSOApprovalStatus(s, schedules, results);
+      return {
+        'KD TOKO': s.code,
+        'NAMA TOKO': s.name,
+        'KOORDINAT': s.koordinat || (s.latitude && s.longitude ? `${s.latitude}, ${s.longitude}` : ''),
+        'SALDO TOKO': typeof s.saldoToko === 'number' ? s.saldoToko : s.saldoToko || 0,
+        'AM': s.am || '',
+        'AS': s.as || '',
+        'WILAYAH': s.region || s.kabupaten || s.city || 'BALI',
+        'KABUPATEN': s.kabupaten || s.city || '',
+        'KECAMATAN': s.kecamatan || s.district || '',
+        'COVERAGE': s.coverage || 'DC',
+        'TYPE SO': s.typeSo || s.qm || 'M',
+        'SO MEI 26': formatSmartSODate(s.tglSoMei) || '',
+        'SO JUNI 26': formatSmartSODate(s.tglSoJuni) || '',
+        'SO JULI 26': formatSmartSODate(s.tglSoJuli) || '',
+        'SO AGUSTUS 26': formatSmartSODate(s.soAgustus) || '',
+        'SO SEPTEMBER 26': formatSmartSODate(s.soSeptember) || '',
+        'STATUS APPROVE SO': approvalStatus,
+        'TGL SO APPROVED (SPV)': formatSmartSODate(s.tglSoApproved) || '',
+        'FREKUENSI TIDAK SO': s.frekuensiTidakSO !== undefined ? s.frekuensiTidakSO : calculateStoreFrekuensiTidakSO(s, '09'),
+        'KETERANGAN': s.keterangan || '',
+        'ZONA': s.zona || (s.isZonaHitam ? 'ZONA HITAM' : 'NON ZONA HITAM'),
+        'SO AKTIVA': s.soAktiva || 'Tidak',
+        'KORLAP': s.korlap || s.managerName || '',
+        'KLASIFIKASI KRITERIA': s.smartClassification || 'Toko Ritel Standard'
+      };
+    });
     exportToCSV('Master_Toko_Bali_Approved.csv', data);
   };
 
@@ -1092,18 +1150,20 @@ export default function App() {
     }
     updated = [newDataset, ...updated];
     setDatasets(updated);
-    saveMasterTokoDatasets(updated);
+    saveMasterTokoDatasets(updated, true);
+    saveMasterDatasetToFirestore(newDataset).catch(() => {});
 
     if (newDataset.isActiveForScheduling && newDataset.stores.length > 0) {
+      clearAllDeletedIds(STORAGE_KEYS.STORES);
       const synced = newDataset.stores.map(s => autoSyncStoreRegionAndKabupaten(s));
       setStores(synced);
-      saveStores(synced);
+      saveStores(synced, true);
 
       // Smart auto-synchronize schedules from Master Store September SO dates
       const { updatedSchedules, newlyCreatedCount } = syncSchedulesFromMasterStores(synced, schedules, '09', '2026');
       if (newlyCreatedCount > 0 || updatedSchedules.length !== schedules.length) {
         setSchedules(updatedSchedules);
-        saveSchedules(updatedSchedules);
+        saveSchedules(updatedSchedules, true);
       }
     }
   };
@@ -1117,18 +1177,19 @@ export default function App() {
       isActiveForScheduling: d.id === datasetId
     }));
     setDatasets(updated);
-    saveMasterTokoDatasets(updated);
+    saveMasterTokoDatasets(updated, true);
 
     if (target.stores.length > 0) {
+      clearAllDeletedIds(STORAGE_KEYS.STORES);
       const synced = target.stores.map(s => autoSyncStoreRegionAndKabupaten(s));
       setStores(synced);
-      saveStores(synced);
+      saveStores(synced, true);
 
       // Smart auto-synchronize schedules from Master Store September SO dates
       const { updatedSchedules, newlyCreatedCount } = syncSchedulesFromMasterStores(synced, schedules, '09', '2026');
       if (newlyCreatedCount > 0 || updatedSchedules.length !== schedules.length) {
         setSchedules(updatedSchedules);
-        saveSchedules(updatedSchedules);
+        saveSchedules(updatedSchedules, true);
       }
     }
   };
@@ -1139,11 +1200,39 @@ export default function App() {
     deleteMasterDatasetFromFirestore(datasetId).catch(() => {});
     const updated = datasets.filter(d => d.id !== datasetId);
     setDatasets(updated);
-    saveMasterTokoDatasets(updated);
+    saveMasterTokoDatasets(updated, true);
   };
 
   const handleExportDataset = (dataset: MasterTokoDataset) => {
-    exportToCSV(dataset.stores, `${dataset.title.replace(/\s+/g, '_')}_EXPORT.csv`);
+    const formattedData = dataset.stores.map(s => {
+      const approvalStatus = getStoreSOApprovalStatus(s, schedules, results);
+      return {
+        'KD TOKO': s.code,
+        'NAMA TOKO': s.name,
+        'KOORDINAT': s.koordinat || (s.latitude && s.longitude ? `${s.latitude}, ${s.longitude}` : ''),
+        'SALDO TOKO': typeof s.saldoToko === 'number' ? s.saldoToko : s.saldoToko || 0,
+        'AM': s.am || '',
+        'AS': s.as || '',
+        'WILAYAH': s.region || s.kabupaten || s.city || 'BALI',
+        'KABUPATEN': s.kabupaten || s.city || '',
+        'KECAMATAN': s.kecamatan || s.district || '',
+        'COVERAGE': s.coverage || 'DC',
+        'TYPE SO': s.typeSo || s.qm || 'M',
+        'SO MEI 26': formatSmartSODate(s.tglSoMei) || '',
+        'SO JUNI 26': formatSmartSODate(s.tglSoJuni) || '',
+        'SO JULI 26': formatSmartSODate(s.tglSoJuli) || '',
+        'SO AGUSTUS 26': formatSmartSODate(s.soAgustus) || '',
+        'SO SEPTEMBER 26': formatSmartSODate(s.soSeptember) || '',
+        'STATUS APPROVE SO': approvalStatus,
+        'TGL SO APPROVED (SPV)': formatSmartSODate(s.tglSoApproved) || '',
+        'FREKUENSI TIDAK SO': s.frekuensiTidakSO !== undefined ? s.frekuensiTidakSO : calculateStoreFrekuensiTidakSO(s, '09'),
+        'KETERANGAN': s.keterangan || '',
+        'ZONA': s.zona || (s.isZonaHitam ? 'ZONA HITAM' : 'NON ZONA HITAM'),
+        'SO AKTIVA': s.soAktiva || 'Tidak',
+        'KORLAP': s.korlap || s.managerName || ''
+      };
+    });
+    exportToCSV(formattedData, `${dataset.title.replace(/\s+/g, '_')}_EXPORT.csv`);
   };
 
   return (

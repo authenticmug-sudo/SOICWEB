@@ -63,12 +63,14 @@ export function getRiskBadgeClass(risk: string = ''): string {
 }
 
 export function getZoneBadgeClass(zone: string = ''): string {
-  const z = (zone || '').toLowerCase();
-  if (z.includes('hitam') || z.includes('tinggi') || z.includes('high') || z.includes('merah')) {
-    return 'bg-rose-50 text-rose-800 border-rose-300 font-extrabold';
-  }
-  if (z.includes('non') || z.includes('rendah') || z.includes('low') || z.includes('hijau') || z.includes('reguler')) {
+  const z = (zone || '').toLowerCase().trim();
+  // 1. Check NON / BUKAN / AMAN / RENDAH first
+  if (z.includes('non') || z.includes('bukan') || z.includes('tidak') || z.includes('rendah') || z.includes('low') || z.includes('hijau') || z.includes('reguler') || z === 'aman' || z === '-') {
     return 'bg-emerald-50 text-emerald-800 border-emerald-300 font-bold';
+  }
+  // 2. Check ZONA HITAM / TINGGI
+  if (z.includes('hitam') || z.includes('tinggi') || z.includes('high') || z.includes('merah') || z === 'black' || z === 'black zone') {
+    return 'bg-rose-50 text-rose-800 border-rose-300 font-extrabold';
   }
   if (z.includes('sedang') || z.includes('medium') || z.includes('kuning')) {
     return 'bg-amber-50 text-amber-800 border-amber-300 font-bold';
@@ -78,9 +80,13 @@ export function getZoneBadgeClass(zone: string = ''): string {
 
 export function formatZoneText(zone?: string): string {
   if (!zone) return 'NON ZONA HITAM';
-  const clean = zone.trim();
-  if (clean.toUpperCase().includes('HITAM')) return 'ZONA HITAM';
-  if (clean.toUpperCase().includes('NON')) return 'NON ZONA HITAM';
+  const clean = zone.trim().toUpperCase();
+  if (clean.includes('NON') || clean.includes('BUKAN') || clean.includes('TIDAK') || clean === 'AMAN' || clean === '-') {
+    return 'NON ZONA HITAM';
+  }
+  if (clean.includes('HITAM') || clean === 'BLACK' || clean === 'BLACK ZONE') {
+    return 'ZONA HITAM';
+  }
   return clean;
 }
 

@@ -11,6 +11,7 @@ import {
 } from '../../services/storageService';
 import { parseCoordinates, autoSyncStoreRegionAndKabupaten } from '../../utils/geoUtils';
 import { formatSmartSODate } from '../../utils/formatters';
+import { isStoreZonaHitam } from '../../utils/storeSyncUtils';
 
 interface ImportStoresModalProps {
   isOpen: boolean;
@@ -204,15 +205,10 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
 
       // Parse ZONA
       const zonaRaw = getVal(['zona', 'kriteria zona', 'zona toko', 'kriteria_zona', 'status zona'], '');
-      let zonaFormatted = 'NON ZONA HITAM';
-      let isZonaHitam = false;
-      if (zonaRaw) {
-        const zUpper = zonaRaw.toUpperCase();
-        if (zUpper.includes('HITAM') || zUpper === 'ZONA HITAM' || zUpper === 'BLACK ZONE' || zUpper.includes('TINGGI') || zUpper.includes('HIGH')) {
-          zonaFormatted = 'ZONA HITAM';
-          isZonaHitam = true;
-          if (!riskLevel) riskLevel = 'Tinggi';
-        }
+      let isZonaHitam = isStoreZonaHitam({ zona: zonaRaw, keterangan, riskLevel: riskVal });
+      let zonaFormatted = isZonaHitam ? 'ZONA HITAM' : 'NON ZONA HITAM';
+      if (isZonaHitam && !riskLevel) {
+        riskLevel = 'Tinggi';
       }
 
       // Extract Coordinates Lat/Long with universal parser

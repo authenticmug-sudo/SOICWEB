@@ -247,6 +247,7 @@ export function autoSyncStoreWithApprovedSchedule(
   const updated: Store = { ...store };
   updated.lastSODate = dateStr;
   updated.tglSoApproved = dateStr;
+  updated.statusApproveSO = 'Sudah Approve';
 
   if (officerName && officerName !== 'Petugas SO') {
     updated.korlap = officerName;
@@ -337,25 +338,42 @@ export function syncSchedulesFromMasterStores(
       ? (normalizeKorlapName(st.korlap) || st.korlap) 
       : 'I GEDE PASEK SANTIKA';
 
+    const isHitam = isStoreZonaHitam(st);
+    const storeZona = isHitam ? 'ZONA HITAM' : 'NON ZONA HITAM';
+    const storeAktiva = st.soAktiva || 'Tidak';
+    const storeSaldo = typeof st.saldoToko === 'number' ? st.saldoToko : (parseFloat(String(st.saldoToko || '').replace(/[^0-9.-]/g, '')) || 0);
+
     if (existingExact) {
-      // If schedule exists, ensure region & officer are in sync
+      // If schedule exists, ensure date, dayName, region, officer, zona, & saldo are in sync
+      existingExact.dayName = getDayNameIndo(isoDate);
+      existingExact.zona = storeZona;
+      existingExact.soAktiva = storeAktiva;
+      if (storeSaldo > 0) existingExact.stockRp = storeSaldo;
+      if (st.as) existingExact.asInitial = st.as;
+      if (st.typeSo || st.qm) existingExact.typeSo = st.typeSo || st.qm || 'M';
       if (!existingExact.officerInCharge || existingExact.officerInCharge === 'Petugas SO' || st.korlap) {
         existingExact.officerInCharge = canonicalOfficer;
         existingExact.groupName = canonicalOfficer;
       }
-      if (!existingExact.region && st.region) {
-        existingExact.region = st.region;
-      }
+      if (st.region) existingExact.region = st.region;
     } else if (existingInMonth) {
       // If schedule exists in the same month but different date, update its scheduledDate to match the master
       existingInMonth.scheduledDate = isoDate;
+      existingInMonth.dayName = getDayNameIndo(isoDate);
+      existingInMonth.zona = storeZona;
+      existingInMonth.soAktiva = storeAktiva;
+      if (storeSaldo > 0) existingInMonth.stockRp = storeSaldo;
+      if (st.as) existingInMonth.asInitial = st.as;
+      if (st.typeSo || st.qm) existingInMonth.typeSo = st.typeSo || st.qm || 'M';
       if (!existingInMonth.officerInCharge || existingInMonth.officerInCharge === 'Petugas SO' || st.korlap) {
         existingInMonth.officerInCharge = canonicalOfficer;
         existingInMonth.groupName = canonicalOfficer;
       }
+      if (st.region) existingInMonth.region = st.region;
     } else {
-      // Create new smart schedule for September
+      // Create new smart schedule for target month
       const dayName = getDayNameIndo(isoDate);
+      const isAlreadyApproved = st.statusApproveSO === 'Sudah Approve' || (st.tglSoApproved && st.tglSoApproved !== '-');
       const newSchedule: SOSchedule = {
         id: `SCHED-${st.code || st.id}-${isoDate}`,
         storeId: st.id,
@@ -370,16 +388,19 @@ export function syncSchedulesFromMasterStores(
         officerInCharge: canonicalOfficer,
         groupName: canonicalOfficer,
         dayName: dayName,
-        stockRp: st.saldoToko || 0,
+        stockRp: storeSaldo,
         kasToko: st.kasToko || 0,
         typeSo: st.typeSo || st.qm || 'M',
-        zona: st.zona || 'NON ZONA HITAM',
+        zona: storeZona,
+        soAktiva: storeAktiva,
         asInitial: st.as || '',
         region: st.region || st.kabupaten || 'Kota Denpasar',
-        status: 'Terjadwal',
+        status: isAlreadyApproved ? 'Selesai' : 'Terjadwal',
         targetSKUCount: st.totalSKUCount || 1000,
-        spvApprovalStatus: 'Menunggu Approval SPV',
-        notes: `Otomatis disinkronkan dari Master Toko (Type SO: ${st.typeSo || st.qm || 'M'})`,
+        spvApprovalStatus: isAlreadyApproved ? 'Disetujui' : 'Menunggu Approval SPV',
+        notes: isAlreadyApproved 
+          ? `Disinkronkan dari Master Toko: Sudah Approve SPV (Type SO: ${st.typeSo || st.qm || 'M'})`
+          : `Otomatis disinkronkan dari Master Toko (Type SO: ${st.typeSo || st.qm || 'M'})`,
         createdAt: new Date().toISOString().slice(0, 10)
       };
 

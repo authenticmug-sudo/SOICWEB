@@ -3,6 +3,7 @@ import { Store } from '../types/stockOpname';
 import { parseCoordinates, autoSyncStoreRegionAndKabupaten } from './geoUtils';
 import { formatSmartSODate } from './formatters';
 import { normalizeKorlapName } from './korlapUtils';
+import { getDeterministicStoreId } from '../services/storageService';
 
 export interface SheetParseResult {
   sheetName: string;
@@ -129,6 +130,7 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
       const lower = col.toLowerCase();
       if (lower.includes('nkl')) detectedInds.add('% NKL & Rp Penggantian');
       if (lower.includes('type so') || lower.includes('status so')) detectedInds.add('Status / Type SO');
+      if (lower.includes('approve') || lower.includes('ter-so') || lower.includes('ter so') || lower.includes('approval')) detectedInds.add('Indikator Approval SPV / Ter-SO');
       if (lower.includes('fresh')) detectedInds.add('Toko Fresh');
       if (lower.includes('tanggal buka') || lower.includes('tgl buka')) detectedInds.add('Tanggal Buka Toko');
       if (lower.includes('perubahan') || lower.includes('turun kelas')) detectedInds.add('Perubahan Grade / Turun Kelas');
@@ -342,10 +344,12 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
       const tglSoJuni = formatSmartSODate(findVal(["so juni '26", 'so juni', 'tgl so juni', 'juni']));
       const tglSoJuli = formatSmartSODate(findVal(["so juli '26", 'so juli', 'tgl so juli', 'juli']));
       const soAgustus = formatSmartSODate(findVal(["so agustus '26", 'so agustus', 'tgl so agustus', 'agustus', 'so bulan ini', 'jadwal so']));
-      const soSeptember = formatSmartSODate(findVal(["so september '26", 'so september', 'tgl so september', 'september']));
-      const tglSoApproved = formatSmartSODate(findVal(['tgl so approved', 'so approved', 'approved spv', 'so disetujui', 'tgl so']));
+      const soSeptemberRaw = findVal(["so september '26", 'so september', 'tgl so september', 'september']);
+      const soSeptember = formatSmartSODate(soSeptemberRaw);
+      const tglSoApprovedRaw = findVal(['tgl so approved', 'so approved', 'approved spv', 'so disetujui', 'tgl so disetujui', 'tgl so']);
+      const tglSoApproved = formatSmartSODate(tglSoApprovedRaw);
 
-      // Parse status approve SO column (Sudah approve / Belum SO / Belum terapprove)
+      // Parse status approve SO column / Indikator Ter-SO SPV
       const rawStatusApprove = findVal([
         'sudah approve so',
         'status approve so',
@@ -355,15 +359,42 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
         'approval spv',
         'approval so',
         'so approve',
-        'sudah approve'
+        'sudah approve',
+        'ter-so',
+        'status ter-so',
+        'ter-so / belum',
+        'ter-so atau belum',
+        'ter so',
+        'status so terapprove',
+        'status so approved',
+        'indikator ter-so',
+        'status approval',
+        'status so'
       ]);
 
       let statusApproveSO: 'Sudah Approve' | 'Belum SO' | 'Belum Terapprove' = 'Belum SO';
       if (rawStatusApprove) {
-        const sUpper = rawStatusApprove.toUpperCase();
-        if (sUpper.includes('SUDAH') || sUpper.includes('SETUJU') || sUpper.includes('APPROVED')) {
+        const sUpper = rawStatusApprove.toUpperCase().trim();
+        if (
+          sUpper.includes('SUDAH') || 
+          sUpper.includes('SETUJU') || 
+          sUpper.includes('APPROVED') || 
+          sUpper.includes('TER-SO') || 
+          sUpper.includes('TER SO') || 
+          sUpper === 'YA' || 
+          sUpper === 'TRUE' || 
+          sUpper === '1' || 
+          sUpper === 'SELESAI' || 
+          sUpper === 'OK'
+        ) {
           statusApproveSO = 'Sudah Approve';
-        } else if (sUpper.includes('BELUM TERAPPROVE') || sUpper.includes('MENUNGGU') || sUpper.includes('PENDING') || sUpper.includes('BELUM APPROVE')) {
+        } else if (
+          sUpper.includes('BELUM TERAPPROVE') || 
+          sUpper.includes('MENUNGGU') || 
+          sUpper.includes('PENDING') || 
+          sUpper.includes('AUDIT ULANG') ||
+          sUpper.includes('BELUM APPROVE')
+        ) {
           statusApproveSO = 'Belum Terapprove';
         } else {
           statusApproveSO = 'Belum SO';
@@ -397,7 +428,7 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
       }
 
       const storeObj: Store = {
-        id: `STORE-DATASET-${storeCode}-${r}`,
+        id: getDeterministicStoreId({ code: storeCode, name: storeName }),
         code: storeCode,
         name: storeName,
         region: region as any,

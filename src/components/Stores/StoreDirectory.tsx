@@ -29,7 +29,7 @@ import { REGIONS } from '../../data/initialData';
 import { getRiskBadgeClass, formatDateIndo, formatSmartSODate, formatZoneText } from '../../utils/formatters';
 import { exportToCSV } from '../../services/storageService';
 import { autoSyncStoreRegionAndKabupaten } from '../../utils/geoUtils';
-import { getStoreSOApprovalStatus } from '../../utils/storeSyncUtils';
+import { getStoreSOApprovalStatus, isStoreZonaHitam } from '../../utils/storeSyncUtils';
 import { normalizeKorlapName } from '../../utils/korlapUtils';
 import { ConfirmDeleteModal } from '../Common/ConfirmDeleteModal';
 import { ToastNotification } from '../Common/ToastNotification';
@@ -236,13 +236,9 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
 
     const matchesKorlap = selectedKorlap === 'ALL' || effKorlap === selectedKorlap;
 
-    const z = (s.zona || '').toUpperCase();
-    const isStoreZonaHitam = Boolean(
-      (!z.includes('NON') && !z.includes('BUKAN') && !z.includes('TIDAK') && (z.includes('HITAM') || s.isZonaHitam === true)) ||
-      (s.keterangan?.toUpperCase().includes('ZONA HITAM') && !z.includes('NON'))
-    );
+    const isBlackZone = isStoreZonaHitam(s);
     const matchesZona = selectedZona === 'ALL' || 
-      (selectedZona === 'HITAM' ? isStoreZonaHitam : !isStoreZonaHitam);
+      (selectedZona === 'HITAM' ? isBlackZone : !isBlackZone);
 
     const storeStatusApprove = getStoreSOApprovalStatus(s, schedules);
     const matchesStatusApprove = selectedStatusApprove === 'ALL' || storeStatusApprove === selectedStatusApprove;
@@ -410,7 +406,7 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
             className="bg-slate-50 border border-slate-200 text-xs rounded-lg px-2.5 py-2 text-slate-700 font-bold focus:outline-none focus:border-amber-500"
           >
             <option value="ALL">Semua Zona Toko</option>
-            <option value="HITAM">🔴 Khusus Toko Zona Hitam ({stores.filter(s => s.isZonaHitam || s.zona?.toUpperCase().includes('HITAM') || s.keterangan?.toUpperCase().includes('ZONA HITAM')).length})</option>
+            <option value="HITAM">🔴 Khusus Toko Zona Hitam ({stores.filter(s => isStoreZonaHitam(s)).length})</option>
             <option value="NON_HITAM">🟢 Non Zona Hitam</option>
           </select>
 
@@ -553,12 +549,7 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
                     ? `Rp ${s.saldoToko.toLocaleString('id-ID')}` 
                     : (s.saldoToko ? `Rp ${s.saldoToko}` : '-');
 
-                  const isZonaHitam = Boolean(
-                    s.isZonaHitam ||
-                    s.zona?.toUpperCase().includes('HITAM') ||
-                    s.riskLevel === 'Tinggi' ||
-                    s.keterangan?.toUpperCase().includes('ZONA HITAM')
-                  );
+                  const isZonaHitam = isStoreZonaHitam(s);
 
                   return (
                     <tr 
