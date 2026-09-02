@@ -306,3 +306,51 @@ export function calculateLamaBekerja(joinDateStr: string, refDateStr?: string): 
     return '-';
   }
 }
+
+/**
+ * Detect smart month and year from active master dataset and current stores
+ * E.g. "MASTER JADWAL SEPTEMBER" or stores with soSeptember -> month '09', year '2026'
+ */
+export function detectSmartMonthAndYear(
+  datasets?: any[],
+  stores?: any[],
+  fallbackMonth?: string,
+  fallbackYear?: string
+): { month: string; year: string; source: 'active_dataset' | 'stores' | 'system_clock' } {
+  const now = new Date();
+  const defaultMonth = fallbackMonth || String(now.getMonth() + 1).padStart(2, '0');
+  const defaultYear = fallbackYear || String(now.getFullYear());
+
+  // 1. Check active dataset first
+  if (datasets && Array.isArray(datasets) && datasets.length > 0) {
+    const activeDataset = datasets.find(d => d.isActiveForScheduling) || datasets[0];
+    if (activeDataset) {
+      const textToSearch = `${activeDataset.title || ''} ${activeDataset.filename || ''} ${activeDataset.periodOrQuarter || ''} ${activeDataset.notes || ''}`.toLowerCase();
+      
+      // Match month keywords
+      for (const [key, mIndex] of Object.entries(INDO_MONTHS)) {
+        if (textToSearch.includes(key)) {
+          const detectedMonth = String(mIndex + 1).padStart(2, '0');
+          // Match year if present e.g. 2026 or 2025 or 2027
+          const yearMatch = textToSearch.match(/\b(20\d{2})\b/);
+          const detectedYear = yearMatch ? yearMatch[1] : defaultYear;
+          return { month: detectedMonth, year: detectedYear, source: 'active_dataset' };
+        }
+      }
+    }
+  }
+
+  // 2. Check stores column content
+  if (stores && Array.isArray(stores) && stores.length > 0) {
+    const hasSeptember = stores.some(s => s.soSeptember && s.soSeptember !== '-' && s.soSeptember !== '0' && !s.soSeptember.toLowerCase().includes('belum'));
+    if (hasSeptember) {
+      return { month: '09', year: defaultYear, source: 'stores' };
+    }
+    const hasAugust = stores.some(s => s.soAgustus && s.soAgustus !== '-' && s.soAgustus !== '0' && !s.soAgustus.toLowerCase().includes('belum'));
+    if (hasAugust) {
+      return { month: '08', year: defaultYear, source: 'stores' };
+    }
+  }
+
+  return { month: defaultMonth, year: defaultYear, source: 'system_clock' };
+}

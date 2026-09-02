@@ -23,7 +23,7 @@ interface NavbarProps {
   stores: Store[];
   searchQuery: string;
   setSearchQuery: (q: string) => void;
-  onResetData: (options?: { forceWipeCloudinary?: boolean }) => void;
+  onResetData: (options?: { forceWipeCloudinary?: boolean }) => void | Promise<any>;
   selectedMonth: string;
   setSelectedMonth: (m: string) => void;
   selectedYear: string;
@@ -35,6 +35,7 @@ interface NavbarProps {
   onRoleChangeRequest: (role: UserRole) => void;
   isMobileMenuOpen?: boolean;
   onToggleMobileMenu?: () => void;
+  activeDatasetTitle?: string;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -52,7 +53,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentRole,
   onRoleChangeRequest,
   isMobileMenuOpen,
-  onToggleMobileMenu
+  onToggleMobileMenu,
+  activeDatasetTitle
 }) => {
   const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
@@ -63,6 +65,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [resetConfirmText, setResetConfirmText] = useState('');
   const [resetError, setResetError] = useState('');
   const [resetSuccess, setResetSuccess] = useState('');
+  const [isSubmittingReset, setIsSubmittingReset] = useState(false);
 
   const handleExportAllStores = () => {
     const exportData = stores.map(s => ({
@@ -79,7 +82,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     exportToCSV('Master_Data_700Toko.csv', exportData);
   };
 
-  const handleConfirmReset = (e: React.FormEvent) => {
+  const handleConfirmReset = async (e: React.FormEvent) => {
     e.preventDefault();
     setResetError('');
     setResetSuccess('');
@@ -94,14 +97,21 @@ export const Navbar: React.FC<NavbarProps> = ({
       return;
     }
 
-    onResetData({ forceWipeCloudinary: true });
-    setResetSuccess('✅ Semua master data di LocalStorage, Firebase, & Cloudinary BERHASIL dibersihkan hingga 0!');
-    setTimeout(() => {
-      setIsResetModalOpen(false);
-      setResetPasswordInput('');
-      setResetConfirmText('');
-      setResetSuccess('');
-    }, 1500);
+    setIsSubmittingReset(true);
+    try {
+      await onResetData({ forceWipeCloudinary: true });
+      setResetSuccess('✅ Semua master data di LocalStorage, Firebase, & Cloudinary BERHASIL dibersihkan hingga 0!');
+      setTimeout(() => {
+        setIsResetModalOpen(false);
+        setResetPasswordInput('');
+        setResetConfirmText('');
+        setResetSuccess('');
+        setIsSubmittingReset(false);
+      }, 1500);
+    } catch (err: any) {
+      setResetError('Gagal melakukan reset: ' + (err?.message || err));
+      setIsSubmittingReset(false);
+    }
   };
 
   const currentRoleConfig = ROLE_CONFIGS[currentRole];
@@ -261,8 +271,9 @@ export const Navbar: React.FC<NavbarProps> = ({
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value)}
             className="bg-transparent text-slate-900 font-extrabold focus:outline-none cursor-pointer text-[11px] sm:text-xs"
+            title="Filter Bulan SO"
           >
-            <option value="ALL">Semua</option>
+            <option value="ALL">Semua Bln</option>
             <option value="01">Jan</option>
             <option value="02">Feb</option>
             <option value="03">Mar</option>
@@ -284,14 +295,21 @@ export const Navbar: React.FC<NavbarProps> = ({
             value={selectedYear}
             onChange={(e) => setSelectedYear(e.target.value)}
             className="bg-transparent text-slate-900 font-extrabold focus:outline-none cursor-pointer text-[11px] sm:text-xs"
+            title="Filter Tahun SO"
           >
-            <option value="ALL">Thn</option>
+            <option value="ALL">Semua Thn</option>
             <option value="2024">2024</option>
             <option value="2025">2025</option>
             <option value="2026">2026</option>
             <option value="2027">2027</option>
             <option value="2028">2028</option>
           </select>
+
+          {activeDatasetTitle && (
+            <span className="hidden xl:inline-flex items-center text-[10px] font-black bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-200 ml-1 whitespace-nowrap" title={`Acuan Master Aktif: ${activeDatasetTitle}`}>
+              Acuan: {activeDatasetTitle.replace(/^MASTER\s*(JADWAL)?\s*/i, '').slice(0, 14)}
+            </span>
+          )}
         </div>
 
         {/* Role Access Selector Dropdown */}

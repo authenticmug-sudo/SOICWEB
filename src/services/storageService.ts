@@ -428,6 +428,10 @@ function mergeAndSyncFirestoreWithLocal<T extends { id: string }>(
     })().catch(() => {});
   }
 
+  // Check reset timestamp constraint to prevent wiped data resurrection
+  const systemResetTime = Number(localStorage.getItem('spv_system_reset_timestamp') || '0');
+  const isHardCleared = localStorage.getItem(STORAGE_KEYS.CLEARED_SAMPLE_FLAG) === 'true';
+
   let localItems: T[] = [];
   try {
     const raw = localStorage.getItem(storageKey);
@@ -440,9 +444,18 @@ function mergeAndSyncFirestoreWithLocal<T extends { id: string }>(
   let deletedIds = getDeletedIdsSet(storageKey);
   const mergedMap = new Map<string, T>();
 
-  // 2. Add Firestore items unless marked deleted locally
+  // 2. Add Firestore items unless marked deleted locally or before hard reset
   for (const item of dedupedFsItems) {
     if (item && item.id) {
+      const itemTime = (item as any).updatedAt ? new Date((item as any).updatedAt).getTime() : ((item as any).createdAt ? new Date((item as any).createdAt).getTime() : 0);
+      if (isHardCleared && localItems.length === 0 && systemResetTime > 0 && itemTime > 0 && itemTime <= systemResetTime) {
+        // Pre-reset artifact; clean it from Firestore
+        if (!isFirestoreQuotaExceeded) {
+          deleteDoc(doc(db, collectionName, item.id)).catch(() => {});
+        }
+        continue;
+      }
+
       if (!deletedIds.has(item.id)) {
         mergedMap.set(item.id, item);
         cacheMap.set(item.id, JSON.stringify(item));
@@ -478,7 +491,10 @@ function mergeAndSyncFirestoreWithLocal<T extends { id: string }>(
   }
 
   // Final deduplication on merged list to guarantee zero duplicate keys
-  const { deduplicated: finalMergedList } = deduplicateEntityList(collectionName, Array.from(mergedMap.values()));
+  let { deduplicated: finalMergedList } = deduplicateEntityList(collectionName, Array.from(mergedMap.values()));
+  if (collectionName === 'master_toko_datasets') {
+    finalMergedList = normalizeSingleActiveDataset(finalMergedList as any) as any;
+  }
 
   // Save merged list to localStorage
   try {
@@ -1039,6 +1055,22 @@ export async function saveResults(results: SOResult[], isReplaceMode = false): P
   }
 }
 
+export function normalizeSingleActiveDataset(datasets: MasterTokoDataset[]): MasterTokoDataset[] {
+  if (!datasets || !Array.isArray(datasets) || datasets.length === 0) return [];
+  
+  // Find which dataset should be active:
+  // 1. First one with isActiveForScheduling === true, or if none, index 0
+  let activeIndex = datasets.findIndex(d => d.isActiveForScheduling === true);
+  if (activeIndex === -1 && datasets.length > 0) {
+    activeIndex = 0;
+  }
+  
+  return datasets.map((d, idx) => ({
+    ...d,
+    isActiveForScheduling: idx === activeIndex
+  }));
+}
+
 export function getStoredTeams(): SOTeam[] {
   const local = localStorage.getItem(STORAGE_KEYS.TEAMS);
   if (local) {
@@ -1048,6 +1080,9 @@ export function getStoredTeams(): SOTeam[] {
     } catch {
       // fallback
     }
+  }
+  if (localStorage.getItem(STORAGE_KEYS.CLEARED_SAMPLE_FLAG) === 'true') {
+    return [];
   }
   return INITIAL_TEAMS;
 }
@@ -1076,6 +1111,9 @@ export function getStoredPersonnel(): AuditorPersonnel[] {
       // fallback
     }
   }
+  if (localStorage.getItem(STORAGE_KEYS.CLEARED_SAMPLE_FLAG) === 'true') {
+    return [];
+  }
   return INITIAL_PERSONNEL;
 }
 
@@ -1103,6 +1141,9 @@ export function getStoredEquipment(): SOEquipment[] {
       // fallback
     }
   }
+  if (localStorage.getItem(STORAGE_KEYS.CLEARED_SAMPLE_FLAG) === 'true') {
+    return [];
+  }
   return INITIAL_EQUIPMENT;
 }
 
@@ -1129,6 +1170,9 @@ export function getStoredRepairLogs(): EquipmentRepairLog[] {
     } catch {
       // fallback
     }
+  }
+  if (localStorage.getItem(STORAGE_KEYS.CLEARED_SAMPLE_FLAG) === 'true') {
+    return [];
   }
   return INITIAL_REPAIR_LOGS;
 }
@@ -1207,7 +1251,7 @@ export function getStoredMasterTokoDatasets(): MasterTokoDataset[] {
   if (local) {
     try {
       const parsed = JSON.parse(local);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) return normalizeSingleActiveDataset(parsed);
     } catch {
       // fallback
     }
@@ -1216,15 +1260,16 @@ export function getStoredMasterTokoDatasets(): MasterTokoDataset[] {
 }
 
 export async function saveMasterTokoDatasets(datasets: MasterTokoDataset[], isReplaceMode = false): Promise<void> {
-  untrackDeletedIdsForItems(STORAGE_KEYS.MASTER_TOKO_DATASETS, datasets.map(d => d.id));
-  localStorage.setItem(STORAGE_KEYS.MASTER_TOKO_DATASETS, JSON.stringify(datasets));
-  notifyDataChanged(STORAGE_KEYS.MASTER_TOKO_DATASETS, datasets);
-  uploadRawJsonToCloudinary(datasets, 'Master_Toko_Datasets', 'SO Sistem IC BALI/Master Toko').catch(() => {});
+  const normalized = normalizeSingleActiveDataset(datasets);
+  untrackDeletedIdsForItems(STORAGE_KEYS.MASTER_TOKO_DATASETS, normalized.map(d => d.id));
+  localStorage.setItem(STORAGE_KEYS.MASTER_TOKO_DATASETS, JSON.stringify(normalized));
+  notifyDataChanged(STORAGE_KEYS.MASTER_TOKO_DATASETS, normalized);
+  uploadRawJsonToCloudinary(normalized, 'Master_Toko_Datasets', 'SO Sistem IC BALI/Master Toko').catch(() => {});
   if (!isFirestoreQuotaExceeded) {
     if (isReplaceMode) {
-      replaceFirestoreCollection('master_toko_datasets', datasets).catch(() => {});
+      replaceFirestoreCollection('master_toko_datasets', normalized).catch(() => {});
     } else {
-      syncFirestoreCollection('master_toko_datasets', datasets).catch(() => {});
+      syncFirestoreCollection('master_toko_datasets', normalized).catch(() => {});
     }
   }
 }
@@ -1478,10 +1523,27 @@ export async function syncCollectionFromCloudinary<T extends { id: string }>(
       return null;
     }
 
+    // Check reset timestamp constraint to prevent wiped data resurrection
+    const systemResetTime = Number(localStorage.getItem('spv_system_reset_timestamp') || '0');
+    const isHardCleared = localStorage.getItem(STORAGE_KEYS.CLEARED_SAMPLE_FLAG) === 'true';
+
     deletedIds = getDeletedIdsSet(storageKey);
 
     // Filter out locally deleted IDs from Cloudinary data
-    const validCloudinaryItems = cloudinaryData.filter(item => item && item.id && !deletedIds.has(item.id));
+    const validCloudinaryItems = cloudinaryData.filter(item => {
+      if (!item || !item.id || deletedIds.has(item.id)) return false;
+      if (isHardCleared && localItems.length === 0 && systemResetTime > 0) {
+        const itemTime = (item as any).updatedAt ? new Date((item as any).updatedAt).getTime() : ((item as any).createdAt ? new Date((item as any).createdAt).getTime() : 0);
+        if (itemTime > 0 && itemTime <= systemResetTime) return false;
+      }
+      return true;
+    });
+
+    if (isHardCleared && localItems.length === 0 && validCloudinaryItems.length === 0) {
+      // All cloudinary items were pre-reset; re-upload empty backup
+      uploadRawJsonToCloudinary([], category, folderSubpath, true).catch(() => {});
+      return [];
+    }
 
     // Merge map indexed by item ID
     const mergedMap = new Map<string, T>();
@@ -1520,7 +1582,10 @@ export async function syncCollectionFromCloudinary<T extends { id: string }>(
       }
     }
 
-    const mergedList = Array.from(mergedMap.values());
+    let mergedList = Array.from(mergedMap.values());
+    if (storageKey === STORAGE_KEYS.MASTER_TOKO_DATASETS) {
+      mergedList = normalizeSingleActiveDataset(mergedList as any) as any;
+    }
     localStorage.setItem(storageKey, JSON.stringify(mergedList));
     notifyDataChanged(storageKey, mergedList);
 
@@ -1598,23 +1663,26 @@ export async function clearAllData(options?: { forceWipeCloudinary?: boolean }):
   equipment: SOEquipment[];
   repairLogs: EquipmentRepairLog[];
 }> {
-  // 1. Clear LocalStorage completely
+  const resetTimestamp = Date.now();
+  
+  // 1. Clear LocalStorage completely and record reset timestamp
   localStorage.clear();
   localStorage.setItem(STORAGE_KEYS.CLEARED_SAMPLE_FLAG, 'true');
+  localStorage.setItem('spv_system_reset_timestamp', String(resetTimestamp));
   
   // Reset all local arrays to []
-  await saveStores([]);
-  await saveSchedules([]);
-  await saveResults([]);
-  await saveTeams([]);
-  await savePersonnel([]);
-  await saveEquipment([]);
-  await saveRepairLogs([]);
-  await saveUniformRecords([]);
-  await saveOnCallPersonnel([]);
-  await saveMasterTokoDatasets([]);
+  await saveStores([], true);
+  await saveSchedules([], true);
+  await saveResults([], true);
+  await saveTeams([], true);
+  await savePersonnel([], true);
+  await saveEquipment([], true);
+  await saveRepairLogs([], true);
+  await saveUniformRecords([], true);
+  await saveOnCallPersonnel([], true);
+  await saveMasterTokoDatasets([], true);
 
-  // 2. Wipe all collections from Firebase Firestore if connected
+  // 2. Wipe all collections and manifests from Firebase Firestore if connected
   if (!isFirestoreQuotaExceeded) {
     const collectionsToWipe = [
       'stores',
@@ -1627,14 +1695,21 @@ export async function clearAllData(options?: { forceWipeCloudinary?: boolean }):
       'uniform_records',
       'oncall_personnel',
       'master_toko_datasets',
-      'deleted_ids'
+      'deleted_ids',
+      '_metadata_manifests',
+      'excel_backups'
     ];
     for (const colName of collectionsToWipe) {
       try {
         const snapshot = await getDocs(collection(db, colName));
         if (snapshot && !snapshot.empty) {
-          const deletePromises = snapshot.docs.map(docSnap => deleteDoc(doc(db, colName, docSnap.id)));
-          await Promise.all(deletePromises);
+          const docs = snapshot.docs;
+          // Delete in batches of 300
+          for (let i = 0; i < docs.length; i += 300) {
+            const batch = writeBatch(db);
+            docs.slice(i, i + 300).forEach(d => batch.delete(doc(db, colName, d.id)));
+            await batch.commit();
+          }
         }
       } catch (err) {
         console.warn(`Firestore wipe collection notice (${colName}):`, err);
@@ -1642,26 +1717,25 @@ export async function clearAllData(options?: { forceWipeCloudinary?: boolean }):
     }
   }
 
-  // 3. Wipe Cloudinary Master JSON files if forceWipeCloudinary is requested (Super Admin Reset)
-  if (options?.forceWipeCloudinary) {
-    const cloudinaryMasterCategories = [
-      { cat: 'Master_Stores', path: 'SO Sistem IC BALI/Master Toko' },
-      { cat: 'Master_Schedules', path: 'SO Sistem IC BALI/Schedules' },
-      { cat: 'Master_Results', path: 'SO Sistem IC BALI/Results' },
-      { cat: 'Master_Teams', path: 'SO Sistem IC BALI/Teams' },
-      { cat: 'Master_Personil', path: 'SO Sistem IC BALI/Master Personil' },
-      { cat: 'Master_Alat', path: 'SO Sistem IC BALI/Master Alat' },
-      { cat: 'Master_RepairLogs', path: 'SO Sistem IC BALI/Repair Logs' },
-      { cat: 'Backup_Seragam', path: 'SO Sistem IC BALI/Backup_Seragam' },
-      { cat: 'Master_Toko_Datasets', path: 'SO Sistem IC BALI/Master Toko' }
-    ];
+  // 3. Wipe Cloudinary Master JSON files
+  const cloudinaryMasterCategories = [
+    { cat: 'Master_Stores', path: 'SO Sistem IC BALI/Master Toko' },
+    { cat: 'Master_Schedules', path: 'SO Sistem IC BALI/Schedules' },
+    { cat: 'Master_Results', path: 'SO Sistem IC BALI/Results' },
+    { cat: 'Master_Teams', path: 'SO Sistem IC BALI/Teams' },
+    { cat: 'Master_Personil', path: 'SO Sistem IC BALI/Master Personil' },
+    { cat: 'Master_Alat', path: 'SO Sistem IC BALI/Master Alat' },
+    { cat: 'Master_RepairLogs', path: 'SO Sistem IC BALI/Repair Logs' },
+    { cat: 'Backup_Seragam', path: 'SO Sistem IC BALI/Backup_Seragam' },
+    { cat: 'Backup_OnCall', path: 'SO Sistem IC BALI/OnCall_Personnel' },
+    { cat: 'Master_Toko_Datasets', path: 'SO Sistem IC BALI/Master Toko' }
+  ];
 
-    await Promise.all(
-      cloudinaryMasterCategories.map(item =>
-        uploadRawJsonToCloudinary([], item.cat, item.path, true).catch(() => {})
-      )
-    );
-  }
+  await Promise.all(
+    cloudinaryMasterCategories.map(item =>
+      uploadRawJsonToCloudinary([], item.cat, item.path, true).catch(() => {})
+    )
+  );
 
   return { stores: [], schedules: [], results: [], teams: [], personnel: [], equipment: [], repairLogs: [] };
 }
