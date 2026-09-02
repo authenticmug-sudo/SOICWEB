@@ -24,14 +24,7 @@ import {
   ShieldAlert,
   CalendarDays,
   RotateCcw,
-  X,
-  ChevronDown,
-  ChevronUp,
-  SlidersHorizontal,
-  CheckSquare,
-  AlertTriangle,
-  Flame,
-  ArrowUpDown
+  X
 } from 'lucide-react';
 import { SOSchedule, Store, SOTeam, RegionArea, UserRole, AuditorPersonnel } from '../../types/stockOpname';
 import { REGIONS } from '../../data/initialData';
@@ -39,7 +32,6 @@ import { getStatusBadgeClass, formatDateIndo, formatRupiah, parseSmartDate, form
 import { getDayNameIndo } from '../../utils/storeSyncUtils';
 import { exportToCSV } from '../../services/storageService';
 import { KorlapDashboard } from './KorlapDashboard';
-import { KorlapAvatarBar } from './KorlapAvatarBar';
 import { ConfirmDeleteModal } from '../Common/ConfirmDeleteModal';
 import { ToastNotification } from '../Common/ToastNotification';
 import { 
@@ -107,7 +99,6 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
   const [approvalTab, setApprovalTab] = useState<'SELESAI' | 'PINDAH' | 'GAGAL'>('SELESAI');
   const [scheduleToDelete, setScheduleToDelete] = useState<SOSchedule | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [isFilterExpanded, setIsFilterExpanded] = useState<boolean>(false);
 
   // Main Korlap groups from sheet JADWAL & PERSONIL
   const primaryKorlaps = useMemo(() => {
@@ -265,54 +256,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
 
       return matchesSearch && matchesRegion && matchesStatus && matchesGroup && matchesDate;
     });
-  }, [schedules, searchQuery, selectedRegion, selectedStatus, selectedGroupKorlap, selectedYear, selectedMonth, selectedDay, selectedSpecificDate, stores]);
-
-  // Dashboard Stats Calculations
-  const dashboardStats = useMemo(() => {
-    const total = schedules.length;
-    const filtered = filteredSchedules.length;
-    let scheduled = 0;
-    let inProgress = 0;
-    let completed = 0;
-    let kendala = 0;
-    let zonaHitam = 0;
-
-    filteredSchedules.forEach(s => {
-      if (s.status === 'Terjadwal') scheduled++;
-      else if (s.status === 'Proses SO' || s.status === 'Menunggu Rekapan') inProgress++;
-      else if (s.status === 'Selesai' || s.spvApprovalStatus === 'Disetujui SPV') completed++;
-      else if (s.status === 'Gagal SO' || s.status === 'Pindah Toko') kendala++;
-
-      const matchingStore = stores.find(st => st.code === s.storeCode || st.id === s.storeId);
-      const zVal = (s.zona || matchingStore?.zona || '').toUpperCase();
-      if (!zVal.includes('NON') && !zVal.includes('BUKAN') && !zVal.includes('TIDAK') && (zVal.includes('HITAM') || matchingStore?.isZonaHitam === true)) {
-        zonaHitam++;
-      }
-    });
-
-    return { total, filtered, scheduled, inProgress, completed, kendala, zonaHitam };
-  }, [schedules, filteredSchedules, stores]);
-
-  // Active filters count for notification badge
-  const activeFiltersCount = useMemo(() => {
-    let count = 0;
-    if (selectedGroupKorlap !== 'ALL') count++;
-    if (selectedRegion !== 'ALL') count++;
-    if (selectedStatus !== 'ALL') count++;
-    if (selectedYear !== 'ALL') count++;
-    if (selectedMonth !== 'ALL') count++;
-    if (selectedDay !== 'ALL') count++;
-    if (selectedSpecificDate) count++;
-    return count;
-  }, [selectedGroupKorlap, selectedRegion, selectedStatus, selectedYear, selectedMonth, selectedDay, selectedSpecificDate]);
-
-  const handleResetAllFilters = () => {
-    setSearchQuery('');
-    setSelectedGroupKorlap('ALL');
-    setSelectedRegion('ALL');
-    setSelectedStatus('ALL');
-    handleResetDateFilters();
-  };
+  }, [schedules, searchQuery, selectedRegion, selectedStatus, selectedGroupKorlap, selectedYear, selectedMonth, selectedDay, selectedSpecificDate]);
 
   const getAccurateRegionForSchedule = (s: SOSchedule): string => {
     const matchingStore = stores.find(st => st.code === s.storeCode || st.id === s.storeId);
@@ -349,9 +293,9 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
   return (
     <div className="space-y-4">
       
-      {/* 1. Header Bar */}
-      <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+      {/* Header Bar */}
+      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-base sm:text-lg font-black text-slate-900 flex items-center gap-2">
@@ -377,7 +321,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
             <p className="text-xs text-slate-500 mt-0.5">
               {activeRoleContext === 'OFFICER' 
                 ? 'Portal Eksekusi & Monitoring Lapangan Hari-H & H-1 untuk Korlap & Auditor SO'
-                : 'Struktur Penjadwalan terhubung langsung dengan Sheet Jadwal & Master Toko Bali'}
+                : 'Struktur Penjadwalan terhubung langsung dengan Sheet Jadwal & Master Toko Bali (VLOOKUP IDM)'}
             </p>
           </div>
 
@@ -416,147 +360,23 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
         </div>
       </div>
 
-      {/* 2. DASHBOARD METRICS STRIP (DI ATAS - COMPACT & RESPONSIVE) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3">
-        
-        {/* Metric 1: Total Jadwal */}
-        <div 
-          onClick={() => setSelectedStatus('ALL')}
-          className="bg-white p-3 sm:p-3.5 rounded-2xl border border-slate-200/90 shadow-2xs cursor-pointer hover:border-indigo-300 hover:shadow-xs transition"
-        >
-          <div className="flex items-center justify-between text-slate-500 text-[11px] font-bold">
-            <span>Total Jadwal</span>
-            <Building2 className="w-3.5 h-3.5 text-indigo-600" />
-          </div>
-          <div className="mt-1 flex items-baseline gap-1.5">
-            <span className="text-xl sm:text-2xl font-black text-slate-900 font-mono">
-              {dashboardStats.filtered}
-            </span>
-            <span className="text-[10px] text-slate-400 font-medium">
-              / {dashboardStats.total} total
-            </span>
-          </div>
-          <div className="text-[10px] text-indigo-600 font-semibold mt-0.5 truncate">
-            {selectedGroupKorlap === 'ALL' ? 'Semua Korlap' : `Korlap: ${selectedGroupKorlap}`}
-          </div>
-        </div>
-
-        {/* Metric 2: Terjadwal & Dalam Proses */}
-        <div 
-          onClick={() => setSelectedStatus('Terjadwal')}
-          className="bg-white p-3 sm:p-3.5 rounded-2xl border border-blue-200/80 shadow-2xs cursor-pointer hover:border-blue-400 hover:shadow-xs transition"
-        >
-          <div className="flex items-center justify-between text-blue-700 text-[11px] font-bold">
-            <span>Terjadwal / Proses</span>
-            <Clock className="w-3.5 h-3.5 text-blue-600" />
-          </div>
-          <div className="mt-1 flex items-baseline gap-1.5">
-            <span className="text-xl sm:text-2xl font-black text-blue-900 font-mono">
-              {dashboardStats.scheduled + dashboardStats.inProgress}
-            </span>
-            <span className="text-[10px] text-blue-600/80 font-medium">toko</span>
-          </div>
-          <div className="text-[10px] text-slate-500 font-medium mt-0.5">
-            {dashboardStats.inProgress > 0 ? `${dashboardStats.inProgress} sedang proses SO` : 'Siap audit lapangan'}
-          </div>
-        </div>
-
-        {/* Metric 3: Selesai SO */}
-        <div 
-          onClick={() => setSelectedStatus('Selesai')}
-          className="bg-white p-3 sm:p-3.5 rounded-2xl border border-emerald-200/80 shadow-2xs cursor-pointer hover:border-emerald-400 hover:shadow-xs transition"
-        >
-          <div className="flex items-center justify-between text-emerald-700 text-[11px] font-bold">
-            <span>Selesai SO</span>
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-          </div>
-          <div className="mt-1 flex items-baseline gap-1.5">
-            <span className="text-xl sm:text-2xl font-black text-emerald-800 font-mono">
-              {dashboardStats.completed}
-            </span>
-            <span className="text-[10px] text-emerald-600 font-medium">toko</span>
-          </div>
-          <div className="text-[10px] text-emerald-700 font-medium mt-0.5">
-            {dashboardStats.filtered > 0 ? `${Math.round((dashboardStats.completed / dashboardStats.filtered) * 100)}% selesai` : '0%'}
-          </div>
-        </div>
-
-        {/* Metric 4: Pindah & Gagal SO (Kendala) */}
-        <div 
-          onClick={() => setSelectedStatus(dashboardStats.kendala > 0 ? 'Gagal SO' : 'ALL')}
-          className="bg-white p-3 sm:p-3.5 rounded-2xl border border-rose-200/80 shadow-2xs cursor-pointer hover:border-rose-400 hover:shadow-xs transition"
-        >
-          <div className="flex items-center justify-between text-rose-700 text-[11px] font-bold">
-            <span>Kendala / Gagal</span>
-            <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
-          </div>
-          <div className="mt-1 flex items-baseline gap-1.5">
-            <span className="text-xl sm:text-2xl font-black text-rose-800 font-mono">
-              {dashboardStats.kendala}
-            </span>
-            <span className="text-[10px] text-rose-600 font-medium">toko</span>
-          </div>
-          <div className="text-[10px] text-rose-600 font-medium mt-0.5">
-            {dashboardStats.kendala > 0 ? 'Perlu tindakan SPV' : 'Semua lancar'}
-          </div>
-        </div>
-
-        {/* Metric 5: Zona Hitam */}
-        <div 
-          className="col-span-2 sm:col-span-1 bg-slate-900 p-3 sm:p-3.5 rounded-2xl border border-slate-800 shadow-2xs text-white"
-        >
-          <div className="flex items-center justify-between text-rose-300 text-[11px] font-bold">
-            <span className="flex items-center gap-1">
-              <Flame className="w-3.5 h-3.5 text-rose-400" />
-              Zona Hitam
-            </span>
-            <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
-          </div>
-          <div className="mt-1 flex items-baseline gap-1.5">
-            <span className="text-xl sm:text-2xl font-black text-white font-mono">
-              {dashboardStats.zonaHitam}
-            </span>
-            <span className="text-[10px] text-slate-400 font-medium">toko</span>
-          </div>
-          <div className="text-[10px] text-rose-300 font-medium mt-0.5">
-            Pengawasan ketat
-          </div>
-        </div>
-
-      </div>
-
-      {/* 3. KORLAP AVATAR SELECTOR BAR (INTERAKTIF & SIMPLE) */}
-      <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200/90 shadow-xs">
-        <KorlapAvatarBar
-          schedules={schedules}
-          stores={stores}
-          personnel={personnel}
-          selectedKorlap={selectedGroupKorlap}
-          onSelectKorlap={(korlapName) => {
-            setSelectedGroupKorlap(korlapName);
-          }}
-        />
-      </div>
-
-      {/* 4. COLLAPSIBLE FILTER & ACTION TOOLBAR */}
+      {/* Filter Toolbar & Sub-Menu Navigation */}
       <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200/90 shadow-xs space-y-3">
         
-        {/* Top Search & Toggle Row */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
           
           {/* Search Box */}
-          <div className="relative flex-1">
+          <div className="relative flex-1 max-w-md">
             <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-indigo-500" />
             <input
               type="text"
               placeholder="Cari toko, IDM, personil, group korlap, zona..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-300 hover:border-slate-400 focus:border-indigo-500 focus:bg-white rounded-xl text-xs sm:text-sm pl-10 pr-9 py-2.5 text-slate-900 font-medium placeholder-slate-400 transition focus:outline-none focus:ring-2 focus:ring-indigo-100"
+              className="w-full bg-slate-50 border border-slate-300 hover:border-slate-400 focus:border-indigo-500 focus:bg-white rounded-xl text-xs sm:text-sm pl-10 pr-4 py-2.5 text-slate-900 font-medium placeholder-slate-400 transition focus:outline-none focus:ring-2 focus:ring-indigo-100"
             />
             {searchQuery && (
               <button
-                type="button"
                 onClick={() => setSearchQuery('')}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 hover:text-slate-700 bg-slate-200/60 w-5 h-5 rounded-full flex items-center justify-center"
               >
@@ -565,38 +385,134 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
             )}
           </div>
 
-          {/* Quick Filter Pill Buttons + Toggle Button */}
-          <div className="flex items-center gap-2 flex-wrap">
+          {/* Group Korlap, Region & Status Dropdowns */}
+          <div className="flex flex-wrap items-center gap-2">
             
-            {/* Toggle Button for Collapsible Advanced Filters */}
-            <button
-              type="button"
-              onClick={() => setIsFilterExpanded(!isFilterExpanded)}
-              className={`px-3 py-2 rounded-xl text-xs font-bold border transition flex items-center gap-1.5 shadow-2xs ${
-                isFilterExpanded || activeFiltersCount > 0
-                  ? 'bg-indigo-50 text-indigo-800 border-indigo-300'
-                  : 'bg-slate-50 text-slate-700 border-slate-300 hover:bg-slate-100'
-              }`}
+            {/* Group Korlap Filter */}
+            <select
+              value={selectedGroupKorlap}
+              onChange={(e) => setSelectedGroupKorlap(e.target.value)}
+              className="bg-slate-50 border border-indigo-200 hover:border-indigo-400 text-xs sm:text-sm font-bold rounded-xl px-3 py-2 text-indigo-950 focus:outline-none focus:border-indigo-500 cursor-pointer transition"
             >
-              <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-600" />
-              <span>{isFilterExpanded ? 'Sembunyikan Filter' : 'Opsi Filter'}</span>
-              {activeFiltersCount > 0 && (
-                <span className="bg-indigo-600 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full">
-                  {activeFiltersCount}
-                </span>
-              )}
-              {isFilterExpanded ? (
-                <ChevronUp className="w-3.5 h-3.5 ml-0.5 text-indigo-600" />
-              ) : (
-                <ChevronDown className="w-3.5 h-3.5 ml-0.5 text-slate-400" />
-              )}
-            </button>
+              <option value="ALL">🎯 Semua Group Korlap ({primaryKorlaps.length})</option>
+              {primaryKorlaps.map(k => (
+                <option key={k} value={k}>Group: {k}</option>
+              ))}
+            </select>
 
-            {/* Quick Date Shortcuts */}
+            <select
+              value={selectedRegion}
+              onChange={(e) => setSelectedRegion(e.target.value)}
+              className="bg-slate-50 border border-slate-300 hover:border-slate-400 text-xs sm:text-sm font-bold rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer transition"
+            >
+              <option value="ALL">📍 Semua Kabupaten ({availableRegions.length})</option>
+              {availableRegions.map(r => (
+                <option key={r} value={r}>{r}</option>
+              ))}
+            </select>
+
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+              className="bg-slate-50 border border-slate-300 hover:border-slate-400 text-xs sm:text-sm font-bold rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer transition"
+            >
+              <option value="ALL">🏷️ Semua Status</option>
+              <option value="Terjadwal">Terjadwal</option>
+              <option value="Proses SO">Proses SO</option>
+              <option value="Menunggu Rekapan">Menunggu Rekapan</option>
+              <option value="Selesai">Selesai</option>
+              <option value="Gagal SO">Gagal SO</option>
+              <option value="Pindah Toko">Pindah Toko</option>
+            </select>
+          </div>
+
+        </div>
+
+        {/* Date, Month, Year Filter Row */}
+        <div className="pt-2.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2.5">
+          
+          {/* Left: Date Selector Dropdowns */}
+          <div className="flex flex-wrap items-center gap-2">
+            
+            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-slate-100/80 px-2.5 py-1.5 rounded-xl border border-slate-200 shrink-0">
+              <CalendarDays className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Filter Waktu SO:</span>
+            </div>
+
+            {/* Year Selector */}
+            <select
+              value={selectedYear}
+              onChange={(e) => {
+                setSelectedYear(e.target.value);
+                setSelectedSpecificDate('');
+              }}
+              className="bg-slate-50 border border-slate-300 hover:border-slate-400 text-xs font-bold rounded-xl px-2.5 py-1.5 text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer transition"
+              title="Filter Berdasarkan Tahun"
+            >
+              <option value="ALL">🗓️ Semua Tahun</option>
+              {availableYears.map(y => (
+                <option key={y} value={y}>Tahun {y}</option>
+              ))}
+            </select>
+
+            {/* Month Selector */}
+            <select
+              value={selectedMonth}
+              onChange={(e) => {
+                setSelectedMonth(e.target.value);
+                setSelectedSpecificDate('');
+              }}
+              className="bg-slate-50 border border-slate-300 hover:border-slate-400 text-xs font-bold rounded-xl px-2.5 py-1.5 text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer transition"
+              title="Filter Berdasarkan Bulan"
+            >
+              {monthOptions.map(m => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
+
+            {/* Day Selector (1-31) */}
+            <select
+              value={selectedDay}
+              onChange={(e) => {
+                setSelectedDay(e.target.value);
+                setSelectedSpecificDate('');
+              }}
+              className="bg-slate-50 border border-slate-300 hover:border-slate-400 text-xs font-bold rounded-xl px-2.5 py-1.5 text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer transition"
+              title="Filter Berdasarkan Tanggal (1-31)"
+            >
+              <option value="ALL">📅 Semua Tanggal (1-31)</option>
+              {dayOptions.map(d => (
+                <option key={d.value} value={d.value}>{d.label}</option>
+              ))}
+            </select>
+
+            {/* Specific Exact Date Picker */}
+            <div className="relative flex items-center" title="Pilih Tanggal Spesifik (Kalender)">
+              <input
+                type="date"
+                value={selectedSpecificDate}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSelectedSpecificDate(val);
+                  if (val) {
+                    const [y, m, d] = val.split('-');
+                    setSelectedYear(y || 'ALL');
+                    setSelectedMonth(m || 'ALL');
+                    setSelectedDay(d || 'ALL');
+                  }
+                }}
+                className="bg-slate-50 border border-slate-300 hover:border-slate-400 text-xs font-semibold rounded-xl px-2.5 py-1.5 text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer transition"
+              />
+            </div>
+
+          </div>
+
+          {/* Right: Quick shortcuts & Reset */}
+          <div className="flex items-center gap-1.5 flex-wrap">
             <button
               type="button"
               onClick={handleSetToday}
-              className="px-2.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 transition shrink-0"
+              className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl border border-indigo-200 transition"
             >
               Hari Ini
             </button>
@@ -608,273 +524,45 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                 setSelectedMonth('09');
                 setSelectedDay('ALL');
               }}
-              className="px-2.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold rounded-xl border border-purple-200 transition shrink-0"
+              className="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold rounded-xl border border-purple-200 transition"
             >
               Sep 2026
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedSpecificDate('');
+                setSelectedYear('2026');
+                setSelectedMonth('08');
+                setSelectedDay('ALL');
+              }}
+              className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 transition"
+            >
+              Ags 2026
+            </button>
 
-            {activeFiltersCount > 0 && (
+            {isDateFilterActive && (
               <button
                 type="button"
-                onClick={handleResetAllFilters}
-                className="px-2.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-xl border border-rose-200 transition flex items-center gap-1 shrink-0"
-                title="Reset semua filter"
+                onClick={handleResetDateFilters}
+                className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-xl border border-rose-200 transition flex items-center gap-1"
+                title="Reset filter tanggal"
               >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Reset</span>
+                <X className="w-3.5 h-3.5" />
+                <span>Reset Tanggal</span>
               </button>
             )}
           </div>
 
         </div>
 
-        {/* Active Filter Chips (Always visible when active for quick feedback) */}
-        {activeFiltersCount > 0 && (
-          <div className="flex items-center gap-1.5 flex-wrap pt-1 text-[11px]">
-            <span className="text-slate-400 font-medium">Filter aktif:</span>
-            
-            {selectedGroupKorlap !== 'ALL' && (
-              <span className="bg-indigo-50 border border-indigo-200 text-indigo-800 font-bold px-2 py-0.5 rounded-lg flex items-center gap-1">
-                Korlap: {primaryKorlaps.find(k => k === selectedGroupKorlap) || selectedGroupKorlap}
-                <button type="button" onClick={() => setSelectedGroupKorlap('ALL')} className="hover:text-rose-600 font-black">×</button>
-              </span>
-            )}
-
-            {selectedRegion !== 'ALL' && (
-              <span className="bg-slate-100 border border-slate-200 text-slate-800 font-bold px-2 py-0.5 rounded-lg flex items-center gap-1">
-                Wilayah: {selectedRegion}
-                <button type="button" onClick={() => setSelectedRegion('ALL')} className="hover:text-rose-600 font-black">×</button>
-              </span>
-            )}
-
-            {selectedStatus !== 'ALL' && (
-              <span className="bg-slate-100 border border-slate-200 text-slate-800 font-bold px-2 py-0.5 rounded-lg flex items-center gap-1">
-                Status: {selectedStatus}
-                <button type="button" onClick={() => setSelectedStatus('ALL')} className="hover:text-rose-600 font-black">×</button>
-              </span>
-            )}
-
-            {isDateFilterActive && (
-              <span className="bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold px-2 py-0.5 rounded-lg flex items-center gap-1">
-                <CalendarDays className="w-3 h-3 text-indigo-600" />
-                <span>
-                  {selectedSpecificDate 
-                    ? formatDateIndo(selectedSpecificDate)
-                    : `${selectedDay !== 'ALL' ? `Tgl ${parseInt(selectedDay)} ` : ''}${selectedMonth !== 'ALL' ? `${monthOptions.find(m => m.value === selectedMonth)?.label.split(' - ')[1]} ` : ''}${selectedYear !== 'ALL' ? selectedYear : ''}`
-                  }
-                </span>
-                <button type="button" onClick={handleResetDateFilters} className="hover:text-rose-600 font-black">×</button>
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* Collapsible Advanced Filters Content */}
-        {isFilterExpanded && (
-          <div className="pt-3 border-t border-slate-100 space-y-3 animate-fadeIn">
-            
-            {/* Dropdown Filters Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-              
-              {/* Group Korlap Dropdown */}
-              <div>
-                <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                  🎯 Group Korlap:
-                </label>
-                <select
-                  value={selectedGroupKorlap}
-                  onChange={(e) => setSelectedGroupKorlap(e.target.value)}
-                  className="w-full bg-slate-50 border border-indigo-200 hover:border-indigo-400 text-xs font-bold rounded-xl px-3 py-2 text-indigo-950 focus:outline-none focus:border-indigo-500 cursor-pointer transition"
-                >
-                  <option value="ALL">Semua Group Korlap ({primaryKorlaps.length})</option>
-                  {primaryKorlaps.map(k => (
-                    <option key={k} value={k}>Group: {k}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Region / Kabupaten */}
-              <div>
-                <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                  📍 Kabupaten / Wilayah:
-                </label>
-                <select
-                  value={selectedRegion}
-                  onChange={(e) => setSelectedRegion(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 hover:border-slate-400 text-xs font-bold rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer transition"
-                >
-                  <option value="ALL">Semua Kabupaten ({availableRegions.length})</option>
-                  {availableRegions.map(r => (
-                    <option key={r} value={r}>{r}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Status SO */}
-              <div>
-                <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                  🏷️ Status Audit SO:
-                </label>
-                <select
-                  value={selectedStatus}
-                  onChange={(e) => setSelectedStatus(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 hover:border-slate-400 text-xs font-bold rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer transition"
-                >
-                  <option value="ALL">Semua Status</option>
-                  <option value="Terjadwal">Terjadwal</option>
-                  <option value="Proses SO">Proses SO</option>
-                  <option value="Menunggu Rekapan">Menunggu Rekapan</option>
-                  <option value="Selesai">Selesai</option>
-                  <option value="Gagal SO">Gagal SO</option>
-                  <option value="Pindah Toko">Pindah Toko</option>
-                </select>
-              </div>
-
-            </div>
-
-            {/* Date / Month / Day Selection Row */}
-            <div className="pt-2.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2.5">
-              
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-slate-100 px-2.5 py-1.5 rounded-xl border border-slate-200 shrink-0">
-                  <CalendarDays className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>Waktu SO:</span>
-                </div>
-
-                <select
-                  value={selectedYear}
-                  onChange={(e) => {
-                    setSelectedYear(e.target.value);
-                    setSelectedSpecificDate('');
-                  }}
-                  className="bg-slate-50 border border-slate-300 hover:border-slate-400 text-xs font-bold rounded-xl px-2.5 py-1.5 text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer transition"
-                >
-                  <option value="ALL">Semua Tahun</option>
-                  {availableYears.map(y => (
-                    <option key={y} value={y}>Tahun {y}</option>
-                  ))}
-                </select>
-
-                <select
-                  value={selectedMonth}
-                  onChange={(e) => {
-                    setSelectedMonth(e.target.value);
-                    setSelectedSpecificDate('');
-                  }}
-                  className="bg-slate-50 border border-slate-300 hover:border-slate-400 text-xs font-bold rounded-xl px-2.5 py-1.5 text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer transition"
-                >
-                  {monthOptions.map(m => (
-                    <option key={m.value} value={m.value}>{m.label}</option>
-                  ))}
-                </select>
-
-                <select
-                  value={selectedDay}
-                  onChange={(e) => {
-                    setSelectedDay(e.target.value);
-                    setSelectedSpecificDate('');
-                  }}
-                  className="bg-slate-50 border border-slate-300 hover:border-slate-400 text-xs font-bold rounded-xl px-2.5 py-1.5 text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer transition"
-                >
-                  <option value="ALL">Semua Tgl (1-31)</option>
-                  {dayOptions.map(d => (
-                    <option key={d.value} value={d.value}>{d.label}</option>
-                  ))}
-                </select>
-
-                <input
-                  type="date"
-                  value={selectedSpecificDate}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setSelectedSpecificDate(val);
-                    if (val) {
-                      const [y, m, d] = val.split('-');
-                      setSelectedYear(y || 'ALL');
-                      setSelectedMonth(m || 'ALL');
-                      setSelectedDay(d || 'ALL');
-                    }
-                  }}
-                  className="bg-slate-50 border border-slate-300 hover:border-slate-400 text-xs font-semibold rounded-xl px-2.5 py-1.5 text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer transition"
-                  title="Pilih tanggal spesifik dari kalender"
-                />
-              </div>
-
-              {/* Collapse Button */}
-              <button
-                type="button"
-                onClick={() => setIsFilterExpanded(false)}
-                className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 py-1 px-2 rounded-lg hover:bg-indigo-50 transition"
-              >
-                <ChevronUp className="w-3.5 h-3.5" />
-                <span>Tutup Panel Filter</span>
-              </button>
-            </div>
-
-            {/* Action Buttons inside Collapsible */}
-            <div className="pt-2.5 border-t border-slate-100 grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2">
-              {onTwoWaySync && (
-                <button
-                  onClick={() => {
-                    onTwoWaySync();
-                    setToastMessage('Sinkronisasi 2-Arah Master Toko Bali & Sheet Jadwal Berhasil!');
-                  }}
-                  className="w-full sm:w-auto px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-2xs"
-                >
-                  <RefreshCw className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>2-Way Sync</span>
-                </button>
-              )}
-
-              {activeRoleContext !== 'OFFICER' && viewMode !== 'officer' && (
-                <>
-                  {onOpenKorlapImageModal && (
-                    <button
-                      onClick={onOpenKorlapImageModal}
-                      className="w-full sm:w-auto px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center justify-center gap-1.5"
-                    >
-                      <FileSpreadsheet className="w-4 h-4 text-emerald-200 shrink-0" />
-                      <span>Input Korlap & Image</span>
-                    </button>
-                  )}
-
-                  <button
-                    onClick={onOpenAutoGenerator}
-                    className="w-full sm:w-auto px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl text-xs font-black shadow-xs transition flex items-center justify-center gap-1.5"
-                  >
-                    <Wand2 className="w-4 h-4 text-purple-200 shrink-0" />
-                    <span>Auto-Schedule</span>
-                  </button>
-
-                  <button
-                    onClick={onOpenCreateModal}
-                    className="w-full sm:w-auto px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-xs transition flex items-center justify-center gap-1.5"
-                  >
-                    <Plus className="w-4 h-4 text-indigo-200 shrink-0" />
-                    <span>+ Tambah Jadwal</span>
-                  </button>
-                </>
-              )}
-
-              <button
-                onClick={handleExportSchedules}
-                className="w-full sm:w-auto px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 rounded-xl text-xs font-bold border border-slate-300 transition flex items-center justify-center gap-1.5 shadow-2xs"
-              >
-                <Download className="w-4 h-4 text-slate-500 shrink-0" />
-                <span>Export CSV</span>
-              </button>
-            </div>
-
-          </div>
-        )}
-
-        {/* Sub-Menu Tabs Pill Box */}
-        <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-3 overflow-x-auto">
+        {/* Sub-Menu Tabs Pill Box & Action Bar */}
+        <div className="pt-2 border-t border-slate-100 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
           
-          <div className="flex items-center gap-1.5 bg-slate-100/90 p-1 rounded-xl border border-slate-200/80 shrink-0">
+          <div className="flex items-center gap-1.5 bg-slate-100/90 p-1 rounded-xl border border-slate-200/80 w-full sm:w-auto overflow-x-auto custom-scrollbar">
             <button
               onClick={() => setViewMode('list')}
-              className={`px-3 py-1.5 text-xs sm:text-sm rounded-lg transition-all flex items-center gap-1.5 shrink-0 ${
+              className={`px-3.5 py-1.5 text-xs sm:text-sm rounded-lg transition-all flex items-center gap-1.5 shrink-0 ${
                 viewMode === 'list' 
                   ? 'bg-slate-900 text-white shadow-xs font-black' 
                   : 'text-slate-600 hover:text-slate-900 font-bold hover:bg-white/60'
@@ -885,7 +573,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
 
             <button
               onClick={() => setViewMode('officer')}
-              className={`px-3 py-1.5 text-xs sm:text-sm rounded-lg transition-all flex items-center gap-1.5 shrink-0 ${
+              className={`px-3.5 py-1.5 text-xs sm:text-sm rounded-lg transition-all flex items-center gap-1.5 shrink-0 ${
                 viewMode === 'officer' 
                   ? 'bg-emerald-600 text-white shadow-xs font-black' 
                   : 'text-slate-700 hover:text-emerald-700 font-bold hover:bg-emerald-50'
@@ -898,7 +586,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
             {activeRoleContext !== 'OFFICER' && (
               <button
                 onClick={() => setViewMode('approval')}
-                className={`px-3 py-1.5 text-xs sm:text-sm rounded-lg transition-all flex items-center gap-2 relative shrink-0 ${
+                className={`px-3.5 py-1.5 text-xs sm:text-sm rounded-lg transition-all flex items-center gap-2 relative shrink-0 ${
                   viewMode === 'approval' 
                     ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-xs font-black' 
                     : 'text-indigo-900 hover:text-indigo-700 font-extrabold hover:bg-indigo-50/80 bg-indigo-50/40 border border-indigo-200/60'
@@ -916,7 +604,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
 
             <button
               onClick={() => setViewMode('calendar')}
-              className={`px-3 py-1.5 text-xs sm:text-sm rounded-lg transition-all flex items-center gap-1.5 shrink-0 ${
+              className={`px-3.5 py-1.5 text-xs sm:text-sm rounded-lg transition-all flex items-center gap-1.5 shrink-0 ${
                 viewMode === 'calendar' 
                   ? 'bg-rose-600 text-white shadow-xs font-black' 
                   : 'text-slate-600 hover:text-slate-900 font-bold hover:bg-white/60'
@@ -926,11 +614,71 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
             </button>
           </div>
 
+          {/* Action Buttons: Two-Way Sync, Export, Add Schedule */}
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full md:w-auto">
+            
+            {onTwoWaySync && (
+              <button
+                onClick={() => {
+                  onTwoWaySync();
+                  setToastMessage('Sinkronisasi 2-Arah Master Toko Bali & Sheet Jadwal Berhasil!');
+                }}
+                className="w-full sm:w-auto px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-2xs"
+                title="Sinkronkan dua arah jadwal SO dengan kolom SO September di Master Toko Bali"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-emerald-600" />
+                <span>2-Way Sync Master</span>
+              </button>
+            )}
+
+            {activeRoleContext !== 'OFFICER' && viewMode !== 'officer' && (
+              <>
+                {onOpenKorlapImageModal && (
+                  <button
+                    onClick={onOpenKorlapImageModal}
+                    className="w-full sm:w-auto px-3 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white rounded-xl text-xs font-bold shadow-xs hover:shadow transition flex items-center justify-center gap-1.5"
+                    title="Buat rute toko & gambar jadwal Excel Korlap"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-200 shrink-0" />
+                    <span className="truncate">Input Korlap & Image</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={onOpenAutoGenerator}
+                  className="w-full sm:w-auto px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 active:scale-98 text-white rounded-xl text-xs font-black shadow-xs hover:shadow transition flex items-center justify-center gap-1.5"
+                  title="Generate otomatis jadwal dari 700+ toko"
+                >
+                  <Wand2 className="w-4 h-4 text-purple-200 shrink-0" />
+                  <span className="truncate">Auto-Schedule</span>
+                </button>
+
+                <button
+                  onClick={onOpenCreateModal}
+                  className="w-full sm:w-auto px-3 py-2 bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white rounded-xl text-xs font-black shadow-xs hover:shadow transition flex items-center justify-center gap-1.5"
+                  title="Tambah 1 jadwal audit toko manual"
+                >
+                  <Plus className="w-4 h-4 text-indigo-200 shrink-0" />
+                  <span className="truncate">+ Tambah Jadwal</span>
+                </button>
+              </>
+            )}
+
+            <button
+              onClick={handleExportSchedules}
+              className="w-full sm:w-auto px-3 py-2 bg-slate-100 hover:bg-slate-200 active:scale-98 text-slate-700 hover:text-slate-900 rounded-xl text-xs font-bold border border-slate-300 transition flex items-center justify-center gap-1.5 shadow-2xs"
+              title="Download rekap data jadwal ke file CSV"
+            >
+              <Download className="w-4 h-4 text-slate-500 shrink-0" />
+              <span className="truncate">Export CSV</span>
+            </button>
+          </div>
+
         </div>
 
       </div>
 
-      {/* 5. MAIN CONTENT VIEW */}
+      {/* Main Content View */}
       {viewMode === 'officer' ? (
         <KorlapDashboard
           schedules={filteredSchedules}
@@ -948,14 +696,33 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
           <div className="p-3 px-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-bold text-slate-800">
-                Daftar Jadwal ({filteredSchedules.length} Toko)
+                Tabel Penjadwalan ({filteredSchedules.length} Toko)
               </span>
               <span className="text-[11px] text-slate-500">
                 • {selectedGroupKorlap === 'ALL' ? 'Semua Group' : `Group: ${selectedGroupKorlap}`}
               </span>
+              {isDateFilterActive && (
+                <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md border border-indigo-200 flex items-center gap-1">
+                  <CalendarDays className="w-3 h-3 text-indigo-600" />
+                  <span>
+                    {selectedSpecificDate 
+                      ? formatDateIndo(selectedSpecificDate)
+                      : `${selectedDay !== 'ALL' ? `Tgl ${parseInt(selectedDay)} ` : ''}${selectedMonth !== 'ALL' ? `${monthOptions.find(m => m.value === selectedMonth)?.label.split(' - ')[1]} ` : ''}${selectedYear !== 'ALL' ? selectedYear : ''}`
+                    }
+                  </span>
+                  <button 
+                    type="button" 
+                    onClick={handleResetDateFilters}
+                    className="ml-0.5 hover:text-rose-600 font-black text-[11px]"
+                    title="Hapus filter tanggal"
+                  >
+                    ×
+                  </button>
+                </span>
+              )}
             </div>
 
-            <div className="hidden sm:flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 text-xs">
+            <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 text-xs">
               <button
                 type="button"
                 onClick={() => setTableLayoutMode('SHEET_JADWAL')}
@@ -981,161 +748,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
             </div>
           </div>
 
-          {/* MOBILE VIEW: SLEEK TOUCH-FRIENDLY STORE CARDS (< md) */}
-          <div className="block md:hidden divide-y divide-slate-100 p-2.5 space-y-2.5">
-            {filteredSchedules.length > 0 ? (
-              filteredSchedules.map((s, idx) => {
-                const matchingStore = stores.find(st => st.code === s.storeCode || st.id === s.storeId);
-                const zVal = (s.zona || matchingStore?.zona || '').toUpperCase();
-                const isBlackZone = !zVal.includes('NON') && !zVal.includes('BUKAN') && !zVal.includes('TIDAK') && (zVal.includes('HITAM') || matchingStore?.isZonaHitam === true);
-                const assignedMembers = s.assignedPersonnelNames || [];
-                const personilLeaderText = s.personilLeader || (assignedMembers.length > 0 ? assignedMembers[0] : '-');
-
-                return (
-                  <div 
-                    key={s.id} 
-                    className={`p-3.5 rounded-2xl border transition-all ${
-                      isBlackZone 
-                        ? 'bg-rose-50/40 border-rose-200' 
-                        : 'bg-white border-slate-200/90 shadow-2xs'
-                    }`}
-                  >
-                    {/* Header Card: Code, Name, Badges */}
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-mono font-black text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md">
-                            {s.storeCode}
-                          </span>
-                          <span className="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded">
-                            SO {s.typeSo || 'M'}
-                          </span>
-                          {isBlackZone && (
-                            <span className="text-[10px] font-black bg-slate-900 text-rose-300 border border-rose-500 px-1.5 py-0.5 rounded-full flex items-center gap-1">
-                              <Flame className="w-3 h-3 text-rose-400" />
-                              ZONA HITAM
-                            </span>
-                          )}
-                        </div>
-                        <h4 className="font-black text-slate-900 text-sm mt-1">
-                          {s.storeName}
-                        </h4>
-                        <div className="text-[11px] text-slate-500 font-medium flex items-center gap-1 mt-0.5">
-                          <MapPin className="w-3 h-3 text-slate-400" />
-                          <span>{getAccurateRegionForSchedule(s)}</span>
-                          {s.asInitial && <span>• AS: {s.asInitial}</span>}
-                        </div>
-                      </div>
-
-                      {/* Status Badge */}
-                      <span className={`px-2 py-1 text-[10px] rounded-full font-bold shrink-0 ${getStatusBadgeClass(s.status)}`}>
-                        {s.status}
-                      </span>
-                    </div>
-
-                    {/* Meta info grid */}
-                    <div className="grid grid-cols-2 gap-2 mt-3 pt-2.5 border-t border-slate-100 text-xs">
-                      <div>
-                        <div className="text-[10px] text-slate-400 font-medium">Tanggal SO</div>
-                        <div className="font-bold text-slate-800 flex items-center gap-1 mt-0.5">
-                          <CalendarDays className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                          <span>{s.scheduledDate || '-'}</span>
-                          <span className="text-[10px] text-slate-500">({s.dayName || getDayNameIndo(s.scheduledDate)})</span>
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="text-[10px] text-slate-400 font-medium">Group Korlap & Tim</div>
-                        <div className="font-bold text-indigo-950 mt-0.5 truncate">
-                          {s.groupName || s.officerInCharge || 'I WAYAN ANGGA RISTA'}
-                        </div>
-                        <div className="text-[10px] text-slate-500 truncate">
-                          Leader: {personilLeaderText}
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="text-[10px] text-slate-400 font-medium">Stock Toko</div>
-                        <div className="font-mono font-bold text-slate-900 mt-0.5">
-                          {formatRupiah(s.stockRp || 0)}
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="text-[10px] text-slate-400 font-medium">Kas Toko</div>
-                        <div className="font-mono font-bold text-emerald-700 mt-0.5">
-                          {formatRupiah(s.kasToko || 0)}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Action Bar */}
-                    <div className="flex items-center justify-between gap-2 mt-3 pt-2.5 border-t border-slate-100">
-                      <div className="flex items-center gap-1.5">
-                        {onAssignPersonnel && (
-                          <button
-                            type="button"
-                            onClick={() => onAssignPersonnel(s)}
-                            className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold border border-indigo-200 transition flex items-center gap-1"
-                          >
-                            <Users className="w-3.5 h-3.5" />
-                            <span>Tim ({assignedMembers.length})</span>
-                          </button>
-                        )}
-                        
-                        {s.status === 'Terjadwal' && (
-                          <button
-                            type="button"
-                            onClick={() => onUpdateStatus(s.id, 'Proses SO')}
-                            className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition"
-                          >
-                            Mulai SO
-                          </button>
-                        )}
-
-                        {s.status === 'Proses SO' && (
-                          <button
-                            type="button"
-                            onClick={() => onUpdateStatus(s.id, 'Menunggu Rekapan')}
-                            className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition"
-                          >
-                            Input Rekapan
-                          </button>
-                        )}
-
-                        {s.status === 'Menunggu Rekapan' && (
-                          <button
-                            type="button"
-                            onClick={() => onUpdateStatus(s.id, 'Selesai')}
-                            className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition"
-                          >
-                            Selesai SO
-                          </button>
-                        )}
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => setScheduleToDelete(s)}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                        title="Hapus Jadwal"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-
-                  </div>
-                );
-              })
-            ) : (
-              <div className="py-12 text-center text-slate-400 text-xs">
-                Tidak ditemukan jadwal SO yang sesuai filter.
-              </div>
-            )}
-          </div>
-
-          {/* DESKTOP VIEW: RICH 14-COLUMN TABLE (hidden on mobile, visible on md+) */}
-          <div className="hidden md:block overflow-x-auto">
+          <div className="overflow-x-auto">
             {tableLayoutMode === 'SHEET_JADWAL' ? (
               /* Complete 14-Column Sheet Jadwal View */
               <table className="w-full text-left text-xs border-collapse">
@@ -1279,7 +892,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                     })
                   ) : (
                     <tr>
-                      <td colSpan={15} className="py-12 text-center text-slate-400">
+                      <td colSpan={14} className="py-12 text-center text-slate-400">
                         Tidak ditemukan jadwal SO yang sesuai filter.
                       </td>
                     </tr>

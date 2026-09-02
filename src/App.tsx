@@ -46,7 +46,7 @@ import {
   reconcilePendingExcelBackups
 } from './services/storageService';
 import { ensureStoreCoordinates, autoSyncStoreRegionAndKabupaten } from './utils/geoUtils';
-import { formatSmartSODate, detectSmartMonthAndYear } from './utils/formatters';
+import { formatSmartSODate } from './utils/formatters';
 import { 
   autoSyncStoreWithApprovedSchedule, 
   syncSchedulesFromMasterStores, 
@@ -133,12 +133,8 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
-  const initialDateDetection = detectSmartMonthAndYear(
-    getStoredMasterTokoDatasets(),
-    getStoredStores()
-  );
-  const [selectedMonth, setSelectedMonth] = useState<string>(initialDateDetection.month); // '01' to '12' or 'ALL'
-  const [selectedYear, setSelectedYear] = useState<string>(initialDateDetection.year); // '2024', '2025', '2026', '2027', '2028' or 'ALL'
+  const [selectedMonth, setSelectedMonth] = useState('08'); // '01' to '12' or 'ALL'
+  const [selectedYear, setSelectedYear] = useState('2026'); // '2024', '2025', '2026', '2027', '2028' or 'ALL'
   const [selectedDate, setSelectedDate] = useState('ALL'); // 'ALL' or 'YYYY-MM-DD' e.g. '2026-08-04'
 
   useEffect(() => {
@@ -1126,20 +1122,14 @@ export default function App() {
   // Reset / Clear Data
   const handleResetData = async (options?: { forceWipeCloudinary?: boolean }) => {
     const data = await clearAllData(options);
-    setStores([]);
-    setSchedules([]);
-    setResults([]);
-    setTeams([]);
-    setPersonnel([]);
-    setEquipment([]);
-    setRepairLogs([]);
-    setOnCallRecords([]);
+    setStores(data.stores);
+    setSchedules(data.schedules);
+    setResults(data.results);
+    setTeams(data.teams);
+    setPersonnel(data.personnel);
+    setEquipment(data.equipment);
+    setRepairLogs(data.repairLogs);
     setDatasets([]);
-
-    const now = new Date();
-    setSelectedMonth(String(now.getMonth() + 1).padStart(2, '0'));
-    setSelectedYear(String(now.getFullYear()));
-    setSelectedDate('ALL');
   };
 
   const handleRestoreData = (data: { stores: Store[]; schedules: SOSchedule[]; results: SOResult[]; teams: SOTeam[] }) => {
@@ -1169,13 +1159,8 @@ export default function App() {
       setStores(synced);
       saveStores(synced, true);
 
-      // Smart month detection from active dataset
-      const detected = detectSmartMonthAndYear([newDataset], synced);
-      setSelectedMonth(detected.month);
-      setSelectedYear(detected.year);
-
-      // Smart auto-synchronize schedules from Master Store SO dates
-      const { updatedSchedules, newlyCreatedCount } = syncSchedulesFromMasterStores(synced, schedules, detected.month, detected.year);
+      // Smart auto-synchronize schedules from Master Store September SO dates
+      const { updatedSchedules, newlyCreatedCount } = syncSchedulesFromMasterStores(synced, schedules, '09', '2026');
       if (newlyCreatedCount > 0 || updatedSchedules.length !== schedules.length) {
         setSchedules(updatedSchedules);
         saveSchedules(updatedSchedules, true);
@@ -1200,13 +1185,8 @@ export default function App() {
       setStores(synced);
       saveStores(synced, true);
 
-      // Smart month detection from activated dataset
-      const detected = detectSmartMonthAndYear([target], synced);
-      setSelectedMonth(detected.month);
-      setSelectedYear(detected.year);
-
-      // Smart auto-synchronize schedules from Master Store SO dates
-      const { updatedSchedules, newlyCreatedCount } = syncSchedulesFromMasterStores(synced, schedules, detected.month, detected.year);
+      // Smart auto-synchronize schedules from Master Store September SO dates
+      const { updatedSchedules, newlyCreatedCount } = syncSchedulesFromMasterStores(synced, schedules, '09', '2026');
       if (newlyCreatedCount > 0 || updatedSchedules.length !== schedules.length) {
         setSchedules(updatedSchedules);
         saveSchedules(updatedSchedules, true);
@@ -1275,7 +1255,6 @@ export default function App() {
         onRoleChangeRequest={handleRequestRoleChange}
         isMobileMenuOpen={isMobileMenuOpen}
         onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-        activeDatasetTitle={datasets.find(d => d.isActiveForScheduling)?.title || (datasets[0]?.title ?? '')}
       />
 
       {/* Main Container Layout (Full Fluid Width) */}
