@@ -58,7 +58,8 @@ import {
   twoWaySyncStoresAndSchedules, 
   enrichScheduleWithMasterStore,
   calculateStoreFrekuensiTidakSO,
-  getStoreSOApprovalStatus
+  getStoreSOApprovalStatus,
+  reconcileStoresWithExistingApprovals
 } from './utils/storeSyncUtils';
 import { normalizeKorlapName } from './utils/korlapUtils';
 import { 
@@ -353,8 +354,9 @@ export default function App() {
     const loadedSchedulesRaw = getStoredSchedules();
     const syncedSchedules = syncScheduleRegionsWithStores(loadedSchedulesRaw, syncedStores);
     const fullySyncedStores = syncStoresWithSchedules(syncedStores, syncedSchedules);
-
     const loadedResults = getStoredResults();
+    const preservedApprovedStores = reconcileStoresWithExistingApprovals(fullySyncedStores, fullySyncedStores, syncedSchedules, loadedResults);
+
     const loadedTeams = getStoredTeams();
     const loadedPersonnel = getStoredPersonnel();
     const loadedOnCallPersonnel = getStoredOnCallPersonnel();
@@ -366,7 +368,7 @@ export default function App() {
       stores: ds.stores.map(s => autoSyncStoreRegionAndKabupaten(s))
     }));
 
-    setStores(fullySyncedStores);
+    setStores(preservedApprovedStores);
     setSchedules(syncedSchedules);
     setResults(loadedResults);
     setTeams(loadedTeams);
@@ -1182,7 +1184,9 @@ export default function App() {
     const activeDs = normalized.find(d => d.isActiveForScheduling) || (newDataset.isActiveForScheduling ? newDataset : null);
     if (activeDs && activeDs.stores.length > 0) {
       clearAllDeletedIds(STORAGE_KEYS.STORES);
-      const synced = activeDs.stores.map(s => autoSyncStoreRegionAndKabupaten(s));
+      const syncedWithGeo = activeDs.stores.map(s => autoSyncStoreRegionAndKabupaten(s));
+      // Reconcile and preserve SPV approval status for stores already approved in schedules or audit results
+      const synced = reconcileStoresWithExistingApprovals(syncedWithGeo, stores, schedules, results);
       setStores(synced);
       saveStores(synced, true);
 
@@ -1214,7 +1218,9 @@ export default function App() {
 
     if (target.stores.length > 0) {
       clearAllDeletedIds(STORAGE_KEYS.STORES);
-      const synced = target.stores.map(s => autoSyncStoreRegionAndKabupaten(s));
+      const syncedWithGeo = target.stores.map(s => autoSyncStoreRegionAndKabupaten(s));
+      // Reconcile and preserve SPV approval status for stores already approved in schedules or audit results
+      const synced = reconcileStoresWithExistingApprovals(syncedWithGeo, stores, schedules, results);
       setStores(synced);
       saveStores(synced, true);
 

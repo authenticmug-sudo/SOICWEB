@@ -246,6 +246,7 @@ export function notifyDataChanged(storageKey: string, data: any) {
 // Deterministic ID generators to ensure 100% idempotent documents across imports and syncs
 export function getDeterministicEquipmentId(item: Partial<SOEquipment>): string {
   const cleanSerial = (item.serialNumber || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  const cleanUser = (item.assignedUser || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
   const isFullSerial = cleanSerial && cleanSerial.length >= 6 && !cleanSerial.startsWith('000000');
 
   const cleanAsset = (item.assetId || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
@@ -254,11 +255,13 @@ export function getDeterministicEquipmentId(item: Partial<SOEquipment>): string 
   if (isFullSerial) {
     return `eq_sn_${cleanSerial}`.slice(0, 45);
   }
+  if (cleanSerial && cleanUser) {
+    return `eq_${cleanUser}_sn_${cleanSerial}`.slice(0, 45);
+  }
   if (isCustomAsset) {
     return `eq_ast_${cleanAsset}`.slice(0, 45);
   }
 
-  const cleanUser = (item.assignedUser || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
   const cleanName = (item.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
   if (cleanUser && cleanName) {
     return `eq_${cleanUser}_${cleanName}`.slice(0, 45);
@@ -346,9 +349,12 @@ export function deduplicateEntityList<T extends { id: string }>(
       const isCustomAsset = ast && ast.length >= 6 && !ast.startsWith('wdcp-00');
 
       if (isFullSerial) return `sn_${sn}`;
-      if (isCustomAsset) return `ast_${ast}`;
 
       const usr = (it.assignedUser || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      if (sn && usr) return `usr_${usr}_sn_${sn}`;
+
+      if (isCustomAsset) return `ast_${ast}`;
+
       const nm = (it.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
       if (usr && nm) return `usr_${usr}_${nm}`;
       return `id_${it.id}`;

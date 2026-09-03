@@ -507,17 +507,44 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
 
     return validRows.map((row: any, idx: number) => {
       const keys = Object.keys(row);
-      const getVal = (possibleKeys: string[]) => {
-        const foundKey = keys.find(k => possibleKeys.some(pk => {
-          const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
-          const cleanPk = pk.toLowerCase().replace(/[^a-z0-9]/g, '');
-          return cleanK.includes(cleanPk) || cleanPk.includes(cleanK);
-        }));
-        return foundKey ? String(row[foundKey]).trim() : '';
+      const getVal = (possibleKeys: string[], excludeGenericKeys: string[] = ['no', 'no.', 'nomor', 'index', '#', 'bilangan']) => {
+        // 1. Exact match first in priority order of possibleKeys
+        for (const pk of possibleKeys) {
+          const cleanPk = pk.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+          const found = keys.find(k => {
+            const cleanK = k.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+            return cleanK === cleanPk;
+          });
+          if (found && row[found] !== undefined && row[found] !== null && String(row[found]).trim() !== '') {
+            return String(row[found]).trim();
+          }
+        }
+
+        // 2. Contains match: the Excel column header contains the search keyword (never match generic index columns)
+        for (const pk of possibleKeys) {
+          const cleanPk = pk.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (cleanPk.length < 3) continue;
+
+          const found = keys.find(k => {
+            const trimmedK = k.trim().toLowerCase();
+            const cleanK = trimmedK.replace(/[^a-z0-9]/g, '');
+            if (excludeGenericKeys.includes(cleanK) || excludeGenericKeys.includes(trimmedK)) {
+              return false;
+            }
+            return cleanK.includes(cleanPk);
+          });
+          if (found && row[found] !== undefined && row[found] !== null && String(row[found]).trim() !== '') {
+            return String(row[found]).trim();
+          }
+        }
+
+        return '';
       };
 
       const user = getVal(['Nama User', 'Nama Petugas', 'Nama Korlap', 'Nama PIC', 'Petugas', 'Korlap', 'Auditor', 'User', 'Nama', 'PIC', 'Penanggung Jawab', 'Pengguna', 'Pemegang', 'Pemegang Alat', 'Nama Pengguna']) || `User ${idx + 1}`;
-      const serial = getVal(['Serial Number (MAC)', 'Serial Number', 'MAC', 'MAC Address', 'SN', 'S/N', 'Serial', 'No Serial', 'Nomor Serial', 'MAC Scanner', 'MacAddress']) || '';
+      const rawSerial = getVal(['Serial Number (MAC)', 'Serial Number', 'MAC Address', 'MAC', 'MAC Scanner', 'MacAddress', 'SN', 'S/N', 'Serial', 'No Serial', 'Nomor Serial']) || '';
+      // Clean and normalize serial number / MAC (correct common typo of semicolon instead of colon, e.g. "00;23:A7..." -> "00:23:A7...")
+      const serial = rawSerial.replace(/;/g, ':').replace(/\s+/g, ' ').trim();
       
       let rawKondisi = getVal(['Kondisi', 'Status', 'Kondisi Alat', 'Condition', 'Status Alat', 'Kondisi WDCP']) || 'Baik';
       let kondisi: EquipmentCondition = 'Baik';
@@ -541,7 +568,8 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
 
       let category = getVal(['Kategori', 'Category', 'Tipe Perangkat', 'Jenis Alat', 'Model', 'Tipe Scanner']) || 'WDCP';
       let notes = getVal(['Catatan', 'Keterangan', 'Notes', 'Deskripsi', 'Kondisi Fisik', 'Catatan Alat', 'Keterangan Tambahan']) || '';
-      let assetId = getVal(['ID Asset', 'Asset ID', 'Kode Alat', 'No Asset', 'Nomor Asset']) || (serial && serial.length >= 6 ? `WDCP-${serial.replace(/[^a-zA-Z0-9]/g, '').slice(-6).toUpperCase()}` : `WDCP-${String(idx + 1).padStart(3, '0')}`);
+      const cleanSnForAsset = serial.replace(/[^a-zA-Z0-9]/g, '');
+      let assetId = getVal(['ID Asset', 'Asset ID', 'Kode Alat', 'No Asset', 'Nomor Asset']) || (cleanSnForAsset.length >= 3 ? `WDCP-${cleanSnForAsset.slice(-6).toUpperCase()}` : `WDCP-${String(idx + 1).padStart(3, '0')}`);
       let name = getVal(['Nama Alat / WDCP', 'Nama Alat', 'Nama Perangkat', 'Device Name', 'Nama Barang']) || `Scanner ${category}`;
 
       const deterministicId = getDeterministicEquipmentId({ serialNumber: serial, assetId, assignedUser: user, name });
