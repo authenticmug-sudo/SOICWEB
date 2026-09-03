@@ -1958,7 +1958,8 @@ export function getDashboardSummary(
   stores: Store[], 
   schedules: SOSchedule[], 
   results: SOResult[],
-  targetTypes: string[] = ['M', 'Q3']
+  targetTypes: string[] = ['M', 'Q3'],
+  allResults?: SOResult[]
 ): DashboardSummary {
   const totalStores = stores.length;
   const now = new Date();
@@ -1972,8 +1973,16 @@ export function getDashboardSummary(
 
   const completedThisMonth = schedules.filter(s => s.status === 'Selesai' || s.spvApprovalStatus === 'Disetujui').length;
   const scheduledThisMonth = schedules.filter(s => s.status === 'Terjadwal' || s.status === 'Proses SO').length;
-  const pendingApprovalCount = results.filter(r => r.approvalStatus === 'Menunggu Approval SPV').length;
   
+  // Evaluate unapproved results across active dataset or global results pool
+  const resultsToAudit = (allResults && allResults.length > 0) ? allResults : results;
+  const unapprovedResults = resultsToAudit.filter(r => 
+    r.approvalStatus === 'Menunggu Approval SPV' ||
+    r.approvalStatus === 'Perlu Audit Ulang' ||
+    (!r.approvalStatus && r.id) ||
+    ((r.approvalStatus as string) !== 'Disetujui' && (r.approvalStatus as string) !== 'Ditolak')
+  );
+
   let totalAccuracySum = 0;
   let totalVarianceRp = 0;
   let positiveVarianceRp = 0;
@@ -2000,7 +2009,7 @@ export function getDashboardSummary(
 
   // Check which stores have been SO'd / approved by SPV
   const isStoreCompletedOrApproved = (st: Store) => {
-    const status = getStoreSOApprovalStatus(st, schedules, results);
+    const status = getStoreSOApprovalStatus(st, schedules, resultsToAudit);
     return status === 'Sudah Approve';
   };
 
@@ -2080,11 +2089,15 @@ export function getDashboardSummary(
   let countBelumSO = 0;
 
   stores.forEach(st => {
-    const stStatus = getStoreSOApprovalStatus(st, schedules, results);
+    const stStatus = getStoreSOApprovalStatus(st, schedules, resultsToAudit);
     if (stStatus === 'Sudah Approve') countSudahApprove++;
     else if (stStatus === 'Belum Terapprove') countBelumTerapprove++;
     else countBelumSO++;
   });
+
+  // Calculate synchronized pending approval count
+  const pendingApprovalCount = Math.max(unapprovedResults.length, countBelumTerapprove);
+  const syncedBelumTerapprove = pendingApprovalCount;
 
   const tokoSudahTerSO = countSudahApprove;
   const tokoBelumTerSO = Math.max(0, totalMasterStores - tokoSudahTerSO);
@@ -2113,8 +2126,8 @@ export function getDashboardSummary(
     persentaseBelumTerSO,
     // Status Approval Counts
     tokoSudahApproveSO: countSudahApprove,
-    tokoBelumTerapproveSO: countBelumTerapprove,
-    tokoBelumSO: countBelumSO,
+    tokoBelumTerapproveSO: syncedBelumTerapprove,
+    tokoBelumSO: Math.max(0, totalMasterStores - countSudahApprove - syncedBelumTerapprove),
     tokoSedangSOList: activeHariHSchedules,
     // Zona Hitam Metrics
     totalZonaHitam,

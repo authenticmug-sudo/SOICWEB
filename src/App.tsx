@@ -525,17 +525,38 @@ export default function App() {
     return matchMonth && matchYear;
   });
 
+  const parseResultDate = (dateStr?: string) => {
+    if (!dateStr) return { year: '', month: '', fullDate: '' };
+    const clean = String(dateStr).trim().split('T')[0];
+    const parts = clean.split(/[-/]/);
+    if (parts.length >= 3) {
+      if (parts[0].length === 4) {
+        // YYYY-MM-DD
+        return {
+          year: parts[0],
+          month: parts[1].padStart(2, '0'),
+          fullDate: `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`
+        };
+      } else if (parts[2].length === 4) {
+        // DD-MM-YYYY
+        return {
+          year: parts[2],
+          month: parts[1].padStart(2, '0'),
+          fullDate: `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
+        };
+      }
+    }
+    return { year: '', month: '', fullDate: clean };
+  };
+
   const filteredResults = results.filter(r => {
     if (!r.soDate) return true;
+    const { year, month, fullDate } = parseResultDate(r.soDate);
     if (selectedDate !== 'ALL') {
-      return r.soDate === selectedDate;
+      return fullDate === selectedDate || r.soDate === selectedDate || r.soDate.includes(selectedDate);
     }
-    const parts = r.soDate.split('-');
-    if (parts.length < 2) return true;
-    const rYear = parts[0];
-    const rMonth = parts[1];
-    const matchMonth = selectedMonth === 'ALL' || rMonth === selectedMonth;
-    const matchYear = selectedYear === 'ALL' || rYear === selectedYear;
+    const matchMonth = selectedMonth === 'ALL' || month === selectedMonth || r.soDate.includes(`-${selectedMonth}-`) || r.soDate.includes(`/${selectedMonth}/`);
+    const matchYear = selectedYear === 'ALL' || year === selectedYear || r.soDate.includes(selectedYear);
     return matchMonth && matchYear;
   });
 
@@ -556,8 +577,8 @@ export default function App() {
     localStorage.setItem('spv_target_so_types', JSON.stringify(types));
   };
 
-  // Summary calculated dynamically based on filtered period and target SO types
-  const summary = getDashboardSummary(stores, filteredSchedules, filteredResults, targetSoTypes);
+  // Summary calculated dynamically based on filtered period and target SO types, synchronized with global results
+  const summary = getDashboardSummary(stores, filteredSchedules, filteredResults, targetSoTypes, results);
 
   // Handlers for Schedules
   const handleTwoWaySync = () => {
@@ -888,44 +909,116 @@ export default function App() {
     const created: SOResult = {
       ...newResult,
       id: `RESULT-${Date.now()}`,
+      approvalStatus: newResult.approvalStatus || 'Menunggu Approval SPV',
       submittedAt: new Date().toISOString().replace('T', ' ').slice(0, 16)
     };
     const updatedResults = [created, ...results];
     setResults(updatedResults);
     saveResults(updatedResults);
 
-    // Update corresponding schedule status to 'Selesai'
-    const updatedSchedules = schedules.map(s => s.id === newResult.scheduleId ? { ...s, status: 'Selesai' as const } : s);
+    // Update corresponding schedule status to 'Selesai' and spvApprovalStatus to 'Menunggu Approval SPV'
+    const updatedSchedules = schedules.map(s => 
+      (s.id === newResult.scheduleId || s.storeCode === newResult.storeCode)
+        ? { ...s, status: 'Selesai' as const, spvApprovalStatus: 'Menunggu Approval SPV' as const }
+        : s
+    );
     setSchedules(updatedSchedules);
     saveSchedules(updatedSchedules);
 
-    // Update store's last SODate & Accuracy Rate
-    const updatedStores = stores.map(st => st.id === newResult.storeId ? {
-      ...st,
-      lastSODate: newResult.soDate,
-      lastAccuracyRate: newResult.accuracyRatePercentage
-    } : st);
+    // Update store's last SODate, Accuracy Rate & set statusApproveSO to 'Belum Terapprove'
+    const updatedStores = stores.map(st => 
+      (st.id === newResult.storeId || st.code === newResult.storeCode) ? {
+        ...st,
+        statusApproveSO: 'Belum Terapprove' as const,
+        lastSODate: newResult.soDate,
+        lastAccuracyRate: newResult.accuracyRatePercentage
+      } : st
+    );
     setStores(updatedStores);
     saveStores(updatedStores);
   };
 
   const handleApproveResult = (resultId: string) => {
-    const updated = results.map(r => r.id === resultId ? {
+    const targetResult = results.find(r => r.id === resultId);
+    const approvedAt = new Date().toISOString().replace('T', ' ').slice(0, 16);
+    const updatedResults = results.map(r => r.id === resultId ? {
       ...r,
       approvalStatus: 'Disetujui' as const,
-      approvedAt: new Date().toISOString().replace('T', ' ').slice(0, 16)
+      approvedAt,
+      spvApprover: 'Gean Pratama (SPV SO)'
     } : r);
-    setResults(updated);
-    saveResults(updated);
+    setResults(updatedResults);
+    saveResults(updatedResults);
+
+    if (targetResult) {
+      // 1. Sync matching schedule
+      const updatedSchedules = schedules.map(s => {
+        if (s.id === targetResult.scheduleId || s.storeCode === targetResult.storeCode) {
+          return {
+            ...s,
+            status: 'Selesai' as const,
+            spvApprovalStatus: 'Disetujui' as const
+          };
+        }
+        return s;
+      });
+      setSchedules(updatedSchedules);
+      saveSchedules(updatedSchedules);
+
+      // 2. Sync matching store
+      const updatedStores = stores.map(st => {
+        if (st.id === targetResult.storeId || st.code === targetResult.storeCode) {
+          return {
+            ...st,
+            statusApproveSO: 'Sudah Approve' as const,
+            tglSoApproved: targetResult.soDate || approvedAt.slice(0, 10),
+            spvApprover: 'Gean Pratama (SPV SO)',
+            lastSODate: targetResult.soDate || approvedAt.slice(0, 10),
+            lastAccuracyRate: targetResult.accuracyRatePercentage
+          };
+        }
+        return st;
+      });
+      setStores(updatedStores);
+      saveStores(updatedStores);
+    }
   };
 
   const handleRequestRecount = (resultId: string) => {
-    const updated = results.map(r => r.id === resultId ? {
+    const targetResult = results.find(r => r.id === resultId);
+    const updatedResults = results.map(r => r.id === resultId ? {
       ...r,
       approvalStatus: 'Perlu Audit Ulang' as const
     } : r);
-    setResults(updated);
-    saveResults(updated);
+    setResults(updatedResults);
+    saveResults(updatedResults);
+
+    if (targetResult) {
+      const updatedSchedules = schedules.map(s => {
+        if (s.id === targetResult.scheduleId || s.storeCode === targetResult.storeCode) {
+          return {
+            ...s,
+            status: 'Proses SO' as const,
+            spvApprovalStatus: 'Menunggu Approval SPV' as const
+          };
+        }
+        return s;
+      });
+      setSchedules(updatedSchedules);
+      saveSchedules(updatedSchedules);
+
+      const updatedStores = stores.map(st => {
+        if (st.id === targetResult.storeId || st.code === targetResult.storeCode) {
+          return {
+            ...st,
+            statusApproveSO: 'Belum Terapprove' as const
+          };
+        }
+        return st;
+      });
+      setStores(updatedStores);
+      saveStores(updatedStores);
+    }
   };
 
   // Handlers for Stores
@@ -942,17 +1035,49 @@ export default function App() {
   };
 
   const handleImportBulkStores = (newStores: Store[], mode: 'replace' | 'merge' = 'replace') => {
-    let updated: Store[];
+    // Index existing stores and existing approved results to ensure SPV approvals are preserved
+    const existingStoreMap = new Map<string, Store>(stores.map(s => [s.code?.trim().toUpperCase() || s.id, s]));
+    const approvedResultsMap = new Map<string, SOResult>();
+    results.forEach(r => {
+      if (r.approvalStatus === 'Disetujui') {
+        if (r.storeCode) approvedResultsMap.set(r.storeCode.trim().toUpperCase(), r);
+        if (r.storeId) approvedResultsMap.set(r.storeId, r);
+      }
+    });
+
+    let baseStores: Store[];
     if (mode === 'replace') {
       clearAllDeletedIds(STORAGE_KEYS.STORES);
-      updated = newStores;
+      baseStores = newStores;
     } else {
-      const existingMap = new Map<string, Store>(stores.map(s => [s.code || s.id, s]));
+      const existingMap = new Map<string, Store>(stores.map(s => [s.code?.trim().toUpperCase() || s.id, s]));
       newStores.forEach(s => {
-        existingMap.set(s.code || s.id, s);
+        existingMap.set(s.code?.trim().toUpperCase() || s.id, s);
       });
-      updated = Array.from(existingMap.values());
+      baseStores = Array.from(existingMap.values());
     }
+
+    // Preserve approved status, approval dates, approver, and last SO audit stats across manual Excel edits
+    const updated = baseStores.map(store => {
+      const key = store.code?.trim().toUpperCase() || store.id;
+      const existing = existingStoreMap.get(key);
+      const approvedResult = approvedResultsMap.get(key);
+
+      const isAlreadyApproved = 
+        store.statusApproveSO === 'Sudah Approve' || 
+        existing?.statusApproveSO === 'Sudah Approve' || 
+        !!approvedResult;
+
+      return {
+        ...store,
+        statusApproveSO: isAlreadyApproved ? ('Sudah Approve' as const) : (store.statusApproveSO || existing?.statusApproveSO || 'Belum SO'),
+        tglSoApproved: store.tglSoApproved || existing?.tglSoApproved || approvedResult?.soDate,
+        spvApprover: store.spvApprover || existing?.spvApprover || approvedResult?.spvApprover || (isAlreadyApproved ? 'Gean Pratama (SPV SO)' : undefined),
+        lastSODate: store.lastSODate || existing?.lastSODate || approvedResult?.soDate,
+        lastAccuracyRate: store.lastAccuracyRate !== undefined ? store.lastAccuracyRate : (existing?.lastAccuracyRate ?? approvedResult?.accuracyRatePercentage)
+      };
+    });
+
     const synced = updated.map(s => autoSyncStoreRegionAndKabupaten(s));
     setStores(synced);
     saveStores(synced, mode === 'replace');

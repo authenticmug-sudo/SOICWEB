@@ -66,6 +66,7 @@ export interface Store {
   isZonaHitam?: boolean;
   soAktiva?: string; // SO AKTIVA
   tglSoApproved?: string; // Tanggal SO yang disetujui SPV bulan berjalan
+  spvApprover?: string; // Nama SPV yang menyetujui hasil SO
   smartClassification?: string; // Klasifikasi Kriteria Cerdas (Dynamic Category)
   korlap?: string; // KORLAP/OFFICER e.g. angga, pasek, odi
   jenisToko?: string; // JENIS TOKO e.g. STANDART NEW

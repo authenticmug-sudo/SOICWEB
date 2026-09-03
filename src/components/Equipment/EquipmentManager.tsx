@@ -480,15 +480,15 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
       }
 
       if (maxMatches >= 2 && headerIdx >= 0) {
-        // Convert to JSON using headerIdx
-        const json: any[] = XLSX.utils.sheet_to_json(ws, { range: headerIdx, defval: '' });
+        // Convert to JSON using headerIdx with raw: false to preserve formatted text (e.g. times/dates/MAC colons)
+        const json: any[] = XLSX.utils.sheet_to_json(ws, { range: headerIdx, defval: '', raw: false });
         if (json.length > bestRows.length) {
           bestRows = json;
           bestHeaderIdx = headerIdx;
         }
       } else if (bestRows.length === 0) {
         // Fallback standard sheet_to_json
-        const fallbackJson: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+        const fallbackJson: any[] = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
         if (fallbackJson.length > bestRows.length) {
           bestRows = fallbackJson;
         }
@@ -507,7 +507,12 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
 
     return validRows.map((row: any, idx: number) => {
       const keys = Object.keys(row);
-      const getVal = (possibleKeys: string[], excludeGenericKeys: string[] = ['no', 'no.', 'nomor', 'index', '#', 'bilangan']) => {
+      const isIndexKey = (kStr: string) => {
+        const clean = kStr.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+        return ['no', 'no.', 'nomor', 'index', 'idx', '#', 'bilangan', 'urutan'].includes(clean);
+      };
+
+      const getVal = (possibleKeys: string[], excludeGenericKeys: string[] = ['no', 'no.', 'nomor', 'index', 'idx', '#', 'bilangan', 'urutan']) => {
         // 1. Exact match first in priority order of possibleKeys
         for (const pk of possibleKeys) {
           const cleanPk = pk.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -541,10 +546,37 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
         return '';
       };
 
-      const user = getVal(['Nama User', 'Nama Petugas', 'Nama Korlap', 'Nama PIC', 'Petugas', 'Korlap', 'Auditor', 'User', 'Nama', 'PIC', 'Penanggung Jawab', 'Pengguna', 'Pemegang', 'Pemegang Alat', 'Nama Pengguna']) || `User ${idx + 1}`;
-      const rawSerial = getVal(['Serial Number (MAC)', 'Serial Number', 'MAC Address', 'MAC', 'MAC Scanner', 'MacAddress', 'SN', 'S/N', 'Serial', 'No Serial', 'Nomor Serial']) || '';
-      // Clean and normalize serial number / MAC (correct common typo of semicolon instead of colon, e.g. "00;23:A7..." -> "00:23:A7...")
-      const serial = rawSerial.replace(/;/g, ':').replace(/\s+/g, ' ').trim();
+      const user = getVal([
+        'Nama User', 'Nama Petugas', 'Nama Korlap', 'Nama PIC', 'Petugas', 'Korlap', 
+        'Auditor', 'User', 'PIC', 'Penanggung Jawab', 'Pengguna', 'Pemegang', 
+        'Pemegang Alat', 'Nama Pengguna', 'Nama'
+      ]) || `User ${idx + 1}`;
+
+      // High-precision MAC & Serial Number detection
+      let rawSerial = getVal([
+        'Kode MAC WDCP', 'Kode MAC', 'MAC WDCP', 'WDCP MAC', 'Kode WDCP',
+        'Serial Number (MAC)', 'Serial Number', 'MAC Address', 'MAC Scanner', 'MacAddress', 
+        'SN WDCP', 'Serial WDCP', 'Kode Alat (MAC)', 'Kode Alat / MAC', 'No. MAC', 'No MAC', 
+        'Nomor MAC', 'SN', 'S/N', 'Serial', 'No Serial', 'Nomor Serial', 'No. Serial',
+        'Barcode / MAC', 'MAC / QR', 'Alat WDCP', 'Perangkat WDCP', 'Scanner WDCP',
+        'Kode Alat', 'Kode Scanner', 'MAC', 'WDCP'
+      ]);
+
+      // Fallback: If rawSerial is not found or matches a pure number from an index column, inspect cell values
+      const macPatternRegex = /(?:[0-9a-fA-F]{1,4}[:;]){1,5}[0-9a-fA-F]{1,4}|^[0-9a-fA-F]{1,2}:|^WDCP-/i;
+      if (!rawSerial || (rawSerial.length <= 2 && /^\d+$/.test(rawSerial))) {
+        for (const k of keys) {
+          if (isIndexKey(k)) continue;
+          const val = String(row[k] || '').trim();
+          if (val && macPatternRegex.test(val)) {
+            rawSerial = val;
+            break;
+          }
+        }
+      }
+
+      // Clean and normalize serial number / MAC (replace semicolons/hyphens with colons, trim whitespace)
+      let serial = rawSerial.replace(/;/g, ':').replace(/\s+/g, ' ').trim();
       
       let rawKondisi = getVal(['Kondisi', 'Status', 'Kondisi Alat', 'Condition', 'Status Alat', 'Kondisi WDCP']) || 'Baik';
       let kondisi: EquipmentCondition = 'Baik';
@@ -568,8 +600,16 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
 
       let category = getVal(['Kategori', 'Category', 'Tipe Perangkat', 'Jenis Alat', 'Model', 'Tipe Scanner']) || 'WDCP';
       let notes = getVal(['Catatan', 'Keterangan', 'Notes', 'Deskripsi', 'Kondisi Fisik', 'Catatan Alat', 'Keterangan Tambahan']) || '';
+      
       const cleanSnForAsset = serial.replace(/[^a-zA-Z0-9]/g, '');
-      let assetId = getVal(['ID Asset', 'Asset ID', 'Kode Alat', 'No Asset', 'Nomor Asset']) || (cleanSnForAsset.length >= 3 ? `WDCP-${cleanSnForAsset.slice(-6).toUpperCase()}` : `WDCP-${String(idx + 1).padStart(3, '0')}`);
+      let explicitAssetId = getVal(['ID Asset', 'Asset ID', 'No Asset', 'Nomor Asset']);
+      let assetId = explicitAssetId || (cleanSnForAsset.length >= 2 ? `WDCP-${cleanSnForAsset.toUpperCase()}` : `WDCP-${String(idx + 1).padStart(3, '0')}`);
+      
+      // If serial is still empty but assetId contains a MAC-like string, backfill serial
+      if (!serial && macPatternRegex.test(assetId)) {
+        serial = assetId;
+      }
+
       let name = getVal(['Nama Alat / WDCP', 'Nama Alat', 'Nama Perangkat', 'Device Name', 'Nama Barang']) || `Scanner ${category}`;
 
       const deterministicId = getDeterministicEquipmentId({ serialNumber: serial, assetId, assignedUser: user, name });
@@ -1062,7 +1102,7 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
                         </td>
                         <td className="p-3 font-mono text-[11px] font-bold text-slate-800">
                           <span className="bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                            {eq.serialNumber || '-'}
+                            {eq.serialNumber || eq.assetId || '-'}
                           </span>
                         </td>
                         <td className="p-3">
