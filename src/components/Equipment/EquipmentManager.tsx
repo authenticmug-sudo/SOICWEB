@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Wrench, 
   Plus, 
@@ -83,7 +83,17 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
   const [importMode, setImportMode] = useState<'replace' | 'append'>('replace');
   const [importError, setImportError] = useState<string | null>(null);
   const [isProcessingImport, setIsProcessingImport] = useState(false);
+  const [isParsingFile, setIsParsingFile] = useState(false);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!isImportModalOpen) {
+      setIsProcessingImport(false);
+      setIsParsingFile(false);
+      setIsDraggingOver(false);
+    }
+  }, [isImportModalOpen]);
 
   const [isNewRepairModalOpen, setIsNewRepairModalOpen] = useState(false);
   const [selectedEquipForRepair, setSelectedEquipForRepair] = useState<SOEquipment | null>(null);
@@ -438,90 +448,153 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
     showToast('Template Master Excel berhasil diunduh!', 'success', 'Download Berhasil');
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const processWorkbookToEquipment = (wb: XLSX.WorkBook): SOEquipment[] => {
+    // Scan all sheets to find the one with the best match for equipment columns
+    let bestRows: any[] = [];
+    let bestHeaderIdx = 0;
+
+    for (const sheetName of wb.SheetNames) {
+      const ws = wb.Sheets[sheetName];
+      if (!ws) continue;
+
+      const rawMatrix = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, defval: '' });
+      if (!rawMatrix || rawMatrix.length === 0) continue;
+
+      // Scan first 20 rows for header keywords
+      const keywords = ['nama', 'user', 'petugas', 'pic', 'serial', 'mac', 'kondisi', 'warna', 'scanner', 'kategori', 'wdcp', 'catatan'];
+      let headerIdx = -1;
+      let maxMatches = 0;
+
+      for (let i = 0; i < Math.min(rawMatrix.length, 25); i++) {
+        const row = rawMatrix[i];
+        if (!Array.isArray(row)) continue;
+        const rowStr = row.map(c => String(c || '').toLowerCase()).join(' ');
+        let matches = 0;
+        keywords.forEach(k => {
+          if (rowStr.includes(k)) matches++;
+        });
+        if (matches > maxMatches) {
+          maxMatches = matches;
+          headerIdx = i;
+        }
+      }
+
+      if (maxMatches >= 2 && headerIdx >= 0) {
+        // Convert to JSON using headerIdx
+        const json: any[] = XLSX.utils.sheet_to_json(ws, { range: headerIdx, defval: '' });
+        if (json.length > bestRows.length) {
+          bestRows = json;
+          bestHeaderIdx = headerIdx;
+        }
+      } else if (bestRows.length === 0) {
+        // Fallback standard sheet_to_json
+        const fallbackJson: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+        if (fallbackJson.length > bestRows.length) {
+          bestRows = fallbackJson;
+        }
+      }
+    }
+
+    if (bestRows.length === 0) {
+      return [];
+    }
+
+    // Filter out empty rows
+    const validRows = bestRows.filter((row: any) => {
+      if (!row || typeof row !== 'object') return false;
+      return Object.values(row).some(v => v !== null && v !== undefined && String(v).trim() !== '');
+    });
+
+    return validRows.map((row: any, idx: number) => {
+      const keys = Object.keys(row);
+      const getVal = (possibleKeys: string[]) => {
+        const foundKey = keys.find(k => possibleKeys.some(pk => {
+          const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const cleanPk = pk.toLowerCase().replace(/[^a-z0-9]/g, '');
+          return cleanK.includes(cleanPk) || cleanPk.includes(cleanK);
+        }));
+        return foundKey ? String(row[foundKey]).trim() : '';
+      };
+
+      const user = getVal(['Nama User', 'Nama Petugas', 'Nama Korlap', 'Nama PIC', 'Petugas', 'Korlap', 'Auditor', 'User', 'Nama', 'PIC', 'Penanggung Jawab', 'Pengguna', 'Pemegang', 'Pemegang Alat', 'Nama Pengguna']) || `User ${idx + 1}`;
+      const serial = getVal(['Serial Number (MAC)', 'Serial Number', 'MAC', 'MAC Address', 'SN', 'S/N', 'Serial', 'No Serial', 'Nomor Serial', 'MAC Scanner', 'MacAddress']) || '';
+      
+      let rawKondisi = getVal(['Kondisi', 'Status', 'Kondisi Alat', 'Condition', 'Status Alat', 'Kondisi WDCP']) || 'Baik';
+      let kondisi: EquipmentCondition = 'Baik';
+      const kLower = rawKondisi.toLowerCase();
+      if (kLower.includes('rusak')) kondisi = 'Rusak';
+      else if (kLower.includes('perbaikan') || kLower.includes('servis') || kLower.includes('service')) kondisi = 'Perbaikan';
+      else if (kLower.includes('oke') || kLower.includes('ready') || kLower.includes('bagus')) kondisi = 'Oke';
+      else kondisi = 'Baik';
+
+      let scannerColor = getVal(['Warna Scanner', 'Warna', 'Color', 'Warna Alat', 'Warna Fisik']) || 'Merah';
+      const cLower = scannerColor.toLowerCase();
+      if (cLower.includes('kuning') || cLower.includes('yellow')) scannerColor = 'Kuning';
+      else if (cLower.includes('putih') || cLower.includes('white')) scannerColor = 'Putih';
+      else if (cLower.includes('hitam') || cLower.includes('black')) scannerColor = 'Hitam';
+      else if (cLower.includes('biru') || cLower.includes('blue')) scannerColor = 'Biru';
+      else scannerColor = 'Merah';
+
+      let rawCanScan = getVal(['Bisa Scan QR Barcode', 'Bisa Scan QR', 'Scan QR', 'QR Barcode', 'QR', 'Can Scan QR', 'Barcode QR']) || 'Bisa';
+      const sLower = rawCanScan.toLowerCase();
+      let canScanQr = (sLower.includes('tidak') || sLower === 'no' || sLower === '0' || sLower === 'false') ? 'Tidak' : 'Bisa';
+
+      let category = getVal(['Kategori', 'Category', 'Tipe Perangkat', 'Jenis Alat', 'Model', 'Tipe Scanner']) || 'WDCP';
+      let notes = getVal(['Catatan', 'Keterangan', 'Notes', 'Deskripsi', 'Kondisi Fisik', 'Catatan Alat', 'Keterangan Tambahan']) || '';
+      let assetId = getVal(['ID Asset', 'Asset ID', 'Kode Alat', 'No Asset', 'Nomor Asset']) || (serial && serial.length >= 6 ? `WDCP-${serial.replace(/[^a-zA-Z0-9]/g, '').slice(-6).toUpperCase()}` : `WDCP-${String(idx + 1).padStart(3, '0')}`);
+      let name = getVal(['Nama Alat / WDCP', 'Nama Alat', 'Nama Perangkat', 'Device Name', 'Nama Barang']) || `Scanner ${category}`;
+
+      const deterministicId = getDeterministicEquipmentId({ serialNumber: serial, assetId, assignedUser: user, name });
+
+      return {
+        id: deterministicId,
+        assetId,
+        name,
+        category,
+        assignedUser: user,
+        status: kondisi,
+        serialNumber: serial,
+        scannerColor,
+        canScanQr,
+        notes,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+    });
+  };
+
+  const closeImportModal = () => {
+    setIsImportModalOpen(false);
+    setIsProcessingImport(false);
+    setIsParsingFile(false);
+    setIsDraggingOver(false);
+    setImportError(null);
+    setImportFile(null);
+    setParsedImportData([]);
+  };
+
+  const parseSelectedFile = (file: File) => {
     setImportFile(file);
     setImportError(null);
+    setIsProcessingImport(false);
+    setIsParsingFile(true);
 
-    // Auto trigger raw backup in background
+    // Non-blocking auto backup in background
     backupExcelFileToCloudinaryAndFirestore(file, 'MASTER_ALAT').catch(() => {});
 
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-        const rawJson: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+        const arrayBuffer = evt.target?.result as ArrayBuffer;
+        const wb = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array' });
+        
+        const parsed = processWorkbookToEquipment(wb);
 
-        if (!rawJson || rawJson.length === 0) {
-          setImportError('File Excel/CSV kosong atau format tidak dikenali.');
+        if (parsed.length === 0) {
+          setImportError('File Excel/CSV tidak memiliki baris data alat yang valid. Pastikan ada kolom Nama User / Serial Number.');
+          setIsParsingFile(false);
           return;
         }
-
-        // Filter out completely blank rows
-        const validRows = rawJson.filter((row: any) => {
-          if (!row || typeof row !== 'object') return false;
-          return Object.values(row).some(v => v !== null && v !== undefined && String(v).trim() !== '');
-        });
-
-        if (validRows.length === 0) {
-          setImportError('File Excel/CSV tidak memiliki baris data yang valid.');
-          return;
-        }
-
-        const parsed: SOEquipment[] = validRows.map((row: any, idx: number) => {
-          // Normalize keys (case-insensitive & trim)
-          const keys = Object.keys(row);
-          const getVal = (possibleKeys: string[]) => {
-            const foundKey = keys.find(k => possibleKeys.some(pk => k.toLowerCase().replace(/[^a-z0-9]/g, '') === pk.toLowerCase().replace(/[^a-z0-9]/g, '')));
-            return foundKey ? String(row[foundKey]).trim() : '';
-          };
-
-          const user = getVal(['Nama User', 'Nama Petugas', 'Nama Korlap', 'Nama PIC', 'Petugas', 'Korlap', 'Auditor', 'User', 'Nama', 'PIC', 'Penanggung Jawab', 'Pengguna', 'Pemegang', 'Pemegang Alat', 'Nama Pengguna']) || `User ${idx + 1}`;
-          const serial = getVal(['Serial Number (MAC)', 'Serial Number', 'MAC', 'MAC Address', 'SN', 'S/N', 'Serial', 'No Serial', 'Nomor Serial', 'MAC Scanner']) || '';
-          
-          let rawKondisi = getVal(['Kondisi', 'Status', 'Kondisi Alat', 'Condition', 'Status Alat', 'Kondisi WDCP']) || 'Baik';
-          let kondisi: EquipmentCondition = 'Baik';
-          if (rawKondisi.toLowerCase().includes('rusak')) kondisi = 'Rusak';
-          else if (rawKondisi.toLowerCase().includes('perbaikan') || rawKondisi.toLowerCase().includes('servis')) kondisi = 'Perbaikan';
-          else if (rawKondisi.toLowerCase().includes('oke') || rawKondisi.toLowerCase().includes('ready')) kondisi = 'Oke';
-          else kondisi = 'Baik';
-
-          let scannerColor = getVal(['Warna Scanner', 'Warna', 'Color', 'Warna Alat', 'Warna Fisik']) || 'Merah';
-          if (scannerColor.toLowerCase().includes('merah')) scannerColor = 'Merah';
-          else if (scannerColor.toLowerCase().includes('kuning')) scannerColor = 'Kuning';
-          else if (scannerColor.toLowerCase().includes('putih')) scannerColor = 'Putih';
-          else if (scannerColor.toLowerCase().includes('hitam')) scannerColor = 'Hitam';
-          else if (scannerColor.toLowerCase().includes('biru')) scannerColor = 'Biru';
-
-          let rawCanScan = getVal(['Bisa Scan QR Barcode', 'Bisa Scan QR', 'Scan QR', 'QR Barcode', 'QR', 'Can Scan QR', 'Barcode QR']) || 'Bisa';
-          let canScanQr = (rawCanScan.toLowerCase().includes('tidak') || rawCanScan.toLowerCase() === 'no' || rawCanScan === '0') ? 'Tidak' : 'Bisa';
-
-          let category = getVal(['Kategori', 'Category', 'Tipe Perangkat', 'Jenis Alat', 'Model', 'Tipe Scanner']) || 'WDCP';
-          let notes = getVal(['Catatan', 'Keterangan', 'Notes', 'Deskripsi', 'Kondisi Fisik', 'Catatan Alat', 'Keterangan Tambahan']) || '';
-          let assetId = getVal(['ID Asset', 'Asset ID', 'Kode Alat', 'No Asset', 'Nomor Asset']) || (serial && serial.length >= 6 ? `WDCP-${serial.replace(/[^a-zA-Z0-9]/g, '').slice(-6).toUpperCase()}` : `WDCP-${String(idx + 1).padStart(3, '0')}`);
-          let name = getVal(['Nama Alat / WDCP', 'Nama Alat', 'Nama Perangkat', 'Device Name', 'Nama Barang']) || `Scanner ${category}`;
-
-          const deterministicId = getDeterministicEquipmentId({ serialNumber: serial, assetId, assignedUser: user, name });
-
-          return {
-            id: deterministicId,
-            assetId,
-            name,
-            category,
-            assignedUser: user,
-            status: kondisi,
-            serialNumber: serial,
-            scannerColor,
-            canScanQr,
-            notes,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          };
-        });
 
         // Deduplicate parsed data within the file itself
         const { deduplicated: cleanParsed } = deduplicateEntityList('equipment', parsed);
@@ -529,9 +602,24 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
         setImportError(null);
       } catch (err: any) {
         setImportError(`Gagal membaca file: ${err?.message || 'Pastikan file berekstensi .xlsx, .xls, atau .csv'}`);
+      } finally {
+        setIsParsingFile(false);
       }
     };
-    reader.readAsBinaryString(file);
+    reader.onerror = () => {
+      setImportError('Gagal membaca file dari penyimpanan lokal.');
+      setIsParsingFile(false);
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    parseSelectedFile(file);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   const handleExecuteImport = async () => {
@@ -542,10 +630,6 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
 
     setIsProcessingImport(true);
     try {
-      if (importFile) {
-        await backupExcelFileToCloudinaryAndFirestore(importFile, 'MASTER_ALAT').catch(() => {});
-      }
-
       let finalEquipmentList: SOEquipment[] = [];
       const isReplace = importMode === 'replace';
 
@@ -577,7 +661,7 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
       // Final deduplication
       const { deduplicated: cleanFinalList } = deduplicateEntityList('equipment', finalEquipmentList);
 
-      // Persist immediately to Firestore & localStorage
+      // Persist immediately to localStorage & update local state (zero latency)
       await saveEquipment(cleanFinalList, isReplace);
 
       if (onBatchUpdateEquipment) {
@@ -586,13 +670,15 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
         cleanFinalList.forEach(item => onUpdateEquipment(item));
       }
 
-      showToast(`Berhasil mengimpor ${cleanFinalList.length} data Master Alat & WDCP! Tersimpan ke Firestore & Cloudinary (${isReplace ? 'Ganti Semua' : 'Gabungkan'}).`, 'success', 'Impor Berhasil');
-      setIsImportModalOpen(false);
-      setImportFile(null);
-      setParsedImportData([]);
+      // Trigger background backup non-blockingly
+      if (importFile) {
+        backupExcelFileToCloudinaryAndFirestore(importFile, 'MASTER_ALAT').catch(() => {});
+      }
+
+      showToast(`Berhasil mengimpor ${cleanFinalList.length} data Master Alat & WDCP! (${isReplace ? 'Ganti Semua' : 'Gabungkan'}).`, 'success', 'Impor Berhasil');
+      closeImportModal();
     } catch (err: any) {
       showToast(`Gagal impor: ${err?.message || err}`, 'error', 'Impor Gagal');
-    } finally {
       setIsProcessingImport(false);
     }
   };
@@ -717,10 +803,11 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
                   setImportFile(null);
                   setParsedImportData([]);
                   setImportError(null);
+                  setIsProcessingImport(false);
                   setIsImportModalOpen(true);
                 }}
                 title="Upload file Master Excel atau CSV untuk update masal"
-                className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded text-xs font-semibold transition flex items-center gap-1.5 shadow-2xs"
+                className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded text-xs font-semibold transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
               >
                 <Upload className="w-3.5 h-3.5 text-purple-600" />
                 <span>Upload Master</span>
@@ -1387,13 +1474,9 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
                 Upload Master Pendataan Alat & WDCP
               </h3>
               <button 
-                onClick={() => {
-                  setIsImportModalOpen(false);
-                  setImportFile(null);
-                  setParsedImportData([]);
-                  setImportError(null);
-                }} 
-                className="text-slate-400 hover:text-white p-1 rounded"
+                onClick={closeImportModal} 
+                className="text-slate-400 hover:text-white p-1 rounded transition cursor-pointer"
+                title="Tutup Modal"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1415,7 +1498,7 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
                 <button
                   type="button"
                   onClick={handleDownloadTemplate}
-                  className="px-3 py-1.5 bg-white hover:bg-purple-100 text-purple-700 border border-purple-300 rounded font-semibold text-xs transition flex items-center gap-1.5 shadow-2xs whitespace-nowrap"
+                  className="px-3 py-1.5 bg-white hover:bg-purple-100 text-purple-700 border border-purple-300 rounded font-semibold text-xs transition flex items-center gap-1.5 shadow-2xs whitespace-nowrap cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5 text-purple-600" />
                   <span>Download Template Excel</span>
@@ -1424,8 +1507,31 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
 
               {/* Upload Drop Area */}
               <div 
-                onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-purple-300 hover:border-purple-500 bg-purple-50/30 hover:bg-purple-50/60 rounded-xl p-6 text-center cursor-pointer transition flex flex-col items-center justify-center gap-2"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDraggingOver(true);
+                }}
+                onDragLeave={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDraggingOver(false);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDraggingOver(false);
+                  const file = e.dataTransfer.files?.[0];
+                  if (file) {
+                    parseSelectedFile(file);
+                  }
+                }}
+                onClick={() => !isParsingFile && fileInputRef.current?.click()}
+                className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition flex flex-col items-center justify-center gap-2 ${
+                  isDraggingOver 
+                    ? 'border-purple-600 bg-purple-100/70 scale-[1.01]' 
+                    : 'border-purple-300 hover:border-purple-500 bg-purple-50/30 hover:bg-purple-50/60'
+                }`}
               >
                 <input
                   ref={fileInputRef}
@@ -1435,23 +1541,40 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
                   className="hidden"
                 />
                 <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center text-purple-600">
-                  <Upload className="w-5 h-5" />
+                  {isParsingFile ? (
+                    <RefreshCw className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <Upload className="w-5 h-5" />
+                  )}
                 </div>
                 <div>
                   <p className="font-bold text-slate-800">
-                    {importFile ? importFile.name : 'Klik untuk Pilih File Master Excel / CSV'}
+                    {isParsingFile 
+                      ? 'Sedang membaca data file Excel...' 
+                      : (importFile ? importFile.name : 'Klik atau Tarik File Master Excel / CSV ke Sini')}
                   </p>
                   <p className="text-[11px] text-slate-500 mt-0.5">
-                    Mendukung file .xlsx, .xls, dan .csv
+                    {importFile && !isParsingFile
+                      ? `Ukuran: ${(importFile.size / 1024).toFixed(1)} KB • Klik untuk ganti file`
+                      : 'Mendukung file .xlsx, .xls, dan .csv'}
                   </p>
                 </div>
               </div>
 
               {/* Error Box */}
               {importError && (
-                <div className="bg-rose-50 border border-rose-200 text-rose-700 p-3 rounded-lg flex items-center gap-2 font-medium">
-                  <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0" />
-                  <span>{importError}</span>
+                <div className="bg-rose-50 border border-rose-200 text-rose-700 p-3 rounded-lg flex items-center justify-between gap-2 font-medium">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                    <span>{importError}</span>
+                  </div>
+                  <button 
+                    type="button" 
+                    onClick={() => setImportError(null)}
+                    className="text-rose-500 hover:text-rose-700 text-xs underline cursor-pointer"
+                  >
+                    Tutup
+                  </button>
                 </div>
               )}
 
@@ -1543,30 +1666,36 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
 
             <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between flex-shrink-0">
               <span className="text-[11px] text-slate-500">
-                {parsedImportData.length > 0 ? `${parsedImportData.length} alat siap diimpor` : 'Silakan pilih file untuk memulai'}
+                {isParsingFile ? (
+                  <span className="text-purple-600 font-semibold flex items-center gap-1">
+                    <RefreshCw className="w-3 h-3 animate-spin" /> Membaca isi file...
+                  </span>
+                ) : parsedImportData.length > 0 ? (
+                  <span className="text-emerald-700 font-semibold">
+                    {parsedImportData.length} alat siap diimpor
+                  </span>
+                ) : (
+                  'Silakan pilih file untuk memulai'
+                )}
               </span>
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setIsImportModalOpen(false);
-                    setImportFile(null);
-                    setParsedImportData([]);
-                  }}
-                  className="px-3.5 py-1.5 rounded bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-medium"
+                  onClick={closeImportModal}
+                  className="px-3.5 py-1.5 rounded bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-medium cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="button"
-                  disabled={parsedImportData.length === 0 || isProcessingImport}
+                  disabled={parsedImportData.length === 0 || isProcessingImport || isParsingFile}
                   onClick={handleExecuteImport}
-                  className="px-4 py-1.5 rounded bg-purple-600 hover:bg-purple-700 text-white font-semibold shadow-xs flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-1.5 rounded bg-purple-600 hover:bg-purple-700 text-white font-semibold shadow-xs flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 >
                   {isProcessingImport ? (
                     <>
                       <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Mengimpor...</span>
+                      <span>Mengimpor {parsedImportData.length} Data...</span>
                     </>
                   ) : (
                     <>

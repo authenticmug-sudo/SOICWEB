@@ -140,6 +140,62 @@ export function clearAllDeletedIds(storageKey: string) {
   } catch {}
 }
 
+export function trackDeletedMasterDataset(dataset: Partial<MasterTokoDataset>) {
+  if (!dataset) return;
+  try {
+    const key = 'spv_deleted_master_datasets';
+    const raw = localStorage.getItem(key);
+    let list: string[] = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(list)) list = [];
+    
+    if (dataset.id && !list.includes(dataset.id)) list.push(dataset.id);
+    if (dataset.filename) {
+      const cleanFn = dataset.filename.trim().toLowerCase();
+      if (cleanFn && !list.includes(cleanFn)) list.push(cleanFn);
+    }
+    if (dataset.title) {
+      const cleanTitle = dataset.title.trim().toLowerCase();
+      if (cleanTitle && !list.includes(cleanTitle)) list.push(cleanTitle);
+    }
+    localStorage.setItem(key, JSON.stringify(list));
+  } catch {}
+}
+
+export function isMasterDatasetDeleted(dataset: Partial<MasterTokoDataset>): boolean {
+  if (!dataset) return false;
+  try {
+    const key = 'spv_deleted_master_datasets';
+    const raw = localStorage.getItem(key);
+    if (!raw) return false;
+    const list: string[] = JSON.parse(raw);
+    if (!Array.isArray(list) || list.length === 0) return false;
+
+    if (dataset.id && list.includes(dataset.id)) return true;
+    if (dataset.filename && list.includes(dataset.filename.trim().toLowerCase())) return true;
+    if (dataset.title && list.includes(dataset.title.trim().toLowerCase())) return true;
+  } catch {}
+  return false;
+}
+
+export function untrackDeletedMasterDataset(dataset: Partial<MasterTokoDataset>) {
+  if (!dataset) return;
+  try {
+    const key = 'spv_deleted_master_datasets';
+    const raw = localStorage.getItem(key);
+    if (!raw) return;
+    let list: string[] = JSON.parse(raw);
+    if (!Array.isArray(list)) return;
+
+    const toRemove = new Set<string>();
+    if (dataset.id) toRemove.add(dataset.id);
+    if (dataset.filename) toRemove.add(dataset.filename.trim().toLowerCase());
+    if (dataset.title) toRemove.add(dataset.title.trim().toLowerCase());
+
+    list = list.filter(item => !toRemove.has(item));
+    localStorage.setItem(key, JSON.stringify(list));
+  } catch {}
+}
+
 export function getDeletedIdsSet(storageKey: string): Set<string> {
   const result = new Set<string>();
   try {
@@ -254,6 +310,14 @@ export function getDeterministicResultId(item: Partial<SOResult>): string {
   return item.id && !item.id.startsWith('RESULT-') ? item.id : `res_${Date.now()}`;
 }
 
+export function getDeterministicMasterDatasetId(item: Partial<MasterTokoDataset>): string {
+  const fn = (item.filename || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  if (fn) return `ds_fn_${fn}`.slice(0, 45);
+  const tt = (item.title || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  if (tt) return `ds_tt_${tt}`.slice(0, 45);
+  return item.id && !item.id.startsWith('DATASET-') ? item.id : `ds_${Date.now()}`;
+}
+
 /**
  * Universal entity deduplicator.
  * Identifies business duplicates, picks the newest, canonicalizes the ID,
@@ -316,6 +380,13 @@ export function deduplicateEntityList<T extends { id: string }>(
       if (sc && dt) return `res_${sc}_${dt}`;
       return `id_${it.id}`;
     }
+    if (collectionName === 'master_toko_datasets') {
+      const fn = (it.filename || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      const tt = (it.title || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      if (fn) return `ds_fn_${fn}`;
+      if (tt) return `ds_tt_${tt}`;
+      return `id_${it.id}`;
+    }
     return `id_${it.id}`;
   };
 
@@ -326,6 +397,7 @@ export function deduplicateEntityList<T extends { id: string }>(
     if (collectionName === 'stores') return getDeterministicStoreId(it);
     if (collectionName === 'uniform_records') return getDeterministicUniformId(it);
     if (collectionName === 'results') return getDeterministicResultId(it);
+    if (collectionName === 'master_toko_datasets') return getDeterministicMasterDatasetId(it);
     return it.id;
   };
 
@@ -353,10 +425,10 @@ export function deduplicateEntityList<T extends { id: string }>(
         deduplicated.push(item);
       }
     } else {
-      // Multiple duplicates found! Sort by newest updatedAt or createdAt
+      // Multiple duplicates found! Sort by newest uploadDate or updatedAt or createdAt
       group.sort((a: any, b: any) => {
-        const tA = a.updatedAt ? new Date(a.updatedAt).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
-        const tB = b.updatedAt ? new Date(b.updatedAt).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+        const tA = a.uploadDate ? new Date(a.uploadDate).getTime() : (a.updatedAt ? new Date(a.updatedAt).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : 0));
+        const tB = b.uploadDate ? new Date(b.uploadDate).getTime() : (b.updatedAt ? new Date(b.updatedAt).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0));
         return tB - tA;
       });
 
@@ -376,7 +448,11 @@ export function deduplicateEntityList<T extends { id: string }>(
     }
   }
 
-  return { deduplicated, staleDocIdsToDelete, updatedCanonicalItems };
+  const finalDeduplicated = collectionName === 'master_toko_datasets' 
+    ? (normalizeSingleActiveDataset(deduplicated as any) as any as T[]) 
+    : deduplicated;
+
+  return { deduplicated: finalDeduplicated, staleDocIdsToDelete, updatedCanonicalItems };
 }
 
 function mergeAndSyncFirestoreWithLocal<T extends { id: string }>(
@@ -456,7 +532,8 @@ function mergeAndSyncFirestoreWithLocal<T extends { id: string }>(
         continue;
       }
 
-      if (!deletedIds.has(item.id)) {
+      const isDatasetMarkedDeleted = collectionName === 'master_toko_datasets' && isMasterDatasetDeleted(item as any);
+      if (!deletedIds.has(item.id) && !isDatasetMarkedDeleted) {
         mergedMap.set(item.id, item);
         cacheMap.set(item.id, JSON.stringify(item));
       } else if (!isFirestoreQuotaExceeded) {
@@ -472,7 +549,8 @@ function mergeAndSyncFirestoreWithLocal<T extends { id: string }>(
   const unsyncedItems: T[] = [];
 
   for (const localItem of localItems) {
-    if (localItem && localItem.id && !deletedIds.has(localItem.id) && !staleDocIdsToDelete.includes(localItem.id)) {
+    const isLocalDatasetDeleted = collectionName === 'master_toko_datasets' && isMasterDatasetDeleted(localItem as any);
+    if (localItem && localItem.id && !deletedIds.has(localItem.id) && !isLocalDatasetDeleted && !staleDocIdsToDelete.includes(localItem.id)) {
       if (!mergedMap.has(localItem.id)) {
         if (!isMockDummyId(localItem.id)) {
           mergedMap.set(localItem.id, localItem);
@@ -1154,7 +1232,7 @@ export async function saveEquipment(equipment: SOEquipment[], isReplaceMode = fa
   uploadRawJsonToCloudinary(equipment, 'Master_Alat', 'SO Sistem IC BALI/Master Alat').catch(() => {});
   if (!isFirestoreQuotaExceeded) {
     if (isReplaceMode) {
-      await replaceFirestoreCollection('equipment', equipment).catch(() => {});
+      replaceFirestoreCollection('equipment', equipment).catch(() => {});
     } else {
       queueSyncFirestoreCollection('equipment', equipment, isReplaceMode);
     }
@@ -1251,7 +1329,11 @@ export function getStoredMasterTokoDatasets(): MasterTokoDataset[] {
   if (local) {
     try {
       const parsed = JSON.parse(local);
-      if (Array.isArray(parsed)) return normalizeSingleActiveDataset(parsed);
+      if (Array.isArray(parsed)) {
+        const nonDeleted = parsed.filter(d => d && d.id && !isMasterDatasetDeleted(d));
+        const { deduplicated } = deduplicateEntityList('master_toko_datasets', nonDeleted);
+        return normalizeSingleActiveDataset(deduplicated);
+      }
     } catch {
       // fallback
     }
@@ -1403,7 +1485,8 @@ export async function cleanAllDatabaseDuplicates(): Promise<{
     { key: STORAGE_KEYS.PERSONNEL, col: 'personnel' },
     { key: STORAGE_KEYS.STORES, col: 'stores' },
     { key: STORAGE_KEYS.UNIFORMS, col: 'uniform_records' },
-    { key: STORAGE_KEYS.RESULTS, col: 'results' }
+    { key: STORAGE_KEYS.RESULTS, col: 'results' },
+    { key: STORAGE_KEYS.MASTER_TOKO_DATASETS, col: 'master_toko_datasets' }
   ];
 
   for (const { key, col } of collectionsToClean) {
@@ -1532,6 +1615,7 @@ export async function syncCollectionFromCloudinary<T extends { id: string }>(
     // Filter out locally deleted IDs from Cloudinary data
     const validCloudinaryItems = cloudinaryData.filter(item => {
       if (!item || !item.id || deletedIds.has(item.id)) return false;
+      if (storageKey === STORAGE_KEYS.MASTER_TOKO_DATASETS && isMasterDatasetDeleted(item as any)) return false;
       if (isHardCleared && localItems.length === 0 && systemResetTime > 0) {
         const itemTime = (item as any).updatedAt ? new Date((item as any).updatedAt).getTime() : ((item as any).createdAt ? new Date((item as any).createdAt).getTime() : 0);
         if (itemTime > 0 && itemTime <= systemResetTime) return false;
@@ -1558,7 +1642,8 @@ export async function syncCollectionFromCloudinary<T extends { id: string }>(
     // 2. Merge local items: ALWAYS preserve local items that are not deleted locally
     let hasNewOrUpdatedLocalItems = false;
     for (const lItem of localItems) {
-      if (lItem && lItem.id && !deletedIds.has(lItem.id)) {
+      const isLItemDeleted = deletedIds.has(lItem.id) || (storageKey === STORAGE_KEYS.MASTER_TOKO_DATASETS && isMasterDatasetDeleted(lItem as any));
+      if (lItem && lItem.id && !isLItemDeleted) {
         if (!mergedMap.has(lItem.id)) {
           mergedMap.set(lItem.id, lItem);
           hasNewOrUpdatedLocalItems = true;
@@ -1584,7 +1669,8 @@ export async function syncCollectionFromCloudinary<T extends { id: string }>(
 
     let mergedList = Array.from(mergedMap.values());
     if (storageKey === STORAGE_KEYS.MASTER_TOKO_DATASETS) {
-      mergedList = normalizeSingleActiveDataset(mergedList as any) as any;
+      const { deduplicated } = deduplicateEntityList('master_toko_datasets', mergedList);
+      mergedList = normalizeSingleActiveDataset(deduplicated as any) as any;
     }
     localStorage.setItem(storageKey, JSON.stringify(mergedList));
     notifyDataChanged(storageKey, mergedList);

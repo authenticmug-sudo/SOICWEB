@@ -43,7 +43,12 @@ import {
   saveMasterDatasetToFirestore,
   STORAGE_KEYS,
   getDashboardSummary,
-  reconcilePendingExcelBackups
+  reconcilePendingExcelBackups,
+  trackDeletedMasterDataset,
+  untrackDeletedMasterDataset,
+  isMasterDatasetDeleted,
+  deduplicateEntityList,
+  normalizeSingleActiveDataset
 } from './services/storageService';
 import { ensureStoreCoordinates, autoSyncStoreRegionAndKabupaten } from './utils/geoUtils';
 import { formatSmartSODate, detectSmartMonthAndYear } from './utils/formatters';
@@ -481,6 +486,16 @@ export default function App() {
         setRepairLogs(data as EquipmentRepairLog[]);
       } else if (key === STORAGE_KEYS.ONCALL_PERSONNEL) {
         setOnCallRecords(data as OnCallPersonnelRecord[]);
+      } else if (key === STORAGE_KEYS.MASTER_TOKO_DATASETS) {
+        if (Array.isArray(data)) {
+          const nonDeleted = data.filter(d => d && d.id && !isMasterDatasetDeleted(d));
+          const { deduplicated } = deduplicateEntityList('master_toko_datasets', nonDeleted);
+          const syncedDatasets = deduplicated.map(ds => ({
+            ...ds,
+            stores: ds.stores.map(s => autoSyncStoreRegionAndKabupaten(s))
+          }));
+          setDatasets(normalizeSingleActiveDataset(syncedDatasets));
+        }
       }
     };
     window.addEventListener('spv_data_updated', handleDataUpdated);
@@ -1153,24 +1168,26 @@ export default function App() {
   };
 
   const handleUploadDataset = (newDataset: MasterTokoDataset) => {
-    let updated = [...datasets];
-    if (newDataset.isActiveForScheduling || updated.length === 0) {
-      updated = updated.map(d => ({ ...d, isActiveForScheduling: false }));
-      newDataset.isActiveForScheduling = true;
+    untrackDeletedMasterDataset(newDataset);
+    let updated = [newDataset, ...datasets];
+    if (newDataset.isActiveForScheduling || datasets.length === 0) {
+      updated = updated.map(d => ({ ...d, isActiveForScheduling: d.id === newDataset.id }));
     }
-    updated = [newDataset, ...updated];
-    setDatasets(updated);
-    saveMasterTokoDatasets(updated, true);
+    const { deduplicated } = deduplicateEntityList('master_toko_datasets', updated);
+    const normalized = normalizeSingleActiveDataset(deduplicated);
+    setDatasets(normalized);
+    saveMasterTokoDatasets(normalized, true);
     saveMasterDatasetToFirestore(newDataset).catch(() => {});
 
-    if (newDataset.isActiveForScheduling && newDataset.stores.length > 0) {
+    const activeDs = normalized.find(d => d.isActiveForScheduling) || (newDataset.isActiveForScheduling ? newDataset : null);
+    if (activeDs && activeDs.stores.length > 0) {
       clearAllDeletedIds(STORAGE_KEYS.STORES);
-      const synced = newDataset.stores.map(s => autoSyncStoreRegionAndKabupaten(s));
+      const synced = activeDs.stores.map(s => autoSyncStoreRegionAndKabupaten(s));
       setStores(synced);
       saveStores(synced, true);
 
       // Smart month detection from active dataset
-      const detected = detectSmartMonthAndYear([newDataset], synced);
+      const detected = detectSmartMonthAndYear([activeDs], synced);
       setSelectedMonth(detected.month);
       setSelectedYear(detected.year);
 
@@ -1191,8 +1208,9 @@ export default function App() {
       ...d,
       isActiveForScheduling: d.id === datasetId
     }));
-    setDatasets(updated);
-    saveMasterTokoDatasets(updated, true);
+    const normalized = normalizeSingleActiveDataset(updated);
+    setDatasets(normalized);
+    saveMasterTokoDatasets(normalized, true);
 
     if (target.stores.length > 0) {
       clearAllDeletedIds(STORAGE_KEYS.STORES);
@@ -1214,13 +1232,41 @@ export default function App() {
     }
   };
 
-  const handleDeleteDataset = (datasetId: string) => {
+  const handleDeleteDataset = (datasetId: string, passedDataset?: MasterTokoDataset) => {
+    const targetToDelete = passedDataset || datasets.find(d => d.id === datasetId);
+    if (targetToDelete) {
+      trackDeletedMasterDataset(targetToDelete);
+    }
     recordDeletedId(STORAGE_KEYS.MASTER_TOKO_DATASETS, datasetId);
     trackDeletedId(STORAGE_KEYS.MASTER_TOKO_DATASETS, datasetId);
     deleteMasterDatasetFromFirestore(datasetId).catch(() => {});
-    const updated = datasets.filter(d => d.id !== datasetId);
-    setDatasets(updated);
-    saveMasterTokoDatasets(updated, true);
+
+    // Filter out target by id, and also any duplicate sharing the same filename or title
+    const targetFn = (targetToDelete?.filename || '').trim().toLowerCase();
+    const targetTitle = (targetToDelete?.title || '').trim().toLowerCase();
+
+    const updated = datasets.filter(d => {
+      if (d.id === datasetId) return false;
+      if (isMasterDatasetDeleted(d)) return false;
+      if (targetFn && d.filename && d.filename.trim().toLowerCase() === targetFn) return false;
+      if (targetTitle && d.title && d.title.trim().toLowerCase() === targetTitle) return false;
+      return true;
+    });
+
+    const normalized = normalizeSingleActiveDataset(updated);
+    setDatasets(normalized);
+    saveMasterTokoDatasets(normalized, true);
+
+    // If active dataset was deleted, update stores to new active dataset or clear
+    if (targetToDelete?.isActiveForScheduling) {
+      const newActive = normalized.find(d => d.isActiveForScheduling);
+      if (newActive && newActive.stores && newActive.stores.length > 0) {
+        clearAllDeletedIds(STORAGE_KEYS.STORES);
+        const synced = newActive.stores.map(s => autoSyncStoreRegionAndKabupaten(s));
+        setStores(synced);
+        saveStores(synced, true);
+      }
+    }
   };
 
   const handleExportDataset = (dataset: MasterTokoDataset) => {

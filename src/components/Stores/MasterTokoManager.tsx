@@ -27,13 +27,14 @@ import { ConfirmDeleteModal } from '../Common/ConfirmDeleteModal';
 import { ToastNotification } from '../Common/ToastNotification';
 import { parseSmartWorkbook, SheetParseResult } from '../../utils/excelParser';
 import { isStoreZonaHitam } from '../../utils/storeSyncUtils';
+import { trackDeletedMasterDataset } from '../../services/storageService';
 
 interface MasterTokoManagerProps {
   datasets: MasterTokoDataset[];
   activeStoresCount: number;
   onUploadDataset: (dataset: MasterTokoDataset) => void;
   onActivateDatasetForScheduling: (datasetId: string) => void;
-  onDeleteDataset: (datasetId: string) => void;
+  onDeleteDataset: (datasetId: string, dataset?: MasterTokoDataset) => void;
   onExportDataset: (dataset: MasterTokoDataset) => void;
 }
 
@@ -772,11 +773,12 @@ export const MasterTokoManager: React.FC<MasterTokoManagerProps> = ({
         onClose={() => setDatasetToDelete(null)}
         onConfirm={() => {
           if (datasetToDelete) {
-            onDeleteDataset(datasetToDelete.id);
+            trackDeletedMasterDataset(datasetToDelete);
+            onDeleteDataset(datasetToDelete.id, datasetToDelete);
             setToastMessage({
               type: 'success',
               title: 'Dataset Dihapus',
-              message: `File Master "${datasetToDelete.title}" telah dihapus dari sistem.`
+              message: `File Master "${datasetToDelete.title}" telah dihapus secara permanen dari sistem.`
             });
             setDatasetToDelete(null);
           }
