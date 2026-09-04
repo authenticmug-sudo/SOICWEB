@@ -1035,8 +1035,7 @@ export default function App() {
   };
 
   const handleImportBulkStores = (newStores: Store[], mode: 'replace' | 'merge' = 'replace') => {
-    // Index existing stores and existing approved results to ensure SPV approvals are preserved
-    const existingStoreMap = new Map<string, Store>(stores.map(s => [s.code?.trim().toUpperCase() || s.id, s]));
+    // Index existing genuine approved results to ensure SPV approvals are preserved
     const approvedResultsMap = new Map<string, SOResult>();
     results.forEach(r => {
       if (r.approvalStatus === 'Disetujui') {
@@ -1057,24 +1056,22 @@ export default function App() {
       baseStores = Array.from(existingMap.values());
     }
 
-    // Preserve approved status, approval dates, approver, and last SO audit stats across manual Excel edits
+    // Preserve approved status ONLY if:
+    // a) Incoming store explicitly says 'Sudah Approve', OR
+    // b) There is a genuine approved audit result in the system
     const updated = baseStores.map(store => {
       const key = store.code?.trim().toUpperCase() || store.id;
-      const existing = existingStoreMap.get(key);
       const approvedResult = approvedResultsMap.get(key);
 
-      const isAlreadyApproved = 
-        store.statusApproveSO === 'Sudah Approve' || 
-        existing?.statusApproveSO === 'Sudah Approve' || 
-        !!approvedResult;
+      const hasGenuineApproval = store.statusApproveSO === 'Sudah Approve' || !!approvedResult;
 
       return {
         ...store,
-        statusApproveSO: isAlreadyApproved ? ('Sudah Approve' as const) : (store.statusApproveSO || existing?.statusApproveSO || 'Belum SO'),
-        tglSoApproved: store.tglSoApproved || existing?.tglSoApproved || approvedResult?.soDate,
-        spvApprover: store.spvApprover || existing?.spvApprover || approvedResult?.spvApprover || (isAlreadyApproved ? 'Gean Pratama (SPV SO)' : undefined),
-        lastSODate: store.lastSODate || existing?.lastSODate || approvedResult?.soDate,
-        lastAccuracyRate: store.lastAccuracyRate !== undefined ? store.lastAccuracyRate : (existing?.lastAccuracyRate ?? approvedResult?.accuracyRatePercentage)
+        statusApproveSO: hasGenuineApproval ? ('Sudah Approve' as const) : (store.statusApproveSO || 'Belum SO'),
+        tglSoApproved: hasGenuineApproval ? (store.tglSoApproved || approvedResult?.soDate || approvedResult?.approvedAt) : undefined,
+        spvApprover: hasGenuineApproval ? (store.spvApprover || approvedResult?.spvApprover || 'Gean Pratama (SPV SO)') : undefined,
+        lastSODate: store.lastSODate || approvedResult?.soDate,
+        lastAccuracyRate: store.lastAccuracyRate !== undefined ? store.lastAccuracyRate : approvedResult?.accuracyRatePercentage
       };
     });
 
@@ -1082,12 +1079,21 @@ export default function App() {
     setStores(synced);
     saveStores(synced, mode === 'replace');
 
-    // Smart auto-synchronize schedules from Master Store September SO dates
-    const { updatedSchedules, newlyCreatedCount } = syncSchedulesFromMasterStores(synced, schedules, '09', '2026');
-    if (newlyCreatedCount > 0 || updatedSchedules.length !== schedules.length) {
-      setSchedules(updatedSchedules);
-      saveSchedules(updatedSchedules);
-    }
+    // Smart month detection from imported stores
+    const detected = detectSmartMonthAndYear(datasets, synced);
+    setSelectedMonth(detected.month);
+    setSelectedYear(detected.year);
+
+    // Smart auto-synchronize schedules from Master Store SO dates
+    const { updatedSchedules } = syncSchedulesFromMasterStores(
+      synced, 
+      schedules, 
+      detected.month, 
+      detected.year,
+      { isReplaceMode: mode === 'replace', results }
+    );
+    setSchedules(updatedSchedules);
+    saveSchedules(updatedSchedules, mode === 'replace');
   };
 
   const handleBulkUpdateStores = (updatedStores: Store[]) => {
@@ -1103,11 +1109,38 @@ export default function App() {
   };
 
   const handleDeleteStore = (storeId: string) => {
+    const targetStore = stores.find(s => s.id === storeId);
     recordDeletedId(STORAGE_KEYS.STORES, storeId);
     deleteStoreFromFirestore(storeId).catch(() => {});
-    const updated = stores.filter(s => s.id !== storeId);
-    setStores(updated);
-    saveStores(updated);
+    const updatedStores = stores.filter(s => s.id !== storeId);
+    setStores(updatedStores);
+    saveStores(updatedStores);
+
+    // Also remove unapproved schedule for this deleted store
+    const storeCodeUpper = targetStore?.code?.trim().toUpperCase();
+    const updatedSchedules = schedules.filter(s => {
+      const isTarget = s.storeId === storeId || (storeCodeUpper && s.storeCode?.trim().toUpperCase() === storeCodeUpper);
+      if (!isTarget) return true;
+      return s.spvApprovalStatus === 'Disetujui' || results.some(r => r.approvalStatus === 'Disetujui' && (r.storeId === storeId || (storeCodeUpper && r.storeCode?.trim().toUpperCase() === storeCodeUpper)));
+    });
+    if (updatedSchedules.length !== schedules.length) {
+      setSchedules(updatedSchedules);
+      saveSchedules(updatedSchedules, true);
+    }
+  };
+
+  const handleResetMasterStores = () => {
+    clearAllDeletedIds(STORAGE_KEYS.STORES);
+    setStores([]);
+    saveStores([], true);
+    
+    // Clean up unapproved schedules, keeping only approved historical audit records
+    const approvedOnlySchedules = schedules.filter(s => 
+      s.spvApprovalStatus === 'Disetujui' || 
+      results.some(r => r.approvalStatus === 'Disetujui' && (r.storeCode === s.storeCode || r.storeId === s.storeId))
+    );
+    setSchedules(approvedOnlySchedules);
+    saveSchedules(approvedOnlySchedules, true);
   };
 
   // Handlers for Personnel
@@ -1320,12 +1353,16 @@ export default function App() {
       setSelectedMonth(detected.month);
       setSelectedYear(detected.year);
 
-      // Smart auto-synchronize schedules from Master Store SO dates
-      const { updatedSchedules, newlyCreatedCount } = syncSchedulesFromMasterStores(synced, schedules, detected.month, detected.year);
-      if (newlyCreatedCount > 0 || updatedSchedules.length !== schedules.length) {
-        setSchedules(updatedSchedules);
-        saveSchedules(updatedSchedules, true);
-      }
+      // Smart auto-synchronize schedules from Master Store SO dates with replace mode
+      const { updatedSchedules } = syncSchedulesFromMasterStores(
+        synced, 
+        schedules, 
+        detected.month, 
+        detected.year, 
+        { isReplaceMode: true, results }
+      );
+      setSchedules(updatedSchedules);
+      saveSchedules(updatedSchedules, true);
     }
   };
 
@@ -1354,12 +1391,16 @@ export default function App() {
       setSelectedMonth(detected.month);
       setSelectedYear(detected.year);
 
-      // Smart auto-synchronize schedules from Master Store SO dates
-      const { updatedSchedules, newlyCreatedCount } = syncSchedulesFromMasterStores(synced, schedules, detected.month, detected.year);
-      if (newlyCreatedCount > 0 || updatedSchedules.length !== schedules.length) {
-        setSchedules(updatedSchedules);
-        saveSchedules(updatedSchedules, true);
-      }
+      // Smart auto-synchronize schedules from Master Store SO dates with replace mode
+      const { updatedSchedules } = syncSchedulesFromMasterStores(
+        synced, 
+        schedules, 
+        detected.month, 
+        detected.year, 
+        { isReplaceMode: true, results }
+      );
+      setSchedules(updatedSchedules);
+      saveSchedules(updatedSchedules, true);
     }
   };
 
@@ -1372,15 +1413,9 @@ export default function App() {
     trackDeletedId(STORAGE_KEYS.MASTER_TOKO_DATASETS, datasetId);
     deleteMasterDatasetFromFirestore(datasetId).catch(() => {});
 
-    // Filter out target by id, and also any duplicate sharing the same filename or title
-    const targetFn = (targetToDelete?.filename || '').trim().toLowerCase();
-    const targetTitle = (targetToDelete?.title || '').trim().toLowerCase();
-
     const updated = datasets.filter(d => {
       if (d.id === datasetId) return false;
       if (isMasterDatasetDeleted(d)) return false;
-      if (targetFn && d.filename && d.filename.trim().toLowerCase() === targetFn) return false;
-      if (targetTitle && d.title && d.title.trim().toLowerCase() === targetTitle) return false;
       return true;
     });
 
@@ -1388,14 +1423,41 @@ export default function App() {
     setDatasets(normalized);
     saveMasterTokoDatasets(normalized, true);
 
-    // If active dataset was deleted, update stores to new active dataset or clear
+    // If active dataset was deleted, update stores to new active dataset or cleanly reset
     if (targetToDelete?.isActiveForScheduling) {
       const newActive = normalized.find(d => d.isActiveForScheduling);
       if (newActive && newActive.stores && newActive.stores.length > 0) {
         clearAllDeletedIds(STORAGE_KEYS.STORES);
-        const synced = newActive.stores.map(s => autoSyncStoreRegionAndKabupaten(s));
+        const syncedWithGeo = newActive.stores.map(s => autoSyncStoreRegionAndKabupaten(s));
+        const synced = reconcileStoresWithExistingApprovals(syncedWithGeo, [], schedules, results);
         setStores(synced);
         saveStores(synced, true);
+
+        const detected = detectSmartMonthAndYear([newActive], synced);
+        setSelectedMonth(detected.month);
+        setSelectedYear(detected.year);
+
+        const { updatedSchedules } = syncSchedulesFromMasterStores(
+          synced, 
+          schedules, 
+          detected.month, 
+          detected.year, 
+          { isReplaceMode: true, results }
+        );
+        setSchedules(updatedSchedules);
+        saveSchedules(updatedSchedules, true);
+      } else {
+        // No active dataset remaining: cleanly empty stores and unapproved schedules
+        setStores([]);
+        saveStores([], true);
+        clearAllDeletedIds(STORAGE_KEYS.STORES);
+
+        const approvedOnlySchedules = schedules.filter(s => 
+          s.spvApprovalStatus === 'Disetujui' || 
+          results.some(r => r.approvalStatus === 'Disetujui' && (r.storeCode === s.storeCode || r.storeId === s.storeId))
+        );
+        setSchedules(approvedOnlySchedules);
+        saveSchedules(approvedOnlySchedules, true);
       }
     }
   };
@@ -1601,6 +1663,7 @@ export default function App() {
             <StoreDirectory
               stores={stores}
               schedules={schedules}
+              results={results}
               onOpenAddModal={() => {
                 setEditingStore(null);
                 setIsAddStoreModalOpen(true);
@@ -1613,6 +1676,7 @@ export default function App() {
               }}
               onDeleteStore={handleDeleteStore}
               onBulkUpdateStores={handleBulkUpdateStores}
+              onResetMasterStores={handleResetMasterStores}
             />
           )}
 

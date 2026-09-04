@@ -339,49 +339,59 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
       const tglSoMei = formatSmartSODate(findVal(["so mei '26", 'so mei', 'tgl so mei', 'mei']));
       const tglSoJuni = formatSmartSODate(findVal(["so juni '26", 'so juni', 'tgl so juni', 'juni']));
       const tglSoJuli = formatSmartSODate(findVal(["so juli '26", 'so juli', 'tgl so juli', 'juli']));
-      const soAgustus = formatSmartSODate(findVal(["so agustus '26", 'so agustus', 'tgl so agustus', 'agustus', 'so bulan ini', 'jadwal so']));
-      const soSeptemberRaw = findVal(["so september '26", 'so september', 'tgl so september', 'september']);
-      const soSeptember = formatSmartSODate(soSeptemberRaw);
-      const tglSoApprovedRaw = findVal(['tgl so approved', 'so approved', 'approved spv', 'so disetujui', 'tgl so disetujui', 'tgl so']);
+      const soAgustus = formatSmartSODate(findVal(["so agustus '26", 'so agustus', 'tgl so agustus', 'agustus']));
+      const soSeptemberRaw = findVal(["so september '26", 'so september', 'tgl so september', 'september', 'so sep', 'tgl so sep']);
+      let soSeptember = formatSmartSODate(soSeptemberRaw);
+      
+      // Generic SO schedule date (e.g. from a monthly master sheet with header "TGL SO" or "JADWAL SO")
+      const genericScheduleDate = formatSmartSODate(findVal(['tgl so', 'tanggal so', 'jadwal so', 'tgl jadwal so', 'tgl pelaksanaan so', 'jadwal']));
+      if ((!soSeptember || soSeptember === '-') && genericScheduleDate && genericScheduleDate !== '-') {
+        soSeptember = genericScheduleDate;
+      }
+
+      // Explicit SPV approval date ONLY (must NOT match generic "tgl so")
+      const tglSoApprovedRaw = findVal([
+        'tgl so approved',
+        'tgl approved so',
+        'tgl approve so',
+        'tanggal so approved',
+        'tanggal approve so',
+        'tgl approval spv',
+        'tgl approved spv',
+        'tgl so disetujui',
+        'tanggal disetujui spv'
+      ]);
       const tglSoApproved = formatSmartSODate(tglSoApprovedRaw);
 
       // Parse status approve SO column / Indikator Ter-SO SPV
       const rawStatusApprove = findVal([
-        'sudah approve so',
         'status approve so',
-        'status approve',
-        'approve so',
+        'status approval so',
         'status approval spv',
+        'status approve spv',
         'approval spv',
         'approval so',
-        'so approve',
+        'status approve',
+        'approve so',
+        'sudah approve so',
         'sudah approve',
-        'ter-so',
-        'status ter-so',
-        'ter-so / belum',
-        'ter-so atau belum',
-        'ter so',
         'status so terapprove',
         'status so approved',
         'indikator ter-so',
-        'status approval',
-        'status so'
+        'status ter-so'
       ]);
 
       let statusApproveSO: 'Sudah Approve' | 'Belum SO' | 'Belum Terapprove' = 'Belum SO';
       if (rawStatusApprove) {
         const sUpper = rawStatusApprove.toUpperCase().trim();
         if (
-          sUpper.includes('SUDAH') || 
-          sUpper.includes('SETUJU') || 
-          sUpper.includes('APPROVED') || 
-          sUpper.includes('TER-SO') || 
-          sUpper.includes('TER SO') || 
-          sUpper === 'YA' || 
-          sUpper === 'TRUE' || 
-          sUpper === '1' || 
-          sUpper === 'SELESAI' || 
-          sUpper === 'OK'
+          sUpper.includes('SUDAH APPROVE') || 
+          sUpper.includes('SUDAH DISETUJUI') || 
+          sUpper.includes('APPROVED SPV') || 
+          sUpper.includes('DISETUJUI') || 
+          sUpper === 'APPROVED' || 
+          sUpper === 'TER-SO' || 
+          sUpper === 'TER SO'
         ) {
           statusApproveSO = 'Sudah Approve';
         } else if (
@@ -389,13 +399,14 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
           sUpper.includes('MENUNGGU') || 
           sUpper.includes('PENDING') || 
           sUpper.includes('AUDIT ULANG') ||
-          sUpper.includes('BELUM APPROVE')
+          sUpper.includes('BELUM APPROVE') ||
+          sUpper.includes('SELESAI') // execution finished but pending SPV approval
         ) {
           statusApproveSO = 'Belum Terapprove';
         } else {
           statusApproveSO = 'Belum SO';
         }
-      } else if (tglSoApproved && tglSoApproved !== '-') {
+      } else if (tglSoApproved && tglSoApproved !== '-' && tglSoApproved.length > 3) {
         statusApproveSO = 'Sudah Approve';
       }
 

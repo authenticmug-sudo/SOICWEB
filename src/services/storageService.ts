@@ -141,7 +141,7 @@ export function clearAllDeletedIds(storageKey: string) {
 }
 
 export function trackDeletedMasterDataset(dataset: Partial<MasterTokoDataset>) {
-  if (!dataset) return;
+  if (!dataset || !dataset.id) return;
   try {
     const key = 'spv_deleted_master_datasets';
     const raw = localStorage.getItem(key);
@@ -149,20 +149,12 @@ export function trackDeletedMasterDataset(dataset: Partial<MasterTokoDataset>) {
     if (!Array.isArray(list)) list = [];
     
     if (dataset.id && !list.includes(dataset.id)) list.push(dataset.id);
-    if (dataset.filename) {
-      const cleanFn = dataset.filename.trim().toLowerCase();
-      if (cleanFn && !list.includes(cleanFn)) list.push(cleanFn);
-    }
-    if (dataset.title) {
-      const cleanTitle = dataset.title.trim().toLowerCase();
-      if (cleanTitle && !list.includes(cleanTitle)) list.push(cleanTitle);
-    }
     localStorage.setItem(key, JSON.stringify(list));
   } catch {}
 }
 
 export function isMasterDatasetDeleted(dataset: Partial<MasterTokoDataset>): boolean {
-  if (!dataset) return false;
+  if (!dataset || !dataset.id) return false;
   try {
     const key = 'spv_deleted_master_datasets';
     const raw = localStorage.getItem(key);
@@ -171,8 +163,6 @@ export function isMasterDatasetDeleted(dataset: Partial<MasterTokoDataset>): boo
     if (!Array.isArray(list) || list.length === 0) return false;
 
     if (dataset.id && list.includes(dataset.id)) return true;
-    if (dataset.filename && list.includes(dataset.filename.trim().toLowerCase())) return true;
-    if (dataset.title && list.includes(dataset.title.trim().toLowerCase())) return true;
   } catch {}
   return false;
 }

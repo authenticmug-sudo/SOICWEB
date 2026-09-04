@@ -198,8 +198,61 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
       const tglSoJuni = formatSmartSODate(getVal(['tgl so juni', 'so juni', 'juni'], ''));
       const tglSoJuli = formatSmartSODate(getVal(['tgl so juli', 'so juli', 'juli'], ''));
       const soAgustus = formatSmartSODate(getVal(['so agustus', 'tgl so agustus', 'agustus', 'so bulan ini', 'jadwal so'], ''));
-      const soSeptember = formatSmartSODate(getVal(["so september '26", 'so september', 'tgl so september', 'september', 'so sep', 'tgl so sep', 'so sep 26', 'so september 2026'], ''));
-      const tglSoApproved = formatSmartSODate(getVal(['tgl so approved', 'so approved', 'approved spv', 'so disetujui', 'tgl so'], ''));
+      let soSeptember = formatSmartSODate(getVal(["so september '26", 'so september', 'tgl so september', 'september', 'so sep', 'tgl so sep', 'so sep 26', 'so september 2026'], ''));
+      const genericScheduleDate = formatSmartSODate(getVal(['tgl so', 'tanggal so', 'jadwal so', 'tgl jadwal so', 'tgl pelaksanaan so', 'jadwal'], ''));
+      if ((!soSeptember || soSeptember === '-') && genericScheduleDate && genericScheduleDate !== '-') {
+        soSeptember = genericScheduleDate;
+      }
+      
+      const tglSoApprovedRaw = getVal(['tgl so approved', 'tgl approved so', 'tgl approve so', 'tanggal so approved', 'tanggal approve so', 'tgl approval spv', 'tgl approved spv', 'tgl so disetujui'], '');
+      const tglSoApproved = formatSmartSODate(tglSoApprovedRaw);
+
+      const rawStatusApprove = getVal([
+        'status approve so',
+        'status approval so',
+        'status approval spv',
+        'status approve spv',
+        'approval spv',
+        'approval so',
+        'status approve',
+        'approve so',
+        'sudah approve so',
+        'sudah approve',
+        'status so terapprove',
+        'status so approved',
+        'indikator ter-so',
+        'status ter-so'
+      ], '');
+
+      let statusApproveSO: 'Sudah Approve' | 'Belum SO' | 'Belum Terapprove' = 'Belum SO';
+      if (rawStatusApprove) {
+        const sUpper = rawStatusApprove.toUpperCase().trim();
+        if (
+          sUpper.includes('SUDAH APPROVE') || 
+          sUpper.includes('SUDAH DISETUJUI') || 
+          sUpper.includes('APPROVED SPV') || 
+          sUpper.includes('DISETUJUI') || 
+          sUpper === 'APPROVED' || 
+          sUpper === 'TER-SO' || 
+          sUpper === 'TER SO'
+        ) {
+          statusApproveSO = 'Sudah Approve';
+        } else if (
+          sUpper.includes('BELUM TERAPPROVE') || 
+          sUpper.includes('MENUNGGU') || 
+          sUpper.includes('PENDING') || 
+          sUpper.includes('AUDIT ULANG') ||
+          sUpper.includes('BELUM APPROVE') ||
+          sUpper.includes('SELESAI')
+        ) {
+          statusApproveSO = 'Belum Terapprove';
+        } else {
+          statusApproveSO = 'Belum SO';
+        }
+      } else if (tglSoApproved && tglSoApproved !== '-' && tglSoApproved.length > 3) {
+        statusApproveSO = 'Sudah Approve';
+      }
+
       const keterangan = getVal(['keterangan', 'ket'], '');
       const jop = getVal(['jop'], '');
 
@@ -291,6 +344,7 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
         soAgustus: soAgustus !== '-' ? soAgustus : undefined,
         soSeptember: soSeptember !== '-' ? soSeptember : undefined,
         tglSoApproved: tglSoApproved !== '-' ? tglSoApproved : undefined,
+        statusApproveSO: statusApproveSO,
         zona: zonaFormatted,
         isZonaHitam: isZonaHitam,
         korlap,

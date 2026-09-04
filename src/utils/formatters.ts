@@ -29,9 +29,12 @@ export function formatDateIndo(dateStr: string): string {
   }
 }
 
-export function formatDateISO(dateStr: any): string {
+export function formatDateISO(dateStr: any, fallbackToToday = false): string {
+  if (!dateStr || dateStr === '-' || dateStr === '0' || dateStr === '0.0' || String(dateStr).toLowerCase() === '0-jan-00' || String(dateStr).toLowerCase() === 'belum so') {
+    return fallbackToToday ? new Date().toISOString().split('T')[0] : '';
+  }
   const d = parseSmartDate(dateStr);
-  if (!d) return new Date().toISOString().split('T')[0];
+  if (!d) return fallbackToToday ? new Date().toISOString().split('T')[0] : '';
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');

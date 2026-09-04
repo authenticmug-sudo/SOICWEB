@@ -24,7 +24,7 @@ import {
   CheckCircle2,
   Clock
 } from 'lucide-react';
-import { Store, SOSchedule, RegionArea, StoreType } from '../../types/stockOpname';
+import { Store, SOSchedule, SOResult, RegionArea, StoreType } from '../../types/stockOpname';
 import { REGIONS } from '../../data/initialData';
 import { getRiskBadgeClass, formatDateIndo, formatSmartSODate, formatZoneText } from '../../utils/formatters';
 import { exportToCSV } from '../../services/storageService';
@@ -37,12 +37,14 @@ import { ToastNotification } from '../Common/ToastNotification';
 interface StoreDirectoryProps {
   stores: Store[];
   schedules?: SOSchedule[];
+  results?: SOResult[];
   onOpenAddModal: () => void;
   onOpenImportModal: () => void;
   onSelectStore: (store: Store) => void;
   onEditStore: (store: Store) => void;
   onDeleteStore: (storeId: string) => void;
   onBulkUpdateStores?: (updatedStores: Store[]) => void;
+  onResetMasterStores?: () => void;
 }
 
 export interface ColumnDef {
@@ -113,13 +115,15 @@ const PRESETS = [
 
 export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
   stores,
-  schedules,
+  schedules = [],
+  results = [],
   onOpenAddModal,
   onOpenImportModal,
   onSelectStore,
   onEditStore,
   onDeleteStore,
-  onBulkUpdateStores
+  onBulkUpdateStores,
+  onResetMasterStores
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRegion, setSelectedRegion] = useState('ALL');
@@ -130,6 +134,7 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
 
   const [storeToDelete, setStoreToDelete] = useState<Store | null>(null);
+  const [isConfirmResetOpen, setIsConfirmResetOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Helper to dynamically get assigned Korlap/Officer based on SPV approval or master data
@@ -240,7 +245,7 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
     const matchesZona = selectedZona === 'ALL' || 
       (selectedZona === 'HITAM' ? isBlackZone : !isBlackZone);
 
-    const storeStatusApprove = getStoreSOApprovalStatus(s, schedules);
+    const storeStatusApprove = getStoreSOApprovalStatus(s, schedules, results);
     const matchesStatusApprove = selectedStatusApprove === 'ALL' || storeStatusApprove === selectedStatusApprove;
 
     return matchesSearch && matchesRegion && matchesQm && matchesKorlap && matchesZona && matchesStatusApprove;
@@ -341,6 +346,18 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
             <Upload className="w-3.5 h-3.5 text-slate-600" />
             <span>Import Excel / CSV</span>
           </button>
+
+          {onResetMasterStores && (
+            <button
+              type="button"
+              onClick={() => setIsConfirmResetOpen(true)}
+              className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-xs font-bold border border-rose-300 transition flex items-center gap-1.5 active:scale-95"
+              title="Kosongkan Master Toko & Bersihkan Residu Jadwal"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
+              <span>Kosongkan Master</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -706,7 +723,7 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
                       {isColVisible('statusApproveSO') && (
                         <td className="py-2.5 px-3 text-center">
                           {(() => {
-                            const status = getStoreSOApprovalStatus(s, schedules);
+                            const status = getStoreSOApprovalStatus(s, schedules, results);
                             if (status === 'Sudah Approve') {
                               return (
                                 <span className="px-2.5 py-1 rounded-md bg-emerald-100 border border-emerald-300 text-emerald-900 font-bold text-[10px] inline-flex items-center gap-1 shadow-2xs">
@@ -1036,6 +1053,29 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
         ] : []}
         confirmText="Ya, Hapus Toko"
         dangerBadgeText="Data toko ini akan dihapus permanen dari database master."
+      />
+
+      {/* Confirmation Modal for Resetting Master */}
+      <ConfirmDeleteModal
+        isOpen={isConfirmResetOpen}
+        onClose={() => setIsConfirmResetOpen(false)}
+        onConfirm={() => {
+          setIsConfirmResetOpen(false);
+          if (onResetMasterStores) {
+            onResetMasterStores();
+            setToastMessage('Master Toko berhasil dikosongkan dan residu jadwal dibersihkan secara tuntas!');
+          }
+        }}
+        title="Kosongkan Master Toko & Bersihkan Residu"
+        subtitle="Apakah Anda yakin ingin mengosongkan seluruh data Master Toko?"
+        itemName={`${stores.length} Toko Terdaftar`}
+        itemDetails={[
+          { label: 'Total Toko', value: `${stores.length} Toko` },
+          { label: 'Aksi Pembersihan', value: 'Hapus master toko & bersihkan jadwal unapproved' },
+          { label: 'Data Aman', value: 'Riwayat hasil audit SO yang sudah disetujui SPV tetap tersimpan aman' }
+        ]}
+        confirmText="Ya, Kosongkan Master"
+        dangerBadgeText="Tindakan ini mengosongkan master toko dan jadwal yang belum disetujui agar Anda dapat upload master baru secara bersih."
       />
 
       {/* Success Toast Feedback */}

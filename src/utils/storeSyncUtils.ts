@@ -99,7 +99,51 @@ export function getStoreSOApprovalStatus(
 ): 'Sudah Approve' | 'Belum SO' | 'Belum Terapprove' {
   if (!store) return 'Belum SO';
 
-  // 1. Check explicit statusApproveSO property from sheet or direct edit
+  const codeKey = (store.code || '').trim().toUpperCase();
+  const idKey = (store.id || '').trim().toUpperCase();
+
+  // 1. Highest Priority: Actual submitted audit results (Hasil SO)
+  if (results && results.length > 0) {
+    const matchingResults = results.filter(r => 
+      (codeKey && r.storeCode && r.storeCode.trim().toUpperCase() === codeKey) || 
+      (idKey && r.storeId && r.storeId.trim().toUpperCase() === idKey)
+    );
+
+    if (matchingResults.some(r => r.approvalStatus === 'Disetujui')) {
+      return 'Sudah Approve';
+    }
+
+    if (matchingResults.some(r => 
+      r.approvalStatus === 'Menunggu Approval SPV' || 
+      r.approvalStatus === 'Perlu Audit Ulang' ||
+      (!r.approvalStatus && r.id) ||
+      ((r.approvalStatus as string) !== 'Disetujui' && (r.approvalStatus as string) !== 'Ditolak')
+    )) {
+      return 'Belum Terapprove';
+    }
+  }
+
+  // 2. Second Priority: Actual Schedule Status
+  if (schedules && schedules.length > 0) {
+    const matchingSchedules = schedules.filter(sch => 
+      (codeKey && sch.storeCode && sch.storeCode.trim().toUpperCase() === codeKey) || 
+      (idKey && sch.storeId && sch.storeId.trim().toUpperCase() === idKey)
+    );
+
+    if (matchingSchedules.some(sch => sch.spvApprovalStatus === 'Disetujui')) {
+      return 'Sudah Approve';
+    }
+
+    if (matchingSchedules.some(sch => 
+      sch.status === 'Selesai' || 
+      sch.status === 'Menunggu Rekapan' || 
+      sch.spvApprovalStatus === 'Menunggu Approval SPV'
+    )) {
+      return 'Belum Terapprove';
+    }
+  }
+
+  // 3. Third Priority: Explicit statusApproveSO property from sheet or direct store edit
   if (store.statusApproveSO) {
     const s = String(store.statusApproveSO).toLowerCase().trim();
     if (s.includes('sudah') || s.includes('approved') || s.includes('setuju')) return 'Sudah Approve';
@@ -107,34 +151,7 @@ export function getStoreSOApprovalStatus(
     if (s.includes('belum so')) return 'Belum SO';
   }
 
-  // 2. Check schedules
-  if (schedules && schedules.length > 0) {
-    const matchingSchedules = schedules.filter(sch => 
-      sch.storeCode === store.code || sch.storeId === store.id || (sch.storeName && sch.storeName.toLowerCase() === store.name?.toLowerCase())
-    );
-
-    const hasApproved = matchingSchedules.some(sch => 
-      (sch.spvApprovalStatus as string) === 'Disetujui' || ((sch.status as string) === 'Selesai' && (sch.spvApprovalStatus as string) === 'Disetujui')
-    );
-    if (hasApproved) return 'Sudah Approve';
-
-    const hasPendingApproval = matchingSchedules.some(sch => 
-      (sch.status as string) === 'Selesai' || (sch.status as string) === 'Menunggu Rekapan' || (sch.spvApprovalStatus as string) === 'Menunggu Approval SPV'
-    );
-    if (hasPendingApproval) return 'Belum Terapprove';
-  }
-
-  // 3. Check results
-  if (results && results.length > 0) {
-    const matchingResults = results.filter(r => r.storeCode === store.code || r.storeId === store.id);
-    const hasApprovedResult = matchingResults.some(r => r.approvalStatus === 'Disetujui');
-    if (hasApprovedResult) return 'Sudah Approve';
-
-    const hasPendingResult = matchingResults.some(r => r.approvalStatus === 'Menunggu Approval SPV');
-    if (hasPendingResult) return 'Belum Terapprove';
-  }
-
-  // 4. Check explicit tglSoApproved
+  // 4. Fourth Priority: Explicit tglSoApproved date
   if (store.tglSoApproved && store.tglSoApproved !== '-' && store.tglSoApproved !== '0' && !store.tglSoApproved.toLowerCase().includes('belum')) {
     return 'Sudah Approve';
   }
@@ -315,28 +332,81 @@ export function autoSyncStoreWithApprovedSchedule(
 /**
  * Intelligently generate and synchronize SOSchedules from Master Store monthly date columns
  * (e.g. SO SEPTEMBER '26 or SO AGUSTUS) when a new master file is uploaded or activated.
+ * Correctly handles schedule date modifications from Excel without residual ghost schedules.
  */
 export function syncSchedulesFromMasterStores(
   stores: Store[], 
   existingSchedules: SOSchedule[],
   targetMonth: string = '09',
-  targetYear: string = '2026'
-): { updatedSchedules: SOSchedule[]; newlyCreatedCount: number } {
+  targetYear: string = '2026',
+  options?: {
+    isReplaceMode?: boolean;
+    results?: SOResult[];
+  }
+): { updatedSchedules: SOSchedule[]; newlyCreatedCount: number; updatedCount: number; removedCount: number } {
   if (!stores || stores.length === 0) {
-    return { updatedSchedules: existingSchedules, newlyCreatedCount: 0 };
+    if (options?.isReplaceMode) {
+      const approvedOnly = existingSchedules.filter(s => 
+        s.spvApprovalStatus === 'Disetujui' || 
+        (options?.results && options.results.some(r => r.approvalStatus === 'Disetujui' && (r.storeCode === s.storeCode || r.storeId === s.storeId)))
+      );
+      return { 
+        updatedSchedules: approvedOnly, 
+        newlyCreatedCount: 0, 
+        updatedCount: 0, 
+        removedCount: existingSchedules.length - approvedOnly.length 
+      };
+    }
+    return { updatedSchedules: existingSchedules, newlyCreatedCount: 0, updatedCount: 0, removedCount: 0 };
   }
 
-  const scheduleMap = new Map<string, SOSchedule>();
-  existingSchedules.forEach(sch => {
-    const key = `${sch.storeCode || sch.storeId}_${sch.scheduledDate}`;
-    scheduleMap.set(key, sch);
+  const results = options?.results || [];
+  const approvedStoreKeySet = new Set<string>();
+  results.forEach(r => {
+    if (r.approvalStatus === 'Disetujui') {
+      if (r.storeCode) approvedStoreKeySet.add(r.storeCode.trim().toUpperCase());
+      if (r.storeId) approvedStoreKeySet.add(r.storeId.trim().toUpperCase());
+    }
   });
 
-  const allSchedules = [...existingSchedules];
+  // 1. Separate schedules into genuinely approved schedules and unapproved schedules
+  const approvedSchedules: SOSchedule[] = [];
+  const unapprovedMap = new Map<string, SOSchedule[]>();
+
+  existingSchedules.forEach(sch => {
+    const codeKey = sch.storeCode ? sch.storeCode.trim().toUpperCase() : '';
+    const idKey = sch.storeId ? sch.storeId.trim().toUpperCase() : '';
+    const isApproved = sch.spvApprovalStatus === 'Disetujui' || 
+      (codeKey && approvedStoreKeySet.has(codeKey)) || 
+      (idKey && approvedStoreKeySet.has(idKey));
+
+    if (isApproved) {
+      approvedSchedules.push(sch);
+    } else {
+      const primaryKey = codeKey || idKey;
+      if (primaryKey) {
+        const list = unapprovedMap.get(primaryKey) || [];
+        list.push(sch);
+        unapprovedMap.set(primaryKey, list);
+      }
+    }
+  });
+
   let newlyCreatedCount = 0;
+  let updatedCount = 0;
+  let removedCount = 0;
+
+  const processedUnapprovedSchedules: SOSchedule[] = [];
+  const handledStoreKeys = new Set<string>();
 
   stores.forEach(st => {
-    // Check September SO date first, then fallback to other month fields if target is different
+    const codeKey = st.code ? st.code.trim().toUpperCase() : '';
+    const idKey = st.id ? st.id.trim().toUpperCase() : '';
+    const primaryKey = codeKey || idKey;
+    if (!primaryKey || handledStoreKeys.has(primaryKey)) return;
+    handledStoreKeys.add(primaryKey);
+
+    // Determine target SO date for this store in target month
     let rawDateVal = '';
     if (targetMonth === '09') {
       rawDateVal = st.soSeptember || '';
@@ -350,24 +420,39 @@ export function syncSchedulesFromMasterStores(
       rawDateVal = st.tglSoMei || '';
     }
 
-    if (!rawDateVal || rawDateVal === '-' || rawDateVal === '0' || rawDateVal === '0.0' || rawDateVal.toLowerCase() === '0-jan-00' || rawDateVal.toLowerCase() === 'belum so') {
-      return;
+    // Fallback: If empty, check other SO date fields that match targetMonth
+    if (!rawDateVal || rawDateVal === '-' || rawDateVal === '0') {
+      const candidates = [st.soSeptember, st.soAgustus, st.tglSoJuli, st.tglSoJuni, st.tglSoMei, st.lastSODate];
+      for (const c of candidates) {
+        if (c && c !== '-' && c !== '0' && c !== '0.0' && c.toLowerCase() !== 'belum so') {
+          const iso = formatDateISO(c);
+          if (iso && iso.slice(5, 7) === targetMonth) {
+            rawDateVal = c;
+            break;
+          }
+        }
+      }
     }
 
-    // Convert date string to standard ISO format (YYYY-MM-DD)
     const isoDate = formatDateISO(rawDateVal);
-    if (!isoDate || isoDate.startsWith('1970') || isoDate.startsWith('1900')) return;
+    const hasValidDate = !!isoDate && !isoDate.startsWith('1970') && !isoDate.startsWith('1900') && isoDate.length >= 10;
 
-    // Check if store already has a schedule for this month/date
-    const key = `${st.code || st.id}_${isoDate}`;
-    const storeMonthKey = `${st.code || st.id}_${isoDate.slice(0, 7)}`;
+    const existingUnapprovedList = (codeKey ? unapprovedMap.get(codeKey) : undefined) || 
+                                  (idKey ? unapprovedMap.get(idKey) : undefined) || [];
 
-    const existingExact = scheduleMap.get(key);
-    const existingInMonth = allSchedules.find(s => 
-      (s.storeCode === st.code || s.storeId === st.id) && 
-      s.scheduledDate && 
-      s.scheduledDate.startsWith(isoDate.slice(0, 7))
+    // If store already has a genuinely approved schedule, preserve it
+    const hasApprovedSchedule = approvedSchedules.some(s => 
+      (codeKey && s.storeCode?.trim().toUpperCase() === codeKey) || 
+      (idKey && s.storeId?.trim().toUpperCase() === idKey)
     );
+
+    if (!hasValidDate) {
+      // Store has NO scheduled date in new master: remove any lingering unapproved schedule
+      if (existingUnapprovedList.length > 0) {
+        removedCount += existingUnapprovedList.length;
+      }
+      return;
+    }
 
     const canonicalOfficer = st.korlap && st.korlap !== 'Petugas SO' 
       ? (normalizeKorlapName(st.korlap) || st.korlap) 
@@ -377,51 +462,42 @@ export function syncSchedulesFromMasterStores(
     const storeZona = isHitam ? 'ZONA HITAM' : 'NON ZONA HITAM';
     const storeAktiva = st.soAktiva || 'Tidak';
     const storeSaldo = typeof st.saldoToko === 'number' ? st.saldoToko : (parseFloat(String(st.saldoToko || '').replace(/[^0-9.-]/g, '')) || 0);
+    const dayName = getDayNameIndo(isoDate);
 
-    if (existingExact) {
-      // If schedule exists, ensure date, dayName, region, officer, zona, & saldo are in sync
-      existingExact.dayName = getDayNameIndo(isoDate);
-      existingExact.zona = storeZona;
-      existingExact.soAktiva = storeAktiva;
-      if (storeSaldo > 0) existingExact.stockRp = storeSaldo;
-      if (st.as) existingExact.asInitial = st.as;
-      if (st.typeSo || st.qm) existingExact.typeSo = st.typeSo || st.qm || 'M';
-      if (!existingExact.officerInCharge || existingExact.officerInCharge === 'Petugas SO' || st.korlap) {
-        existingExact.officerInCharge = canonicalOfficer;
-        existingExact.groupName = canonicalOfficer;
+    if (existingUnapprovedList.length > 0) {
+      // Pick the primary existing schedule, drop any duplicates
+      const targetSched = existingUnapprovedList[0];
+      if (existingUnapprovedList.length > 1) {
+        removedCount += (existingUnapprovedList.length - 1);
       }
-      if (st.region) existingExact.region = st.region;
-      // If store is marked as approved in master, ensure schedule is marked approved
-      if (st.statusApproveSO === 'Sudah Approve' && existingExact.spvApprovalStatus !== 'Disetujui') {
-        existingExact.spvApprovalStatus = 'Disetujui';
-        existingExact.status = 'Selesai';
+
+      if (targetSched.scheduledDate !== isoDate) {
+        updatedCount++;
       }
-    } else if (existingInMonth) {
-      // If schedule exists in the same month but different date, update its scheduledDate
-      // PROTECT APPROVED SCHEDULE: If schedule was already approved or completed by SPV, preserve its date and approved status!
-      const isScheduleApproved = existingInMonth.spvApprovalStatus === 'Disetujui' || existingInMonth.status === 'Selesai';
-      if (!isScheduleApproved) {
-        existingInMonth.scheduledDate = isoDate;
-        existingInMonth.dayName = getDayNameIndo(isoDate);
-      }
-      existingInMonth.zona = storeZona;
-      existingInMonth.soAktiva = storeAktiva;
-      if (storeSaldo > 0) existingInMonth.stockRp = storeSaldo;
-      if (st.as) existingInMonth.asInitial = st.as;
-      if (st.typeSo || st.qm) existingInMonth.typeSo = st.typeSo || st.qm || 'M';
-      if (!existingInMonth.officerInCharge || existingInMonth.officerInCharge === 'Petugas SO' || st.korlap) {
-        existingInMonth.officerInCharge = canonicalOfficer;
-        existingInMonth.groupName = canonicalOfficer;
-      }
-      if (st.region) existingInMonth.region = st.region;
-      if (st.statusApproveSO === 'Sudah Approve' && !isScheduleApproved) {
-        existingInMonth.spvApprovalStatus = 'Disetujui';
-        existingInMonth.status = 'Selesai';
-      }
-    } else {
-      // Create new smart schedule for target month
-      const dayName = getDayNameIndo(isoDate);
-      const isAlreadyApproved = st.statusApproveSO === 'Sudah Approve' || (st.tglSoApproved && st.tglSoApproved !== '-');
+
+      const updatedSched: SOSchedule = {
+        ...targetSched,
+        id: `SCHED-${st.code || st.id}-${isoDate}`,
+        scheduledDate: isoDate,
+        dayName: dayName,
+        storeId: st.id,
+        storeCode: st.code,
+        storeName: st.name,
+        zona: storeZona,
+        soAktiva: storeAktiva,
+        stockRp: storeSaldo > 0 ? storeSaldo : targetSched.stockRp,
+        asInitial: st.as || targetSched.asInitial,
+        typeSo: st.typeSo || st.qm || targetSched.typeSo || 'M',
+        officerInCharge: canonicalOfficer,
+        groupName: canonicalOfficer,
+        region: st.region || st.kabupaten || targetSched.region || 'Kota Denpasar',
+        status: 'Terjadwal',
+        spvApprovalStatus: 'Menunggu Approval SPV'
+      };
+
+      processedUnapprovedSchedules.push(updatedSched);
+    } else if (!hasApprovedSchedule) {
+      // Create fresh schedule
       const newSchedule: SOSchedule = {
         id: `SCHED-${st.code || st.id}-${isoDate}`,
         storeId: st.id,
@@ -443,22 +519,51 @@ export function syncSchedulesFromMasterStores(
         soAktiva: storeAktiva,
         asInitial: st.as || '',
         region: st.region || st.kabupaten || 'Kota Denpasar',
-        status: isAlreadyApproved ? 'Selesai' : 'Terjadwal',
+        status: 'Terjadwal',
         targetSKUCount: st.totalSKUCount || 1000,
-        spvApprovalStatus: isAlreadyApproved ? 'Disetujui' : 'Menunggu Approval SPV',
-        notes: isAlreadyApproved 
-          ? `Disinkronkan dari Master Toko: Sudah Approve SPV (Type SO: ${st.typeSo || st.qm || 'M'})`
-          : `Otomatis disinkronkan dari Master Toko (Type SO: ${st.typeSo || st.qm || 'M'})`,
+        spvApprovalStatus: 'Menunggu Approval SPV',
+        notes: `Otomatis disinkronkan dari Master Toko (Type SO: ${st.typeSo || st.qm || 'M'})`,
         createdAt: new Date().toISOString().slice(0, 10)
       };
 
-      allSchedules.push(newSchedule);
-      scheduleMap.set(key, newSchedule);
+      processedUnapprovedSchedules.push(newSchedule);
       newlyCreatedCount++;
     }
   });
 
-  return { updatedSchedules: allSchedules, newlyCreatedCount };
+  // If in merge mode (not replace mode), retain unapproved schedules of stores not mentioned in incoming list
+  if (!options?.isReplaceMode) {
+    unapprovedMap.forEach((schedulesList, key) => {
+      if (!handledStoreKeys.has(key)) {
+        processedUnapprovedSchedules.push(...schedulesList);
+      }
+    });
+  } else {
+    // In replace mode, unhandled stores are counted as removed
+    unapprovedMap.forEach((schedulesList, key) => {
+      if (!handledStoreKeys.has(key)) {
+        removedCount += schedulesList.length;
+      }
+    });
+  }
+
+  // Combine approved + processed unapproved schedules, ensuring no duplicate IDs
+  const seenIds = new Set<string>();
+  const allFinalSchedules: SOSchedule[] = [];
+
+  [...approvedSchedules, ...processedUnapprovedSchedules].forEach(sch => {
+    if (!seenIds.has(sch.id)) {
+      seenIds.add(sch.id);
+      allFinalSchedules.push(sch);
+    }
+  });
+
+  return { 
+    updatedSchedules: allFinalSchedules, 
+    newlyCreatedCount, 
+    updatedCount, 
+    removedCount 
+  };
 }
 
 /**
@@ -588,71 +693,70 @@ export function reconcileStoresWithExistingApprovals(
     tglSoApproved: string;
     lastSODate?: string;
     korlap?: string;
+    spvApprover?: string;
+    lastAccuracyRate?: number;
     monthlyHistory?: Record<string, string | number>;
   }>();
 
-  // 1. Existing stores with approved status
-  existingStores.forEach(st => {
-    const isApproved = st.statusApproveSO === 'Sudah Approve' || (st.tglSoApproved && st.tglSoApproved !== '-' && st.tglSoApproved !== 'Belum SO');
-    if (isApproved) {
-      const payload = {
-        statusApproveSO: 'Sudah Approve' as const,
-        tglSoApproved: st.tglSoApproved || st.lastSODate || '',
-        lastSODate: st.lastSODate || st.tglSoApproved,
-        korlap: st.korlap,
-        monthlyHistory: st.monthlySOHistory
-      };
-      if (st.code) approvedMap.set(st.code.trim().toLowerCase(), payload);
-      if (st.id) approvedMap.set(st.id.trim().toLowerCase(), payload);
-    }
-  });
-
-  // 2. Existing schedules with approved status
-  existingSchedules.forEach(sch => {
-    if (sch.spvApprovalStatus === 'Disetujui' || sch.status === 'Selesai') {
-      const payload = {
-        statusApproveSO: 'Sudah Approve' as const,
-        tglSoApproved: sch.scheduledDate || '',
-        lastSODate: sch.scheduledDate || '',
-        korlap: sch.officerInCharge
-      };
-      if (sch.storeCode) approvedMap.set(sch.storeCode.trim().toLowerCase(), payload);
-      if (sch.storeId) approvedMap.set(sch.storeId.trim().toLowerCase(), payload);
-    }
-  });
-
-  // 3. Existing audit results with approved status
+  // 1. Existing audit results with approved status (HIGHEST PRIORITY SOURCE OF TRUTH)
   existingResults.forEach(res => {
     if (res.approvalStatus === 'Disetujui') {
       const payload = {
         statusApproveSO: 'Sudah Approve' as const,
         tglSoApproved: res.soDate || res.approvedAt || '',
         lastSODate: res.soDate || res.approvedAt || '',
-        korlap: res.spvApprover
+        korlap: res.spvApprover,
+        spvApprover: res.spvApprover || 'Gean Pratama (SPV SO)',
+        lastAccuracyRate: res.accuracyRatePercentage
       };
-      if (res.storeCode) approvedMap.set(res.storeCode.trim().toLowerCase(), payload);
-      if (res.storeId) approvedMap.set(res.storeId.trim().toLowerCase(), payload);
+      if (res.storeCode) approvedMap.set(res.storeCode.trim().toUpperCase(), payload);
+      if (res.storeId) approvedMap.set(res.storeId.trim().toUpperCase(), payload);
+    }
+  });
+
+  // 2. Existing schedules with genuine SPV approval status ONLY
+  existingSchedules.forEach(sch => {
+    if (sch.spvApprovalStatus === 'Disetujui') {
+      const codeKey = sch.storeCode?.trim().toUpperCase();
+      const idKey = sch.storeId?.trim().toUpperCase();
+      if ((codeKey && !approvedMap.has(codeKey)) || (idKey && !approvedMap.has(idKey))) {
+        const payload = {
+          statusApproveSO: 'Sudah Approve' as const,
+          tglSoApproved: sch.scheduledDate || '',
+          lastSODate: sch.scheduledDate || '',
+          korlap: sch.officerInCharge,
+          spvApprover: sch.spvInCharge || 'Gean Pratama (SPV SO)'
+        };
+        if (codeKey) approvedMap.set(codeKey, payload);
+        if (idKey) approvedMap.set(idKey, payload);
+      }
     }
   });
 
   return incomingStores.map(st => {
-    const codeKey = (st.code || '').trim().toLowerCase();
-    const idKey = (st.id || '').trim().toLowerCase();
-    const approvedInfo = approvedMap.get(codeKey) || approvedMap.get(idKey);
+    const codeKey = (st.code || '').trim().toUpperCase();
+    const idKey = (st.id || '').trim().toUpperCase();
+    const approvedInfo = (codeKey ? approvedMap.get(codeKey) : undefined) || (idKey ? approvedMap.get(idKey) : undefined);
 
-    // If incoming store from Excel is already marked "Sudah Approve", keep it
+    // If incoming store from Excel is already explicitly marked "Sudah Approve", keep it
     if (st.statusApproveSO === 'Sudah Approve') {
-      return st;
+      return {
+        ...st,
+        spvApprover: st.spvApprover || approvedInfo?.spvApprover || 'Gean Pratama (SPV SO)',
+        lastAccuracyRate: st.lastAccuracyRate !== undefined ? st.lastAccuracyRate : approvedInfo?.lastAccuracyRate
+      };
     }
 
-    // If store was previously approved in the web app, preserve the approval!
+    // If store has a genuine SPV approval record in the system, preserve the approval!
     if (approvedInfo) {
       return {
         ...st,
         statusApproveSO: 'Sudah Approve',
-        tglSoApproved: approvedInfo.tglSoApproved || st.tglSoApproved,
-        lastSODate: approvedInfo.lastSODate || st.lastSODate || approvedInfo.tglSoApproved,
+        tglSoApproved: st.tglSoApproved || approvedInfo.tglSoApproved,
+        lastSODate: st.lastSODate || approvedInfo.lastSODate || st.tglSoApproved,
         korlap: (st.korlap && st.korlap !== 'Petugas SO') ? st.korlap : (approvedInfo.korlap || st.korlap),
+        spvApprover: st.spvApprover || approvedInfo.spvApprover,
+        lastAccuracyRate: st.lastAccuracyRate !== undefined ? st.lastAccuracyRate : approvedInfo.lastAccuracyRate,
         monthlySOHistory: {
           ...(st.monthlySOHistory || {}),
           ...(approvedInfo.monthlyHistory || {})
@@ -660,7 +764,11 @@ export function reconcileStoresWithExistingApprovals(
       };
     }
 
-    return st;
+    // Otherwise, respect incoming store's status without residue
+    return {
+      ...st,
+      statusApproveSO: st.statusApproveSO || 'Belum SO'
+    };
   });
 }
 

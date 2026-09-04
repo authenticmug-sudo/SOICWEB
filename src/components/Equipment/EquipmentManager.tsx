@@ -552,19 +552,59 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
         'Pemegang Alat', 'Nama Pengguna', 'Nama'
       ]) || `User ${idx + 1}`;
 
-      // High-precision MAC & Serial Number detection
-      let rawSerial = getVal([
-        'Kode MAC WDCP', 'Kode MAC', 'MAC WDCP', 'WDCP MAC', 'Kode WDCP',
-        'Serial Number (MAC)', 'Serial Number', 'MAC Address', 'MAC Scanner', 'MacAddress', 
-        'SN WDCP', 'Serial WDCP', 'Kode Alat (MAC)', 'Kode Alat / MAC', 'No. MAC', 'No MAC', 
-        'Nomor MAC', 'SN', 'S/N', 'Serial', 'No Serial', 'Nomor Serial', 'No. Serial',
-        'Barcode / MAC', 'MAC / QR', 'Alat WDCP', 'Perangkat WDCP', 'Scanner WDCP',
-        'Kode Alat', 'Kode Scanner', 'MAC', 'WDCP'
-      ]);
+      // Enhanced MAC extraction & normalization helper
+      const extractMacOrSerial = (text: string): string => {
+        if (!text) return '';
+        const trimmed = String(text).trim();
+        
+        // 1. Standard colon/hyphen separated MAC: 00:1A:2B:3C:4D:5E or 00-1A-2B-3C-4D-5E
+        const standardMac = trimmed.match(/(?:[0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}/i);
+        if (standardMac) {
+          return standardMac[0].replace(/-/g, ':').toUpperCase();
+        }
 
-      // Fallback: If rawSerial is not found or matches a pure number from an index column, inspect cell values
-      const macPatternRegex = /(?:[0-9a-fA-F]{1,4}[:;]){1,5}[0-9a-fA-F]{1,4}|^[0-9a-fA-F]{1,2}:|^WDCP-/i;
-      if (!rawSerial || (rawSerial.length <= 2 && /^\d+$/.test(rawSerial))) {
+        // 2. Cisco-style MAC: 001a.2b3c.4d5e
+        const ciscoMac = trimmed.match(/(?:[0-9a-fA-F]{4}\.){2}[0-9a-fA-F]{4}/i);
+        if (ciscoMac) {
+          const rawHex = ciscoMac[0].replace(/\./g, '').toUpperCase();
+          return rawHex.match(/.{1,2}/g)?.join(':') || rawHex;
+        }
+
+        // 3. Pure 12-char hex string: 001A2B3C4D5E
+        const cleanHex = trimmed.replace(/[^0-9a-fA-F]/g, '');
+        if (cleanHex.length === 12 && /^[0-9a-fA-F]{12}$/i.test(cleanHex)) {
+          return cleanHex.match(/.{1,2}/g)?.join(':').toUpperCase() || cleanHex.toUpperCase();
+        }
+
+        // 4. WDCP prefixed codes: WDCP-1234 or SN: 12345
+        const wdcpCode = trimmed.match(/WDCP[-_ ]?[A-Za-z0-9]+/i);
+        if (wdcpCode) return wdcpCode[0].toUpperCase();
+
+        return trimmed.replace(/;/g, ':').replace(/\s+/g, ' ');
+      };
+
+      // High-precision MAC & Serial Number detection
+      let rawSerial = getVal(
+        [
+          'Kode MAC WDCP', 'Kode MAC', 'MAC WDCP', 'WDCP MAC', 'Kode WDCP',
+          'Serial Number (MAC)', 'Serial Number', 'MAC Address', 'MAC Scanner', 'MacAddress', 
+          'SN WDCP', 'Serial WDCP', 'Kode Alat (MAC)', 'Kode Alat / MAC', 'No. MAC', 'No MAC', 
+          'Nomor MAC', 'SN', 'S/N', 'Serial', 'No Serial', 'Nomor Serial', 'No. Serial',
+          'Barcode / MAC', 'MAC / QR',
+          'Kode Alat', 'Kode Scanner'
+        ],
+        ['no', 'no.', 'nomor', 'index', 'idx', '#', 'bilangan', 'urutan', 'nama', 'name', 'kondisi', 'warna', 'catatan', 'keterangan', 'user', 'petugas', 'pic']
+      );
+
+      // Fallback: If rawSerial is not found or matches a non-MAC value, inspect cell values for valid MAC format
+      const macPatternRegex = /(?:[0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}|(?:[0-9a-fA-F]{4}\.){2}[0-9a-fA-F]{4}|(?:[0-9a-fA-F]{1,4}[:;]){1,5}[0-9a-fA-F]{1,4}|^[0-9a-fA-F]{12}$|^WDCP-/i;
+      const isInvalidSerial = !rawSerial || 
+        (rawSerial.length <= 2 && /^\d+$/.test(rawSerial)) ||
+        rawSerial.toLowerCase().includes('scanner') ||
+        rawSerial.toLowerCase().includes('rusak') ||
+        rawSerial.toLowerCase().includes('baik');
+
+      if (isInvalidSerial) {
         for (const k of keys) {
           if (isIndexKey(k)) continue;
           const val = String(row[k] || '').trim();
@@ -575,8 +615,8 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
         }
       }
 
-      // Clean and normalize serial number / MAC (replace semicolons/hyphens with colons, trim whitespace)
-      let serial = rawSerial.replace(/;/g, ':').replace(/\s+/g, ' ').trim();
+      // Clean and normalize serial number / MAC
+      let serial = extractMacOrSerial(rawSerial);
       
       let rawKondisi = getVal(['Kondisi', 'Status', 'Kondisi Alat', 'Condition', 'Status Alat', 'Kondisi WDCP']) || 'Baik';
       let kondisi: EquipmentCondition = 'Baik';
