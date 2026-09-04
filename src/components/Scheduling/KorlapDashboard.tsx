@@ -46,6 +46,12 @@ interface KorlapDashboardProps {
   stores: Store[];
   personnel: AuditorPersonnel[];
   results?: SOResult[];
+  activeTab?: 'HARI_H' | 'H_MINUS_1' | 'ALL_SEPTEMBER';
+  onTabChange?: (tab: 'HARI_H' | 'H_MINUS_1' | 'ALL_SEPTEMBER') => void;
+  hideTopBanner?: boolean;
+  selectedOfficer?: string;
+  onSelectOfficer?: (officer: string) => void;
+  searchQueryProp?: string;
   onOpenAssignPersonnel: (schedule: SOSchedule) => void;
   onOpenGagalPindahModal: (schedule: SOSchedule) => void;
   onOpenInputResultModal: (scheduleOrId?: SOSchedule | string) => void;
@@ -57,6 +63,12 @@ export const KorlapDashboard: React.FC<KorlapDashboardProps> = ({
   stores,
   personnel,
   results = [],
+  activeTab: activeTabProp,
+  onTabChange,
+  hideTopBanner = false,
+  selectedOfficer: selectedOfficerProp,
+  onSelectOfficer,
+  searchQueryProp,
   onOpenAssignPersonnel,
   onOpenGagalPindahModal,
   onOpenInputResultModal,
@@ -67,9 +79,24 @@ export const KorlapDashboard: React.FC<KorlapDashboardProps> = ({
     return getAvailableKorlapList(personnel);
   }, [personnel]);
 
-  const [selectedOfficer, setSelectedOfficer] = useState<string>('ALL');
-  const [activeTab, setActiveTab] = useState<'HARI_H' | 'H_MINUS_1' | 'ALL_SEPTEMBER'>('HARI_H');
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [internalSelectedOfficer, setInternalSelectedOfficer] = useState<string>('ALL');
+  const selectedOfficer = selectedOfficerProp !== undefined ? selectedOfficerProp : internalSelectedOfficer;
+  const setSelectedOfficer = (val: string) => {
+    setInternalSelectedOfficer(val);
+    if (onSelectOfficer) onSelectOfficer(val);
+  };
+
+  const [internalActiveTab, setInternalActiveTab] = useState<'HARI_H' | 'H_MINUS_1' | 'ALL_SEPTEMBER'>('HARI_H');
+  const activeTab = activeTabProp || internalActiveTab;
+  const setActiveTab = (tab: 'HARI_H' | 'H_MINUS_1' | 'ALL_SEPTEMBER') => {
+    setInternalActiveTab(tab);
+    if (onTabChange) onTabChange(tab);
+  };
+
+  const [internalSearchQuery, setInternalSearchQuery] = useState<string>('');
+  const searchQuery = searchQueryProp !== undefined ? searchQueryProp : internalSearchQuery;
+  const setSearchQuery = setInternalSearchQuery;
+
   const [selectedDateSpecific, setSelectedDateSpecific] = useState<string>('ALL');
   const [viewLayout, setViewLayout] = useState<'cards' | 'table'>('cards');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'BELUM_SO' | 'SELESAI' | 'KENDALA'>('ALL');
@@ -216,121 +243,123 @@ export const KorlapDashboard: React.FC<KorlapDashboardProps> = ({
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       
-      {/* Top Banner: Auto-Jadwal & Sheet Jadwal Connection */}
-      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-4 sm:p-6 shadow-xl border border-indigo-500/20">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="space-y-1">
+      {/* Top Banner: Auto-Jadwal & Sheet Jadwal Connection (only if not hidden) */}
+      {!hideTopBanner && (
+        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-4 sm:p-6 shadow-xl border border-indigo-500/20">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
+                  <Sparkles className="w-3 h-3 text-indigo-400" />
+                  Portal Operasional Korlap Mobile
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-[10px] font-bold">
+                  Auto Terhubung Master Toko Bali
+                </span>
+              </div>
+              <h2 className="text-lg sm:text-2xl font-black text-white tracking-tight">
+                Jadwal SO Hari-H Korlap
+              </h2>
+              <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
+                Tampilan operasional khusus Korlap: fokus pada <strong>Kode, Nama, Stock, Kas Toko, Tgl SO + Hari, SO Aktiva, Zona, dan Catatan SPV</strong> dengan aksi cepat mobile.
+              </p>
+            </div>
+
+            {/* Quick Actions */}
             <div className="flex flex-wrap items-center gap-2">
-              <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-indigo-400" />
-                Portal Operasional Korlap Mobile
-              </span>
-              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-[10px] font-bold">
-                Auto Terhubung Master Toko Bali
-              </span>
+              <button
+                onClick={handleExportCSV}
+                className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 active:scale-98 text-white text-xs font-bold transition border border-white/10 flex items-center gap-1.5 shadow-xs"
+              >
+                <Download className="w-4 h-4 text-emerald-400" />
+                <span>Export CSV Hari-H</span>
+              </button>
             </div>
-            <h2 className="text-lg sm:text-2xl font-black text-white tracking-tight">
-              Jadwal SO Hari-H Korlap
-            </h2>
-            <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
-              Tampilan operasional khusus Korlap: fokus pada <strong>Kode, Nama, Stock, Kas Toko, Tgl SO + Hari, SO Aktiva, Zona, dan Catatan SPV</strong> dengan aksi cepat mobile.
-            </p>
           </div>
 
-          {/* Quick Actions */}
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Tab Selection: Hari-H vs H-1 vs Semua September */}
+          <div className="mt-4 pt-3 border-t border-white/10 grid grid-cols-1 sm:grid-cols-3 gap-2">
+            
             <button
-              onClick={handleExportCSV}
-              className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 active:scale-98 text-white text-xs font-bold transition border border-white/10 flex items-center gap-1.5 shadow-xs"
+              onClick={() => {
+                setActiveTab('HARI_H');
+                setSelectedDateSpecific('ALL');
+              }}
+              className={`p-3 rounded-xl text-left transition flex items-center justify-between border ${
+                activeTab === 'HARI_H'
+                  ? 'bg-emerald-600 text-white border-emerald-400 shadow-lg'
+                  : 'bg-white/5 hover:bg-white/10 text-slate-300 border-white/5'
+              }`}
             >
-              <Download className="w-4 h-4 text-emerald-400" />
-              <span>Export CSV Hari-H</span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-300" />
+                  <span className="font-bold text-xs">📍 Jadwal Hari-H (Hari Ini)</span>
+                </div>
+                <p className="text-[10px] opacity-80 mt-0.5">
+                  Target: {todayStr} ({getDayNameIndo(todayStr)})
+                </p>
+              </div>
+              {activeTab === 'HARI_H' && (
+                <span className="px-2 py-0.5 rounded-md bg-white/20 text-[10px] font-black">Aktif</span>
+              )}
             </button>
+
+            <button
+              onClick={() => {
+                setActiveTab('H_MINUS_1');
+                setSelectedDateSpecific('ALL');
+              }}
+              className={`p-3 rounded-xl text-left transition flex items-center justify-between border ${
+                activeTab === 'H_MINUS_1'
+                  ? 'bg-indigo-600 text-white border-indigo-400 shadow-lg'
+                  : 'bg-white/5 hover:bg-white/10 text-slate-300 border-white/5'
+              }`}
+            >
+              <div>
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-amber-400" />
+                  <span className="font-bold text-xs">📅 Jadwal H-1 (Persiapan Besok)</span>
+                </div>
+                <p className="text-[10px] opacity-80 mt-0.5">
+                  Target: {targetDateForView} ({getDayNameIndo(targetDateForView)})
+                </p>
+              </div>
+              {activeTab === 'H_MINUS_1' && (
+                <span className="px-2 py-0.5 rounded-md bg-white/20 text-[10px] font-black">Aktif</span>
+              )}
+            </button>
+
+            <button
+              onClick={() => {
+                setActiveTab('ALL_SEPTEMBER');
+                setSelectedDateSpecific('ALL');
+              }}
+              className={`p-3 rounded-xl text-left transition flex items-center justify-between border ${
+                activeTab === 'ALL_SEPTEMBER'
+                  ? 'bg-purple-600 text-white border-purple-400 shadow-lg'
+                  : 'bg-white/5 hover:bg-white/10 text-slate-300 border-white/5'
+              }`}
+            >
+              <div>
+                <div className="flex items-center gap-2">
+                  <FileSpreadsheet className="w-4 h-4 text-purple-300" />
+                  <span className="font-bold text-xs">🗓️ Semua Jadwal September</span>
+                </div>
+                <p className="text-[10px] opacity-80 mt-0.5">
+                  Total {schedules.length} Toko Master Terhubung
+                </p>
+              </div>
+              {activeTab === 'ALL_SEPTEMBER' && (
+                <span className="px-2 py-0.5 rounded-md bg-white/20 text-[10px] font-black">Aktif</span>
+              )}
+            </button>
+
           </div>
         </div>
-
-        {/* Tab Selection: Hari-H vs H-1 vs Semua September */}
-        <div className="mt-4 pt-3 border-t border-white/10 grid grid-cols-1 sm:grid-cols-3 gap-2">
-          
-          <button
-            onClick={() => {
-              setActiveTab('HARI_H');
-              setSelectedDateSpecific('ALL');
-            }}
-            className={`p-3 rounded-xl text-left transition flex items-center justify-between border ${
-              activeTab === 'HARI_H'
-                ? 'bg-emerald-600 text-white border-emerald-400 shadow-lg'
-                : 'bg-white/5 hover:bg-white/10 text-slate-300 border-white/5'
-            }`}
-          >
-            <div>
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-300" />
-                <span className="font-bold text-xs">📍 Jadwal Hari-H (Hari Ini)</span>
-              </div>
-              <p className="text-[10px] opacity-80 mt-0.5">
-                Target: {todayStr} ({getDayNameIndo(todayStr)})
-              </p>
-            </div>
-            {activeTab === 'HARI_H' && (
-              <span className="px-2 py-0.5 rounded-md bg-white/20 text-[10px] font-black">Aktif</span>
-            )}
-          </button>
-
-          <button
-            onClick={() => {
-              setActiveTab('H_MINUS_1');
-              setSelectedDateSpecific('ALL');
-            }}
-            className={`p-3 rounded-xl text-left transition flex items-center justify-between border ${
-              activeTab === 'H_MINUS_1'
-                ? 'bg-indigo-600 text-white border-indigo-400 shadow-lg'
-                : 'bg-white/5 hover:bg-white/10 text-slate-300 border-white/5'
-            }`}
-          >
-            <div>
-              <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-amber-400" />
-                <span className="font-bold text-xs">📅 Jadwal H-1 (Persiapan Besok)</span>
-              </div>
-              <p className="text-[10px] opacity-80 mt-0.5">
-                Target: {targetDateForView} ({getDayNameIndo(targetDateForView)})
-              </p>
-            </div>
-            {activeTab === 'H_MINUS_1' && (
-              <span className="px-2 py-0.5 rounded-md bg-white/20 text-[10px] font-black">Aktif</span>
-            )}
-          </button>
-
-          <button
-            onClick={() => {
-              setActiveTab('ALL_SEPTEMBER');
-              setSelectedDateSpecific('ALL');
-            }}
-            className={`p-3 rounded-xl text-left transition flex items-center justify-between border ${
-              activeTab === 'ALL_SEPTEMBER'
-                ? 'bg-purple-600 text-white border-purple-400 shadow-lg'
-                : 'bg-white/5 hover:bg-white/10 text-slate-300 border-white/5'
-            }`}
-          >
-            <div>
-              <div className="flex items-center gap-2">
-                <FileSpreadsheet className="w-4 h-4 text-purple-300" />
-                <span className="font-bold text-xs">🗓️ Semua Jadwal September</span>
-              </div>
-              <p className="text-[10px] opacity-80 mt-0.5">
-                Total {schedules.length} Toko Master Terhubung
-              </p>
-            </div>
-            {activeTab === 'ALL_SEPTEMBER' && (
-              <span className="px-2 py-0.5 rounded-md bg-white/20 text-[10px] font-black">Aktif</span>
-            )}
-          </button>
-
-        </div>
-      </div>
+      )}
 
       {/* Summary Stat Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
@@ -366,49 +395,101 @@ export const KorlapDashboard: React.FC<KorlapDashboardProps> = ({
       </div>
 
       {/* Filter & Control Bar */}
-      <div className="bg-white rounded-2xl p-3.5 sm:p-4 border border-slate-200 shadow-xs space-y-3">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          
-          {/* Korlap Group Dropdown */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-slate-700 whitespace-nowrap flex items-center gap-1">
-              <Users className="w-3.5 h-3.5 text-indigo-600" />
-              Group Korlap:
-            </span>
-            <select
-              value={selectedOfficer}
-              onChange={(e) => setSelectedOfficer(e.target.value)}
-              className="bg-slate-50 border border-slate-300 text-slate-900 text-xs rounded-xl px-3 py-2 font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none max-w-[220px]"
-            >
-              <option value="ALL">Semua Korlap Bali ({primaryKorlaps.length} Group)</option>
-              {primaryKorlaps.map(k => (
-                <option key={k} value={k}>{k}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Search Box */}
-          <div className="relative flex-1 max-w-md">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari kode (F010), nama toko, zona, notes..."
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-8 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            {searchQuery && (
-              <button 
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+      <div className="bg-white rounded-2xl p-3 sm:p-3.5 border border-slate-200 shadow-xs space-y-2.5">
+        {!hideTopBanner && (
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            
+            {/* Korlap Group Dropdown */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-700 whitespace-nowrap flex items-center gap-1">
+                <Users className="w-3.5 h-3.5 text-indigo-600" />
+                Group Korlap:
+              </span>
+              <select
+                value={selectedOfficer}
+                onChange={(e) => setSelectedOfficer(e.target.value)}
+                className="bg-slate-50 border border-slate-300 text-slate-900 text-xs rounded-xl px-3 py-2 font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none max-w-[220px]"
               >
-                <X className="w-3.5 h-3.5" />
+                <option value="ALL">Semua Korlap Bali ({primaryKorlaps.length} Group)</option>
+                {primaryKorlaps.map(k => (
+                  <option key={k} value={k}>{k}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Search Box */}
+            <div className="relative flex-1 max-w-md">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Cari kode (F010), nama toko, zona, notes..."
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-8 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              {searchQuery && (
+                <button 
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+          </div>
+        )}
+
+        {/* Status Pill Filters & Layout Toggle */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-xs">
+            <span className="text-[11px] font-bold text-slate-500 mr-1 shrink-0">Filter Status:</span>
+            <button
+              onClick={() => setStatusFilter('ALL')}
+              className={`px-3 py-1 rounded-full text-xs font-bold shrink-0 transition ${
+                statusFilter === 'ALL'
+                  ? 'bg-slate-900 text-white shadow-2xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              Semua ({filteredSchedules.length})
+            </button>
+            <button
+              onClick={() => setStatusFilter('BELUM_SO')}
+              className={`px-3 py-1 rounded-full text-xs font-bold shrink-0 transition ${
+                statusFilter === 'BELUM_SO'
+                  ? 'bg-indigo-600 text-white shadow-2xs'
+                  : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+              }`}
+            >
+              Belum Selesai ({inProgressStores})
+            </button>
+            <button
+              onClick={() => setStatusFilter('SELESAI')}
+              className={`px-3 py-1 rounded-full text-xs font-bold shrink-0 transition ${
+                statusFilter === 'SELESAI'
+                  ? 'bg-emerald-600 text-white shadow-2xs'
+                  : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+              }`}
+            >
+              Selesai ({completedStores})
+            </button>
+            {failedOrMovedStores > 0 && (
+              <button
+                onClick={() => setStatusFilter('KENDALA')}
+                className={`px-3 py-1 rounded-full text-xs font-bold shrink-0 transition ${
+                  statusFilter === 'KENDALA'
+                    ? 'bg-rose-600 text-white shadow-2xs'
+                    : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+                }`}
+              >
+                Gagal/Pindah ({failedOrMovedStores})
               </button>
             )}
           </div>
 
           {/* View Layout Toggle */}
-          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl shrink-0 self-start md:self-auto">
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl shrink-0 self-end sm:self-auto">
             <button
               type="button"
               onClick={() => setViewLayout('cards')}
@@ -434,55 +515,8 @@ export const KorlapDashboard: React.FC<KorlapDashboardProps> = ({
               <span>Tabel Ringkas</span>
             </button>
           </div>
-
         </div>
 
-        {/* Status Pill Filters */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-xs">
-          <span className="text-[11px] font-bold text-slate-500 mr-1 shrink-0">Filter Status:</span>
-          <button
-            onClick={() => setStatusFilter('ALL')}
-            className={`px-3 py-1 rounded-full text-xs font-bold shrink-0 transition ${
-              statusFilter === 'ALL'
-                ? 'bg-slate-900 text-white shadow-2xs'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            Semua ({filteredSchedules.length})
-          </button>
-          <button
-            onClick={() => setStatusFilter('BELUM_SO')}
-            className={`px-3 py-1 rounded-full text-xs font-bold shrink-0 transition ${
-              statusFilter === 'BELUM_SO'
-                ? 'bg-indigo-600 text-white shadow-2xs'
-                : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
-            }`}
-          >
-            Belum Selesai ({inProgressStores})
-          </button>
-          <button
-            onClick={() => setStatusFilter('SELESAI')}
-            className={`px-3 py-1 rounded-full text-xs font-bold shrink-0 transition ${
-              statusFilter === 'SELESAI'
-                ? 'bg-emerald-600 text-white shadow-2xs'
-                : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-            }`}
-          >
-            Selesai ({completedStores})
-          </button>
-          {failedOrMovedStores > 0 && (
-            <button
-              onClick={() => setStatusFilter('KENDALA')}
-              className={`px-3 py-1 rounded-full text-xs font-bold shrink-0 transition ${
-                statusFilter === 'KENDALA'
-                  ? 'bg-rose-600 text-white shadow-2xs'
-                  : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
-              }`}
-            >
-              Gagal/Pindah ({failedOrMovedStores})
-            </button>
-          )}
-        </div>
       </div>
 
       {/* Main Content Area */}

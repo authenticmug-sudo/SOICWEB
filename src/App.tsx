@@ -1545,21 +1545,21 @@ export default function App() {
           {activeTab === 'dashboard' && (
             <div className="space-y-6">
               
-              {/* General Schedule Metrics Widget (Terjadwal, Pindah, Gagal SO with Filters & Popups) */}
+              {/* 1. Summary Cards (Target Toko, Toko Ter-SO, % Ach, Zona Hitam) - Paling Atas untuk Akses Cepat Mobile */}
+              <SummaryCards
+                summary={summary}
+                onNavigateTab={(tab) => setActiveTab(tab)}
+                targetSoTypes={targetSoTypes}
+                onChangeTargetTypes={handleSetTargetSoTypes}
+              />
+
+              {/* 2. General Schedule Metrics Widget (Terjadwal, Pindah, Gagal SO with Filters & Popups) */}
               <GeneralScheduleMetricsWidget
                 schedules={schedules}
                 stores={stores}
                 personnel={personnel}
                 selectedMonth={selectedMonth}
                 selectedYear={selectedYear}
-              />
-
-              {/* Summary Cards */}
-              <SummaryCards
-                summary={summary}
-                onNavigateTab={(tab) => setActiveTab(tab)}
-                targetSoTypes={targetSoTypes}
-                onChangeTargetTypes={handleSetTargetSoTypes}
               />
 
               {/* Daily SO Progress Tracker Widget */}
@@ -1609,6 +1609,7 @@ export default function App() {
               stores={stores}
               teams={teams}
               personnel={personnel}
+              results={results}
               currentRole={currentRole}
               onOpenCreateModal={() => setIsCreateScheduleModalOpen(true)}
               onOpenAutoGenerator={() => setIsAutoGeneratorModalOpen(true)}

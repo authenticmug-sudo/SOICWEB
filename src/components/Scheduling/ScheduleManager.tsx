@@ -33,7 +33,7 @@ import {
   Flame,
   ArrowUpDown
 } from 'lucide-react';
-import { SOSchedule, Store, SOTeam, RegionArea, UserRole, AuditorPersonnel } from '../../types/stockOpname';
+import { SOSchedule, Store, SOTeam, RegionArea, UserRole, AuditorPersonnel, SOResult } from '../../types/stockOpname';
 import { REGIONS } from '../../data/initialData';
 import { getStatusBadgeClass, formatDateIndo, formatRupiah, parseSmartDate, formatDateISO } from '../../utils/formatters';
 import { getDayNameIndo } from '../../utils/storeSyncUtils';
@@ -54,6 +54,7 @@ interface ScheduleManagerProps {
   stores: Store[];
   teams: SOTeam[];
   personnel?: AuditorPersonnel[];
+  results?: SOResult[];
   currentRole?: UserRole;
   onOpenCreateModal: () => void;
   onOpenAutoGenerator: () => void;
@@ -74,6 +75,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
   stores,
   teams,
   personnel = [],
+  results = [],
   currentRole = 'ALL',
   onOpenCreateModal,
   onOpenAutoGenerator,
@@ -88,6 +90,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
   onRejectSchedule,
   onTwoWaySync
 }) => {
+  const [activeScheduleTab, setActiveScheduleTab] = useState<'HARI_H' | 'H_MINUS_1' | 'ALL_SEPTEMBER'>('HARI_H');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRegion, setSelectedRegion] = useState<string>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
@@ -346,6 +349,24 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
     exportToCSV('Penjadwalan_SO_Sheet_Jadwal.csv', data);
   };
 
+  // Date Calculations for Kolom Hitam
+  const now = new Date();
+  const todayStr = formatDateISO(now);
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = formatDateISO(tomorrow);
+
+  const handleSelectScheduleTab = (tab: 'HARI_H' | 'H_MINUS_1' | 'ALL_SEPTEMBER') => {
+    setActiveScheduleTab(tab);
+    if (tab === 'HARI_H') {
+      setSelectedSpecificDate(todayStr);
+    } else if (tab === 'H_MINUS_1') {
+      setSelectedSpecificDate(tomorrowStr);
+    } else {
+      setSelectedSpecificDate('');
+    }
+  };
+
   return (
     <div className="space-y-4">
       
@@ -416,116 +437,115 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
         </div>
       </div>
 
-      {/* 2. DASHBOARD METRICS STRIP (DI ATAS - COMPACT & RESPONSIVE) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3">
-        
-        {/* Metric 1: Total Jadwal */}
-        <div 
-          onClick={() => setSelectedStatus('ALL')}
-          className="bg-white p-3 sm:p-3.5 rounded-2xl border border-slate-200/90 shadow-2xs cursor-pointer hover:border-indigo-300 hover:shadow-xs transition"
-        >
-          <div className="flex items-center justify-between text-slate-500 text-[11px] font-bold">
-            <span>Total Jadwal</span>
-            <Building2 className="w-3.5 h-3.5 text-indigo-600" />
+      {/* 2. KOLOM HITAM (JADWAL HARI-H, H-1, DAN SEMUA JADWAL) - DITARUH DIATAS AVATAR KORLAP */}
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-4 sm:p-5 shadow-xl border border-indigo-500/20">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
+                <Sparkles className="w-3 h-3 text-indigo-400" />
+                Portal Operasional Korlap Mobile
+              </span>
+              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-[10px] font-bold">
+                Auto Terhubung Master Toko Bali
+              </span>
+            </div>
+            <h2 className="text-base sm:text-xl font-black text-white tracking-tight">
+              Jadwal SO Hari-H Korlap
+            </h2>
+            <p className="text-[11px] sm:text-xs text-slate-300 max-w-2xl leading-relaxed">
+              Tampilan operasional khusus Korlap: fokus pada <strong>Kode, Nama, Stock, Kas Toko, Tgl SO + Hari, SO Aktiva, Zona, dan Catatan SPV</strong> dengan aksi cepat mobile.
+            </p>
           </div>
-          <div className="mt-1 flex items-baseline gap-1.5">
-            <span className="text-xl sm:text-2xl font-black text-slate-900 font-mono">
-              {dashboardStats.filtered}
-            </span>
-            <span className="text-[10px] text-slate-400 font-medium">
-              / {dashboardStats.total} total
-            </span>
-          </div>
-          <div className="text-[10px] text-indigo-600 font-semibold mt-0.5 truncate">
-            {selectedGroupKorlap === 'ALL' ? 'Semua Korlap' : `Korlap: ${selectedGroupKorlap}`}
+
+          {/* Quick Actions */}
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handleExportSchedules}
+              className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 active:scale-98 text-white text-xs font-bold transition border border-white/10 flex items-center gap-1.5 shadow-xs"
+            >
+              <Download className="w-4 h-4 text-emerald-400" />
+              <span>Export CSV Hari-H</span>
+            </button>
           </div>
         </div>
 
-        {/* Metric 2: Terjadwal & Dalam Proses */}
-        <div 
-          onClick={() => setSelectedStatus('Terjadwal')}
-          className="bg-white p-3 sm:p-3.5 rounded-2xl border border-blue-200/80 shadow-2xs cursor-pointer hover:border-blue-400 hover:shadow-xs transition"
-        >
-          <div className="flex items-center justify-between text-blue-700 text-[11px] font-bold">
-            <span>Terjadwal / Proses</span>
-            <Clock className="w-3.5 h-3.5 text-blue-600" />
-          </div>
-          <div className="mt-1 flex items-baseline gap-1.5">
-            <span className="text-xl sm:text-2xl font-black text-blue-900 font-mono">
-              {dashboardStats.scheduled + dashboardStats.inProgress}
-            </span>
-            <span className="text-[10px] text-blue-600/80 font-medium">toko</span>
-          </div>
-          <div className="text-[10px] text-slate-500 font-medium mt-0.5">
-            {dashboardStats.inProgress > 0 ? `${dashboardStats.inProgress} sedang proses SO` : 'Siap audit lapangan'}
-          </div>
-        </div>
+        {/* Tab Selection: Hari-H vs H-1 vs Semua September */}
+        <div className="mt-3.5 pt-3 border-t border-white/10 grid grid-cols-1 sm:grid-cols-3 gap-2">
+          
+          <button
+            type="button"
+            onClick={() => handleSelectScheduleTab('HARI_H')}
+            className={`p-3 rounded-xl text-left transition flex items-center justify-between border ${
+              activeScheduleTab === 'HARI_H'
+                ? 'bg-emerald-600 text-white border-emerald-400 shadow-lg'
+                : 'bg-white/5 hover:bg-white/10 text-slate-300 border-white/5'
+            }`}
+          >
+            <div>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-300" />
+                <span className="font-bold text-xs">📍 Jadwal Hari-H (Hari Ini)</span>
+              </div>
+              <p className="text-[10px] opacity-80 mt-0.5">
+                Target: {todayStr} ({getDayNameIndo(todayStr)})
+              </p>
+            </div>
+            {activeScheduleTab === 'HARI_H' && (
+              <span className="px-2 py-0.5 rounded-md bg-white/20 text-[10px] font-black">Aktif</span>
+            )}
+          </button>
 
-        {/* Metric 3: Selesai SO */}
-        <div 
-          onClick={() => setSelectedStatus('Selesai')}
-          className="bg-white p-3 sm:p-3.5 rounded-2xl border border-emerald-200/80 shadow-2xs cursor-pointer hover:border-emerald-400 hover:shadow-xs transition"
-        >
-          <div className="flex items-center justify-between text-emerald-700 text-[11px] font-bold">
-            <span>Selesai SO</span>
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-          </div>
-          <div className="mt-1 flex items-baseline gap-1.5">
-            <span className="text-xl sm:text-2xl font-black text-emerald-800 font-mono">
-              {dashboardStats.completed}
-            </span>
-            <span className="text-[10px] text-emerald-600 font-medium">toko</span>
-          </div>
-          <div className="text-[10px] text-emerald-700 font-medium mt-0.5">
-            {dashboardStats.filtered > 0 ? `${Math.round((dashboardStats.completed / dashboardStats.filtered) * 100)}% selesai` : '0%'}
-          </div>
-        </div>
+          <button
+            type="button"
+            onClick={() => handleSelectScheduleTab('H_MINUS_1')}
+            className={`p-3 rounded-xl text-left transition flex items-center justify-between border ${
+              activeScheduleTab === 'H_MINUS_1'
+                ? 'bg-indigo-600 text-white border-indigo-400 shadow-lg'
+                : 'bg-white/5 hover:bg-white/10 text-slate-300 border-white/5'
+            }`}
+          >
+            <div>
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-amber-400" />
+                <span className="font-bold text-xs">📅 Jadwal H-1 (Persiapan Besok)</span>
+              </div>
+              <p className="text-[10px] opacity-80 mt-0.5">
+                Target: {tomorrowStr} ({getDayNameIndo(tomorrowStr)})
+              </p>
+            </div>
+            {activeScheduleTab === 'H_MINUS_1' && (
+              <span className="px-2 py-0.5 rounded-md bg-white/20 text-[10px] font-black">Aktif</span>
+            )}
+          </button>
 
-        {/* Metric 4: Pindah & Gagal SO (Kendala) */}
-        <div 
-          onClick={() => setSelectedStatus(dashboardStats.kendala > 0 ? 'Gagal SO' : 'ALL')}
-          className="bg-white p-3 sm:p-3.5 rounded-2xl border border-rose-200/80 shadow-2xs cursor-pointer hover:border-rose-400 hover:shadow-xs transition"
-        >
-          <div className="flex items-center justify-between text-rose-700 text-[11px] font-bold">
-            <span>Kendala / Gagal</span>
-            <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
-          </div>
-          <div className="mt-1 flex items-baseline gap-1.5">
-            <span className="text-xl sm:text-2xl font-black text-rose-800 font-mono">
-              {dashboardStats.kendala}
-            </span>
-            <span className="text-[10px] text-rose-600 font-medium">toko</span>
-          </div>
-          <div className="text-[10px] text-rose-600 font-medium mt-0.5">
-            {dashboardStats.kendala > 0 ? 'Perlu tindakan SPV' : 'Semua lancar'}
-          </div>
-        </div>
+          <button
+            type="button"
+            onClick={() => handleSelectScheduleTab('ALL_SEPTEMBER')}
+            className={`p-3 rounded-xl text-left transition flex items-center justify-between border ${
+              activeScheduleTab === 'ALL_SEPTEMBER'
+                ? 'bg-purple-600 text-white border-purple-400 shadow-lg'
+                : 'bg-white/5 hover:bg-white/10 text-slate-300 border-white/5'
+            }`}
+          >
+            <div>
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="w-4 h-4 text-purple-300" />
+                <span className="font-bold text-xs">🗓️ Semua Jadwal September</span>
+              </div>
+              <p className="text-[10px] opacity-80 mt-0.5">
+                Total {schedules.length} Toko Master Terhubung
+              </p>
+            </div>
+            {activeScheduleTab === 'ALL_SEPTEMBER' && (
+              <span className="px-2 py-0.5 rounded-md bg-white/20 text-[10px] font-black">Aktif</span>
+            )}
+          </button>
 
-        {/* Metric 5: Zona Hitam */}
-        <div 
-          className="col-span-2 sm:col-span-1 bg-slate-900 p-3 sm:p-3.5 rounded-2xl border border-slate-800 shadow-2xs text-white"
-        >
-          <div className="flex items-center justify-between text-rose-300 text-[11px] font-bold">
-            <span className="flex items-center gap-1">
-              <Flame className="w-3.5 h-3.5 text-rose-400" />
-              Zona Hitam
-            </span>
-            <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
-          </div>
-          <div className="mt-1 flex items-baseline gap-1.5">
-            <span className="text-xl sm:text-2xl font-black text-white font-mono">
-              {dashboardStats.zonaHitam}
-            </span>
-            <span className="text-[10px] text-slate-400 font-medium">toko</span>
-          </div>
-          <div className="text-[10px] text-rose-300 font-medium mt-0.5">
-            Pengawasan ketat
-          </div>
         </div>
-
       </div>
 
-      {/* 3. KORLAP AVATAR SELECTOR BAR (INTERAKTIF & SIMPLE) */}
+      {/* 3. AVATAR KORLAP (DIBAWAHNYA KOLOM HITAM) */}
       <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200/90 shadow-xs">
         <KorlapAvatarBar
           schedules={schedules}
@@ -930,19 +950,134 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
 
       </div>
 
-      {/* 5. MAIN CONTENT VIEW */}
+      {/* 5. MAIN CONTENT VIEW (DAFTAR TOKO) */}
       {viewMode === 'officer' ? (
         <KorlapDashboard
           schedules={filteredSchedules}
           stores={stores}
           personnel={personnel}
+          results={results}
+          hideTopBanner={true}
+          activeTab={activeScheduleTab}
+          onTabChange={setActiveScheduleTab}
+          selectedOfficer={selectedGroupKorlap}
+          onSelectOfficer={setSelectedGroupKorlap}
+          searchQueryProp={searchQuery}
           onOpenAssignPersonnel={onAssignPersonnel || (() => {})}
           onOpenGagalPindahModal={onOpenGagalPindahModal || (() => {})}
           onOpenInputResultModal={onOpenInputModal || (() => {})}
           onConfirmScheduleFinished={onConfirmScheduleFinished || ((id) => onUpdateStatus(id, 'Selesai'))}
         />
       ) : viewMode === 'list' ? (
-        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+        <div className="space-y-3">
+          {/* Dashboard Metrics Strip (Target & Toko Ter-SO di atas Tabel Daftar Toko) */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3">
+            {/* Metric 1: Total Jadwal */}
+            <div 
+              onClick={() => setSelectedStatus('ALL')}
+              className="bg-white p-3 sm:p-3.5 rounded-2xl border border-slate-200/90 shadow-2xs cursor-pointer hover:border-indigo-300 hover:shadow-xs transition"
+            >
+              <div className="flex items-center justify-between text-slate-500 text-[11px] font-bold">
+                <span>Total Jadwal</span>
+                <Building2 className="w-3.5 h-3.5 text-indigo-600" />
+              </div>
+              <div className="mt-1 flex items-baseline gap-1.5">
+                <span className="text-xl sm:text-2xl font-black text-slate-900 font-mono">
+                  {dashboardStats.filtered}
+                </span>
+                <span className="text-[10px] text-slate-400 font-medium">
+                  / {dashboardStats.total} total
+                </span>
+              </div>
+              <div className="text-[10px] text-indigo-600 font-semibold mt-0.5 truncate">
+                {selectedGroupKorlap === 'ALL' ? 'Semua Korlap' : `Korlap: ${selectedGroupKorlap}`}
+              </div>
+            </div>
+
+            {/* Metric 2: Terjadwal & Dalam Proses */}
+            <div 
+              onClick={() => setSelectedStatus('Terjadwal')}
+              className="bg-white p-3 sm:p-3.5 rounded-2xl border border-blue-200/80 shadow-2xs cursor-pointer hover:border-blue-400 hover:shadow-xs transition"
+            >
+              <div className="flex items-center justify-between text-blue-700 text-[11px] font-bold">
+                <span>Terjadwal / Proses</span>
+                <Clock className="w-3.5 h-3.5 text-blue-600" />
+              </div>
+              <div className="mt-1 flex items-baseline gap-1.5">
+                <span className="text-xl sm:text-2xl font-black text-blue-900 font-mono">
+                  {dashboardStats.scheduled + dashboardStats.inProgress}
+                </span>
+                <span className="text-[10px] text-blue-600/80 font-medium">toko</span>
+              </div>
+              <div className="text-[10px] text-slate-500 font-medium mt-0.5">
+                {dashboardStats.inProgress > 0 ? `${dashboardStats.inProgress} sedang proses SO` : 'Siap audit lapangan'}
+              </div>
+            </div>
+
+            {/* Metric 3: Selesai SO */}
+            <div 
+              onClick={() => setSelectedStatus('Selesai')}
+              className="bg-white p-3 sm:p-3.5 rounded-2xl border border-emerald-200/80 shadow-2xs cursor-pointer hover:border-emerald-400 hover:shadow-xs transition"
+            >
+              <div className="flex items-center justify-between text-emerald-700 text-[11px] font-bold">
+                <span>Selesai SO</span>
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              </div>
+              <div className="mt-1 flex items-baseline gap-1.5">
+                <span className="text-xl sm:text-2xl font-black text-emerald-800 font-mono">
+                  {dashboardStats.completed}
+                </span>
+                <span className="text-[10px] text-emerald-600 font-medium">toko</span>
+              </div>
+              <div className="text-[10px] text-emerald-700 font-medium mt-0.5">
+                {dashboardStats.filtered > 0 ? `${Math.round((dashboardStats.completed / dashboardStats.filtered) * 100)}% selesai` : '0%'}
+              </div>
+            </div>
+
+            {/* Metric 4: Pindah & Gagal SO (Kendala) */}
+            <div 
+              onClick={() => setSelectedStatus(dashboardStats.kendala > 0 ? 'Gagal SO' : 'ALL')}
+              className="bg-white p-3 sm:p-3.5 rounded-2xl border border-rose-200/80 shadow-2xs cursor-pointer hover:border-rose-400 hover:shadow-xs transition"
+            >
+              <div className="flex items-center justify-between text-rose-700 text-[11px] font-bold">
+                <span>Kendala / Gagal</span>
+                <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+              </div>
+              <div className="mt-1 flex items-baseline gap-1.5">
+                <span className="text-xl sm:text-2xl font-black text-rose-800 font-mono">
+                  {dashboardStats.kendala}
+                </span>
+                <span className="text-[10px] text-rose-600 font-medium">toko</span>
+              </div>
+              <div className="text-[10px] text-rose-600 font-medium mt-0.5">
+                {dashboardStats.kendala > 0 ? 'Perlu tindakan SPV' : 'Semua lancar'}
+              </div>
+            </div>
+
+            {/* Metric 5: Zona Hitam */}
+            <div 
+              className="col-span-2 sm:col-span-1 bg-slate-900 p-3 sm:p-3.5 rounded-2xl border border-slate-800 shadow-2xs text-white"
+            >
+              <div className="flex items-center justify-between text-rose-300 text-[11px] font-bold">
+                <span className="flex items-center gap-1">
+                  <Flame className="w-3.5 h-3.5 text-rose-400" />
+                  Zona Hitam
+                </span>
+                <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+              </div>
+              <div className="mt-1 flex items-baseline gap-1.5">
+                <span className="text-xl sm:text-2xl font-black text-white font-mono">
+                  {dashboardStats.zonaHitam}
+                </span>
+                <span className="text-[10px] text-slate-400 font-medium">toko</span>
+              </div>
+              <div className="text-[10px] text-rose-300 font-medium mt-0.5">
+                Pengawasan ketat
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
           
           {/* Table Header Controls: Toggle Columns View */}
           <div className="p-3 px-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
@@ -1392,6 +1527,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
             )}
           </div>
         </div>
+      </div>
       ) : viewMode === 'approval' ? (
         /* Approval SPV Interactive Dashboard */
         <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
