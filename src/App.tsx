@@ -580,9 +580,18 @@ export default function App() {
   // Summary calculated dynamically based on filtered period and target SO types, synchronized with global results
   const summary = getDashboardSummary(stores, filteredSchedules, filteredResults, targetSoTypes, results);
 
+  const purgeStaleSchedules = (ids: string[]) => {
+    if (!ids || ids.length === 0) return;
+    ids.forEach(id => {
+      recordDeletedId(STORAGE_KEYS.SCHEDULES, id);
+      deleteScheduleFromFirestore(id).catch(() => {});
+    });
+  };
+
   // Handlers for Schedules
   const handleTwoWaySync = () => {
-    const { updatedStores, updatedSchedules } = twoWaySyncStoresAndSchedules(stores, schedules, '09', '2026');
+    const { updatedStores, updatedSchedules, staleScheduleIdsToDelete } = twoWaySyncStoresAndSchedules(stores, schedules, selectedMonth, selectedYear);
+    purgeStaleSchedules(staleScheduleIdsToDelete);
     setStores(updatedStores);
     setSchedules(updatedSchedules);
     saveStores(updatedStores);
@@ -1085,13 +1094,14 @@ export default function App() {
     setSelectedYear(detected.year);
 
     // Smart auto-synchronize schedules from Master Store SO dates
-    const { updatedSchedules } = syncSchedulesFromMasterStores(
+    const { updatedSchedules, staleScheduleIdsToDelete } = syncSchedulesFromMasterStores(
       synced, 
       schedules, 
       detected.month, 
       detected.year,
       { isReplaceMode: mode === 'replace', results }
     );
+    purgeStaleSchedules(staleScheduleIdsToDelete);
     setSchedules(updatedSchedules);
     saveSchedules(updatedSchedules, mode === 'replace');
   };
@@ -1354,13 +1364,14 @@ export default function App() {
       setSelectedYear(detected.year);
 
       // Smart auto-synchronize schedules from Master Store SO dates with replace mode
-      const { updatedSchedules } = syncSchedulesFromMasterStores(
+      const { updatedSchedules, staleScheduleIdsToDelete } = syncSchedulesFromMasterStores(
         synced, 
         schedules, 
         detected.month, 
         detected.year, 
         { isReplaceMode: true, results }
       );
+      purgeStaleSchedules(staleScheduleIdsToDelete);
       setSchedules(updatedSchedules);
       saveSchedules(updatedSchedules, true);
     }
@@ -1392,13 +1403,14 @@ export default function App() {
       setSelectedYear(detected.year);
 
       // Smart auto-synchronize schedules from Master Store SO dates with replace mode
-      const { updatedSchedules } = syncSchedulesFromMasterStores(
+      const { updatedSchedules, staleScheduleIdsToDelete } = syncSchedulesFromMasterStores(
         synced, 
         schedules, 
         detected.month, 
         detected.year, 
         { isReplaceMode: true, results }
       );
+      purgeStaleSchedules(staleScheduleIdsToDelete);
       setSchedules(updatedSchedules);
       saveSchedules(updatedSchedules, true);
     }
@@ -1437,13 +1449,14 @@ export default function App() {
         setSelectedMonth(detected.month);
         setSelectedYear(detected.year);
 
-        const { updatedSchedules } = syncSchedulesFromMasterStores(
+        const { updatedSchedules, staleScheduleIdsToDelete } = syncSchedulesFromMasterStores(
           synced, 
           schedules, 
           detected.month, 
           detected.year, 
           { isReplaceMode: true, results }
         );
+        purgeStaleSchedules(staleScheduleIdsToDelete);
         setSchedules(updatedSchedules);
         saveSchedules(updatedSchedules, true);
       } else {

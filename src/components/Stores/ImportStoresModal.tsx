@@ -197,10 +197,16 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
       const tglSoMei = formatSmartSODate(getVal(['tgl so mei', 'so mei', 'mei'], ''));
       const tglSoJuni = formatSmartSODate(getVal(['tgl so juni', 'so juni', 'juni'], ''));
       const tglSoJuli = formatSmartSODate(getVal(['tgl so juli', 'so juli', 'juli'], ''));
+      const rowKeys = Object.keys(row);
+      const hasSpecificSeptemberCol = rowKeys.some(k => {
+        const lk = k.trim().toLowerCase();
+        return lk.includes('september') || lk.includes('sep 26') || lk.includes('so sep');
+      });
+
       const soAgustus = formatSmartSODate(getVal(['so agustus', 'tgl so agustus', 'agustus', 'so bulan ini', 'jadwal so'], ''));
       let soSeptember = formatSmartSODate(getVal(["so september '26", 'so september', 'tgl so september', 'september', 'so sep', 'tgl so sep', 'so sep 26', 'so september 2026'], ''));
       const genericScheduleDate = formatSmartSODate(getVal(['tgl so', 'tanggal so', 'jadwal so', 'tgl jadwal so', 'tgl pelaksanaan so', 'jadwal'], ''));
-      if ((!soSeptember || soSeptember === '-') && genericScheduleDate && genericScheduleDate !== '-') {
+      if (!hasSpecificSeptemberCol && (!soSeptember || soSeptember === '-') && genericScheduleDate && genericScheduleDate !== '-') {
         soSeptember = genericScheduleDate;
       }
       

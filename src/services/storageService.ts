@@ -369,8 +369,16 @@ export function deduplicateEntityList<T extends { id: string }>(
 
   const getEntityKey = (it: any): string => {
     if (collectionName === 'schedules') {
+      const isApproved = it.spvApprovalStatus === 'Disetujui' || it.status === 'Selesai';
       const sc = (it.storeCode || it.storeId || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
       const dt = (it.scheduledDate || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      if (isApproved) {
+        if (sc && dt) return `sch_appr_${sc}_${dt}`;
+        return `id_${it.id}`;
+      }
+      // For unapproved schedules: each store has at most ONE active unapproved schedule per month
+      const monthYear = (it.scheduledDate || '').slice(0, 7).replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      if (sc && monthYear) return `sch_unapp_${sc}_${monthYear}`;
       if (sc && dt) return `sch_${sc}_${dt}`;
       return `id_${it.id}`;
     }

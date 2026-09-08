@@ -336,6 +336,12 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
 
       const phoneVal = findVal(['notelp', 'no telp', 'phone', 'telepon']);
 
+      const rowKeys = Object.keys(rowObj);
+      const hasSpecificSeptemberCol = rowKeys.some(k => {
+        const lk = k.trim().toLowerCase();
+        return lk.includes('september') || lk.includes('sep 26') || lk.includes('so sep');
+      });
+
       const tglSoMei = formatSmartSODate(findVal(["so mei '26", 'so mei', 'tgl so mei', 'mei']));
       const tglSoJuni = formatSmartSODate(findVal(["so juni '26", 'so juni', 'tgl so juni', 'juni']));
       const tglSoJuli = formatSmartSODate(findVal(["so juli '26", 'so juli', 'tgl so juli', 'juli']));
@@ -345,7 +351,7 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
       
       // Generic SO schedule date (e.g. from a monthly master sheet with header "TGL SO" or "JADWAL SO")
       const genericScheduleDate = formatSmartSODate(findVal(['tgl so', 'tanggal so', 'jadwal so', 'tgl jadwal so', 'tgl pelaksanaan so', 'jadwal']));
-      if ((!soSeptember || soSeptember === '-') && genericScheduleDate && genericScheduleDate !== '-') {
+      if (!hasSpecificSeptemberCol && (!soSeptember || soSeptember === '-') && genericScheduleDate && genericScheduleDate !== '-') {
         soSeptember = genericScheduleDate;
       }
 

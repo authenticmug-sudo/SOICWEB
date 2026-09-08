@@ -343,21 +343,36 @@ export function syncSchedulesFromMasterStores(
     isReplaceMode?: boolean;
     results?: SOResult[];
   }
-): { updatedSchedules: SOSchedule[]; newlyCreatedCount: number; updatedCount: number; removedCount: number } {
+): { 
+  updatedSchedules: SOSchedule[]; 
+  newlyCreatedCount: number; 
+  updatedCount: number; 
+  removedCount: number;
+  staleScheduleIdsToDelete: string[];
+} {
+  const staleScheduleIdsToDelete: string[] = [];
+
   if (!stores || stores.length === 0) {
     if (options?.isReplaceMode) {
-      const approvedOnly = existingSchedules.filter(s => 
-        s.spvApprovalStatus === 'Disetujui' || 
-        (options?.results && options.results.some(r => r.approvalStatus === 'Disetujui' && (r.storeCode === s.storeCode || r.storeId === s.storeId)))
-      );
+      const approvedOnly: SOSchedule[] = [];
+      existingSchedules.forEach(s => {
+        const isApproved = s.spvApprovalStatus === 'Disetujui' || 
+          (options?.results && options.results.some(r => r.approvalStatus === 'Disetujui' && (r.storeCode === s.storeCode || r.storeId === s.storeId)));
+        if (isApproved) {
+          approvedOnly.push(s);
+        } else {
+          staleScheduleIdsToDelete.push(s.id);
+        }
+      });
       return { 
         updatedSchedules: approvedOnly, 
         newlyCreatedCount: 0, 
         updatedCount: 0, 
-        removedCount: existingSchedules.length - approvedOnly.length 
+        removedCount: existingSchedules.length - approvedOnly.length,
+        staleScheduleIdsToDelete
       };
     }
-    return { updatedSchedules: existingSchedules, newlyCreatedCount: 0, updatedCount: 0, removedCount: 0 };
+    return { updatedSchedules: existingSchedules, newlyCreatedCount: 0, updatedCount: 0, removedCount: 0, staleScheduleIdsToDelete: [] };
   }
 
   const results = options?.results || [];
@@ -406,7 +421,7 @@ export function syncSchedulesFromMasterStores(
     if (!primaryKey || handledStoreKeys.has(primaryKey)) return;
     handledStoreKeys.add(primaryKey);
 
-    // Determine target SO date for this store in target month
+    // Determine target SO date for this store strictly from the target month column in the uploaded master
     let rawDateVal = '';
     if (targetMonth === '09') {
       rawDateVal = st.soSeptember || '';
@@ -418,20 +433,6 @@ export function syncSchedulesFromMasterStores(
       rawDateVal = st.tglSoJuni || '';
     } else if (targetMonth === '05') {
       rawDateVal = st.tglSoMei || '';
-    }
-
-    // Fallback: If empty, check other SO date fields that match targetMonth
-    if (!rawDateVal || rawDateVal === '-' || rawDateVal === '0') {
-      const candidates = [st.soSeptember, st.soAgustus, st.tglSoJuli, st.tglSoJuni, st.tglSoMei, st.lastSODate];
-      for (const c of candidates) {
-        if (c && c !== '-' && c !== '0' && c !== '0.0' && c.toLowerCase() !== 'belum so') {
-          const iso = formatDateISO(c);
-          if (iso && iso.slice(5, 7) === targetMonth) {
-            rawDateVal = c;
-            break;
-          }
-        }
-      }
     }
 
     const isoDate = formatDateISO(rawDateVal);
@@ -446,9 +447,23 @@ export function syncSchedulesFromMasterStores(
       (idKey && s.storeId?.trim().toUpperCase() === idKey)
     );
 
-    if (!hasValidDate) {
-      // Store has NO scheduled date in new master: remove any lingering unapproved schedule
+    if (hasApprovedSchedule) {
+      // Store already has an approved SO, purge any leftover unapproved drafts
       if (existingUnapprovedList.length > 0) {
+        existingUnapprovedList.forEach(sch => {
+          staleScheduleIdsToDelete.push(sch.id);
+        });
+        removedCount += existingUnapprovedList.length;
+      }
+      return;
+    }
+
+    if (!hasValidDate) {
+      // Store has NO scheduled date in new master: strictly remove and purge any lingering unapproved schedule
+      if (existingUnapprovedList.length > 0) {
+        existingUnapprovedList.forEach(sch => {
+          staleScheduleIdsToDelete.push(sch.id);
+        });
         removedCount += existingUnapprovedList.length;
       }
       return;
@@ -465,9 +480,12 @@ export function syncSchedulesFromMasterStores(
     const dayName = getDayNameIndo(isoDate);
 
     if (existingUnapprovedList.length > 0) {
-      // Pick the primary existing schedule, drop any duplicates
+      // Pick the primary existing schedule, mark all duplicate unapproved schedules to be purged
       const targetSched = existingUnapprovedList[0];
       if (existingUnapprovedList.length > 1) {
+        for (let i = 1; i < existingUnapprovedList.length; i++) {
+          staleScheduleIdsToDelete.push(existingUnapprovedList[i].id);
+        }
         removedCount += (existingUnapprovedList.length - 1);
       }
 
@@ -475,9 +493,15 @@ export function syncSchedulesFromMasterStores(
         updatedCount++;
       }
 
+      const newId = `SCHED-${st.code || st.id}-${isoDate}`;
+      if (targetSched.id !== newId) {
+        // Old schedule ID must be purged from storage
+        staleScheduleIdsToDelete.push(targetSched.id);
+      }
+
       const updatedSched: SOSchedule = {
         ...targetSched,
-        id: `SCHED-${st.code || st.id}-${isoDate}`,
+        id: newId,
         scheduledDate: isoDate,
         dayName: dayName,
         storeId: st.id,
@@ -496,7 +520,7 @@ export function syncSchedulesFromMasterStores(
       };
 
       processedUnapprovedSchedules.push(updatedSched);
-    } else if (!hasApprovedSchedule) {
+    } else {
       // Create fresh schedule
       const newSchedule: SOSchedule = {
         id: `SCHED-${st.code || st.id}-${isoDate}`,
@@ -539,9 +563,12 @@ export function syncSchedulesFromMasterStores(
       }
     });
   } else {
-    // In replace mode, unhandled stores are counted as removed
+    // In replace mode, unhandled stores are counted as removed and purged
     unapprovedMap.forEach((schedulesList, key) => {
       if (!handledStoreKeys.has(key)) {
+        schedulesList.forEach(sch => {
+          staleScheduleIdsToDelete.push(sch.id);
+        });
         removedCount += schedulesList.length;
       }
     });
@@ -562,7 +589,8 @@ export function syncSchedulesFromMasterStores(
     updatedSchedules: allFinalSchedules, 
     newlyCreatedCount, 
     updatedCount, 
-    removedCount 
+    removedCount,
+    staleScheduleIdsToDelete
   };
 }
 
@@ -619,11 +647,11 @@ export function twoWaySyncStoresAndSchedules(
   schedules: SOSchedule[],
   month: string = '09',
   year: string = '2026'
-): { updatedStores: Store[]; updatedSchedules: SOSchedule[]; changesCount: number } {
+): { updatedStores: Store[]; updatedSchedules: SOSchedule[]; changesCount: number; staleScheduleIdsToDelete: string[] } {
   let changesCount = 0;
   const storeMap = new Map<string, Store>(stores.map(s => [s.code || s.id, { ...s }]));
 
-  // 1. Sync schedules into stores (Schedule -> Store.soSeptember)
+  // 1. Sync schedules into stores ONLY for approved or completed schedules
   schedules.forEach(sched => {
     if (!sched.scheduledDate) return;
     const [sYear, sMonth] = sched.scheduledDate.split('-');
@@ -631,9 +659,11 @@ export function twoWaySyncStoresAndSchedules(
       const matchStore = storeMap.get(sched.storeCode) || Array.from(storeMap.values()).find(s => s.id === sched.storeId || s.code === sched.storeCode);
       if (matchStore) {
         const smartDate = formatSmartSODate(sched.scheduledDate);
-        if (matchStore.soSeptember !== smartDate) {
-          matchStore.soSeptember = smartDate;
-          changesCount++;
+        if (sched.spvApprovalStatus === 'Disetujui' || sched.status === 'Selesai') {
+          if (matchStore.soSeptember !== smartDate) {
+            matchStore.soSeptember = smartDate;
+            changesCount++;
+          }
         }
         if (sched.spvApprovalStatus === 'Disetujui') {
           if (matchStore.statusApproveSO !== 'Sudah Approve') {
@@ -661,7 +691,7 @@ export function twoWaySyncStoresAndSchedules(
   const updatedStores = Array.from(storeMap.values());
 
   // 2. Sync stores into schedules (Store.soSeptember -> Schedules)
-  const { updatedSchedules, newlyCreatedCount } = syncSchedulesFromMasterStores(updatedStores, schedules, month, year);
+  const { updatedSchedules, newlyCreatedCount, staleScheduleIdsToDelete } = syncSchedulesFromMasterStores(updatedStores, schedules, month, year);
   changesCount += newlyCreatedCount;
 
   // 3. Enrich all schedules with latest Master Store details
@@ -673,7 +703,8 @@ export function twoWaySyncStoresAndSchedules(
   return {
     updatedStores,
     updatedSchedules: fullyEnrichedSchedules,
-    changesCount
+    changesCount,
+    staleScheduleIdsToDelete
   };
 }
 

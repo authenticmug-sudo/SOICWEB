@@ -128,32 +128,34 @@ export const KORLAP_PROFILES: KorlapProfile[] = [
  */
 export function getAvailableKorlapList(personnel?: AuditorPersonnel[]): string[] {
   const list: string[] = [];
-  const set = new Set<string>();
+  const seenCanonical = new Set<string>();
 
-  // 1. From Personnel Master Data
-  if (personnel && personnel.length > 0) {
-    personnel.forEach(p => {
-      if (p.role === 'Officer / Korlap' && p.name) {
-        set.add(p.name.trim().toUpperCase());
-      }
-      if (p.korlapName) {
-        set.add(p.korlapName.trim().toUpperCase());
-      }
-    });
-  }
-
-  // 2. Ensure standard 6 are included in preferred order
+  // 1. Ensure standard 6 are included first in preferred canonical order
   PRIMARY_BALI_KORLAPS.forEach(k => {
-    set.add(k.toUpperCase());
-    list.push(k);
-  });
-
-  // 3. Add any other discovered Korlaps
-  set.forEach(k => {
-    if (!list.includes(k)) {
-      list.push(k);
+    const canonical = normalizeKorlapName(k) || k.trim().toUpperCase();
+    if (!seenCanonical.has(canonical)) {
+      seenCanonical.add(canonical);
+      list.push(canonical);
     }
   });
+
+  // 2. Discover from Personnel Master Data if any other distinct Korlaps exist
+  if (personnel && personnel.length > 0) {
+    personnel.forEach(p => {
+      const candidates = [
+        p.role === 'Officer / Korlap' ? p.name : undefined,
+        p.korlapName
+      ].filter(Boolean) as string[];
+
+      candidates.forEach(raw => {
+        const canonical = normalizeKorlapName(raw) || raw.trim().toUpperCase();
+        if (canonical && !seenCanonical.has(canonical)) {
+          seenCanonical.add(canonical);
+          list.push(canonical);
+        }
+      });
+    });
+  }
 
   return list;
 }

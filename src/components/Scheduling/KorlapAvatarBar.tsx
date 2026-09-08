@@ -85,9 +85,16 @@ export const KorlapAvatarBar: React.FC<KorlapAvatarBarProps> = ({
   };
 
   const korlapData: KorlapItem[] = useMemo(() => {
-    return korlapList.map((kName, idx) => {
+    const items: KorlapItem[] = [];
+    const seenShortNames = new Set<string>();
+
+    korlapList.forEach((kName) => {
       const { shortName, initials } = getShortNameAndInitials(kName);
-      const palette = COLOR_PALETTES[idx % COLOR_PALETTES.length];
+      const key = shortName.trim().toUpperCase();
+      if (seenShortNames.has(key)) return;
+      seenShortNames.add(key);
+
+      const palette = COLOR_PALETTES[items.length % COLOR_PALETTES.length];
 
       // Calculate stores count for this Korlap
       let count = 0;
@@ -113,7 +120,7 @@ export const KorlapAvatarBar: React.FC<KorlapAvatarBarProps> = ({
         }
       });
 
-      return {
+      items.push({
         id: kName,
         fullName: kName,
         shortName,
@@ -125,8 +132,10 @@ export const KorlapAvatarBar: React.FC<KorlapAvatarBarProps> = ({
         colorBorder: palette.border,
         colorText: palette.text,
         colorRing: palette.ring
-      };
+      });
     });
+
+    return items;
   }, [korlapList, schedules, stores]);
 
   const totalAllStores = schedules.length;
