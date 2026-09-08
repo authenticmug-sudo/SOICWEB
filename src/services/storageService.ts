@@ -233,6 +233,18 @@ export function notifyDataChanged(storageKey: string, data: any) {
   } catch {}
 }
 
+export function isCorruptedEquipmentRecord(item: Partial<SOEquipment> | any): boolean {
+  if (!item) return false;
+  const sn = String(item.serialNumber || '').trim();
+  const notes = String(item.notes || '').trim();
+  const asset = String(item.assetId || '').trim();
+  // Corrupted initial record where serialNumber is just a 1-2 digit row index number matching notes or asset
+  if (/^\d{1,2}$/.test(sn) && (sn === notes || sn === asset)) {
+    return true;
+  }
+  return false;
+}
+
 // Deterministic ID generators to ensure 100% idempotent documents across imports and syncs
 export function isStoreEquipment(item: Partial<SOEquipment> | any): boolean {
   if (!item) return false;
@@ -240,9 +252,17 @@ export function isStoreEquipment(item: Partial<SOEquipment> | any): boolean {
   const name = (item.name || '').toUpperCase().trim();
   const asset = (item.assetId || '').toUpperCase().trim();
   const serial = (item.serialNumber || '').trim();
+  const notes = (item.notes || '').toUpperCase().trim();
 
-  // Store indicators in assignedUser / name
-  if (user.startsWith('PC.') || user.startsWith('YCG.') || user.startsWith('SPBU ') || user.startsWith('PLUS ')) {
+  // Store indicators in assignedUser / name / notes
+  if (
+    user.startsWith('ALFAMART') || user.startsWith('INDOMARET') || 
+    user.startsWith('ALFAMIDI') || user.startsWith('DAN+DAN') || 
+    user.startsWith('TOKO ') || user.startsWith('STORE ') || 
+    user.startsWith('SPBU ') || user.startsWith('CABANG ') ||
+    user.startsWith('OUTLET ') || user.startsWith('PC.') || 
+    user.startsWith('YCG.') || user.startsWith('PLUS ')
+  ) {
     return true;
   }
   if (user.includes(' - ') || user.includes('_')) {
@@ -251,7 +271,7 @@ export function isStoreEquipment(item: Partial<SOEquipment> | any): boolean {
   if (
     user.endsWith(' -DPS') || user.endsWith(' -BDG') || user.endsWith(' -GYR') || 
     user.endsWith(' -TBN') || user.endsWith(' -BGL') || user.endsWith(' -SRA') || 
-    user.endsWith(' -JBN') || user.endsWith(' -KSM')
+    user.endsWith(' -JBN') || user.endsWith(' -KSM') || user.endsWith(' -KLK')
   ) {
     return true;
   }
@@ -264,14 +284,22 @@ export function isStoreEquipment(item: Partial<SOEquipment> | any): boolean {
     return true;
   }
   // Store code column or generic store keyword
-  if (user.includes('TOKO') || user.includes('STORE') || user.includes('KDTK')) {
+  if (user.includes('TOKO') || user.includes('STORE') || user.includes('KDTK') || user.includes('KODETK') || user.includes('KDCAB')) {
+    return true;
+  }
+  // Store code pattern: e.g. T001, 1A23, 2G45 followed by store name
+  if (/^[0-9A-Z]{4}\s+[A-Z]/i.test(user)) {
     return true;
   }
   // Generated WDCP asset ID without a genuine serial number (common artifact when stores were ingested)
-  if (/^WDCP-0\d\d/.test(asset) && (!serial || serial === '')) {
+  if (/^WDCP-0\d\d/.test(asset) && (!serial || serial === '' || serial === '-')) {
     return true;
   }
-  if (/^WDCP-\d{3}$/.test(asset) && (!serial || serial === '')) {
+  if (/^WDCP-\d{3}$/.test(asset) && (!serial || serial === '' || serial === '-')) {
+    return true;
+  }
+  // If notes or name contain store-specific labels
+  if (name.includes('TOKO') || name.includes('KDTK') || notes.includes('KODE TOKO') || notes.includes('KDTK')) {
     return true;
   }
   return false;
@@ -280,10 +308,7 @@ export function isStoreEquipment(item: Partial<SOEquipment> | any): boolean {
 export function getDeterministicEquipmentId(item: Partial<SOEquipment>): string {
   const cleanSerial = (item.serialNumber || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
   const cleanUser = (item.assignedUser || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-  const isFullSerial = cleanSerial && cleanSerial.length >= 6 && !cleanSerial.startsWith('000000');
-
-  const cleanAsset = (item.assetId || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-  const isCustomAsset = cleanAsset && cleanAsset.length >= 6 && !cleanAsset.startsWith('wdcp-00');
+  const isFullSerial = cleanSerial && cleanSerial.length >= 4 && !cleanSerial.startsWith('000000');
 
   if (isFullSerial) {
     return `eq_sn_${cleanSerial}`.slice(0, 45);
@@ -291,13 +316,9 @@ export function getDeterministicEquipmentId(item: Partial<SOEquipment>): string 
   if (cleanSerial && cleanUser) {
     return `eq_${cleanUser}_sn_${cleanSerial}`.slice(0, 45);
   }
-  if (isCustomAsset) {
-    return `eq_ast_${cleanAsset}`.slice(0, 45);
-  }
-
-  const cleanName = (item.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-  if (cleanUser && cleanName) {
-    return `eq_${cleanUser}_${cleanName}`.slice(0, 45);
+  const cleanCategory = (item.category || 'wdcp').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  if (cleanUser) {
+    return `eq_${cleanUser}_${cleanCategory}`.slice(0, 45);
   }
   return item.id && !item.id.startsWith('equip_imp_') && !item.id.startsWith('eq_imp_') ? item.id : `eq_${Date.now()}`;
 }
@@ -384,22 +405,26 @@ export function deduplicateEntityList<T extends { id: string }>(
     }
     if (collectionName === 'equipment') {
       if (isStoreEquipment(it)) {
-        // Tag store records in equipment collection as stale and purge them
         staleDocIdsToDelete.push(it.id);
         return `purge_store_${it.id}`;
       }
-      const sn = (it.serialNumber || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-      const isFullSerial = sn && sn.length >= 6 && !sn.startsWith('000000');
+      if (isCorruptedEquipmentRecord(it)) {
+        staleDocIdsToDelete.push(it.id);
+        return `purge_corrupt_${it.id}`;
+      }
 
-      const ast = (it.assetId || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-      const isCustomAsset = ast && ast.length >= 6 && !ast.startsWith('wdcp-00');
+      const sn = (it.serialNumber || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      const isFullSerial = sn && sn.length >= 4 && !sn.startsWith('000000') && !/^\d{1,2}$/.test(sn);
 
       if (isFullSerial) return `sn_${sn}`;
 
       const usr = (it.assignedUser || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-      if (sn && usr) return `usr_${usr}_sn_${sn}`;
+      const cat = (it.category || 'wdcp').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
 
-      if (isCustomAsset) return `ast_${ast}`;
+      if (usr) return `usr_${usr}_${cat}`;
+
+      const ast = (it.assetId || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      if (ast && ast.length >= 6 && !ast.startsWith('wdcp-00')) return `ast_${ast}`;
 
       const nm = (it.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
       if (usr && nm) return `usr_${usr}_${nm}`;
@@ -465,7 +490,10 @@ export function deduplicateEntityList<T extends { id: string }>(
   const deduplicated: T[] = [];
 
   for (const [key, group] of groupMap.entries()) {
-    if (key.startsWith('purge_store_')) {
+    if (key.startsWith('purge_store_') || key.startsWith('purge_corrupt_')) {
+      for (const dup of group) {
+        staleDocIdsToDelete.push(dup.id);
+      }
       continue;
     }
     if (group.length === 1) {
@@ -480,12 +508,26 @@ export function deduplicateEntityList<T extends { id: string }>(
         deduplicated.push(item);
       }
     } else {
-      // Multiple duplicates found! Sort by newest uploadDate or updatedAt or createdAt
-      group.sort((a: any, b: any) => {
-        const tA = a.uploadDate ? new Date(a.uploadDate).getTime() : (a.updatedAt ? new Date(a.updatedAt).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : 0));
-        const tB = b.uploadDate ? new Date(b.uploadDate).getTime() : (b.updatedAt ? new Date(b.updatedAt).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0));
-        return tB - tA;
-      });
+      // Multiple duplicates found!
+      if (collectionName === 'equipment') {
+        group.sort((a: any, b: any) => {
+          // Prioritize genuine serial numbers over row-index placeholders or empty
+          const snA = (a.serialNumber || '').trim();
+          const snB = (b.serialNumber || '').trim();
+          const scoreA = (snA && snA.length >= 3 && !/^\d{1,2}$/.test(snA) ? 1000 : 0) + (a.notes && a.notes !== '-' ? 10 : 0);
+          const scoreB = (snB && snB.length >= 3 && !/^\d{1,2}$/.test(snB) ? 1000 : 0) + (b.notes && b.notes !== '-' ? 10 : 0);
+          if (scoreB !== scoreA) return scoreB - scoreA;
+          const tA = a.uploadDate ? new Date(a.uploadDate).getTime() : (a.updatedAt ? new Date(a.updatedAt).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : 0));
+          const tB = b.uploadDate ? new Date(b.uploadDate).getTime() : (b.updatedAt ? new Date(b.updatedAt).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0));
+          return tB - tA;
+        });
+      } else {
+        group.sort((a: any, b: any) => {
+          const tA = a.uploadDate ? new Date(a.uploadDate).getTime() : (a.updatedAt ? new Date(a.updatedAt).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : 0));
+          const tB = b.uploadDate ? new Date(b.uploadDate).getTime() : (b.updatedAt ? new Date(b.updatedAt).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0));
+          return tB - tA;
+        });
+      }
 
       const winner = group[0];
       const canonicalId = getCanonicalId(winner);
@@ -1051,6 +1093,18 @@ export async function deleteEquipmentFromFirestore(equipmentId: string): Promise
   }
 }
 
+export async function deleteDocsFromFirestore(collectionName: string, ids: string[]): Promise<void> {
+  if (!ids || ids.length === 0 || isFirestoreQuotaExceeded) return;
+  try {
+    for (const id of ids) {
+      if (collectionName === 'equipment') {
+        trackDeletedId(STORAGE_KEYS.EQUIPMENT, id);
+      }
+      await deleteDoc(doc(db, collectionName, id)).catch(() => {});
+    }
+  } catch {}
+}
+
 export async function saveRepairLogToFirestore(log: EquipmentRepairLog): Promise<void> {
   if (isFirestoreQuotaExceeded) return;
   try {
@@ -1270,8 +1324,11 @@ export function getStoredEquipment(): SOEquipment[] {
     try {
       const parsed = JSON.parse(local);
       if (Array.isArray(parsed)) {
-        const clean = parsed.filter(e => !isStoreEquipment(e));
-        if (clean.length > 0) return clean;
+        const clean = parsed.filter(e => !isStoreEquipment(e) && !isCorruptedEquipmentRecord(e));
+        if (clean.length > 0) {
+          const { deduplicated } = deduplicateEntityList('equipment', clean);
+          return deduplicated;
+        }
       }
     } catch {
       // fallback
@@ -1280,21 +1337,26 @@ export function getStoredEquipment(): SOEquipment[] {
   if (localStorage.getItem(STORAGE_KEYS.CLEARED_SAMPLE_FLAG) === 'true') {
     return [];
   }
-  return INITIAL_EQUIPMENT;
+  return INITIAL_EQUIPMENT.filter(e => !isStoreEquipment(e) && !isCorruptedEquipmentRecord(e));
 }
 
 export async function saveEquipment(equipment: SOEquipment[], isReplaceMode = false): Promise<void> {
-  // Always filter out any store entries that may have accidentally been passed
-  const cleanEquipment = equipment.filter(e => !isStoreEquipment(e));
-  untrackDeletedIdsForItems(STORAGE_KEYS.EQUIPMENT, cleanEquipment.map(e => e.id));
-  localStorage.setItem(STORAGE_KEYS.EQUIPMENT, JSON.stringify(cleanEquipment));
-  notifyDataChanged(STORAGE_KEYS.EQUIPMENT, cleanEquipment);
-  uploadRawJsonToCloudinary(cleanEquipment, 'Master_Alat', 'SO Sistem IC BALI/Master Alat').catch(() => {});
+  // Always filter out any store entries and corrupted row-index records
+  const cleanEquipment = equipment.filter(e => !isStoreEquipment(e) && !isCorruptedEquipmentRecord(e));
+  const { deduplicated: finalEquipment, staleDocIdsToDelete } = deduplicateEntityList('equipment', cleanEquipment);
+
+  untrackDeletedIdsForItems(STORAGE_KEYS.EQUIPMENT, finalEquipment.map(e => e.id));
+  localStorage.setItem(STORAGE_KEYS.EQUIPMENT, JSON.stringify(finalEquipment));
+  notifyDataChanged(STORAGE_KEYS.EQUIPMENT, finalEquipment);
+  uploadRawJsonToCloudinary(finalEquipment, 'Master_Alat', 'SO Sistem IC BALI/Master Alat').catch(() => {});
   if (!isFirestoreQuotaExceeded) {
+    if (staleDocIdsToDelete.length > 0) {
+      deleteDocsFromFirestore('equipment', staleDocIdsToDelete).catch(() => {});
+    }
     if (isReplaceMode) {
-      replaceFirestoreCollection('equipment', cleanEquipment).catch(() => {});
+      replaceFirestoreCollection('equipment', finalEquipment).catch(() => {});
     } else {
-      queueSyncFirestoreCollection('equipment', cleanEquipment, isReplaceMode);
+      queueSyncFirestoreCollection('equipment', finalEquipment, isReplaceMode);
     }
   }
 }

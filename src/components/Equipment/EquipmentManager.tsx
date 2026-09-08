@@ -39,6 +39,8 @@ import {
   cleanAllDatabaseDuplicates,
   deduplicateEntityList,
   isStoreEquipment,
+  isCorruptedEquipmentRecord,
+  deleteDocsFromFirestore,
   STORAGE_KEYS
 } from '../../services/storageService';
 import { ConfirmDeleteModal } from '../Common/ConfirmDeleteModal';
@@ -155,12 +157,17 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
 
       const resolvedData = fsData || cldData;
       if (resolvedData && Array.isArray(resolvedData) && resolvedData.length > 0) {
-        if (onBatchUpdateEquipment) {
-          onBatchUpdateEquipment(resolvedData, true);
-        } else {
-          resolvedData.forEach(item => onUpdateEquipment(item));
+        const clean = resolvedData.filter(e => !isStoreEquipment(e) && !isCorruptedEquipmentRecord(e));
+        const { deduplicated, staleDocIdsToDelete } = deduplicateEntityList('equipment', clean);
+        if (staleDocIdsToDelete && staleDocIdsToDelete.length > 0) {
+          deleteDocsFromFirestore('equipment', staleDocIdsToDelete).catch(() => {});
         }
-        showToast(`Berhasil Sinkron Cloud! ${resolvedData.length} unit alat unik & terbebas dari duplikasi.`, 'success', 'Sinkronisasi Cloud Berhasil');
+        if (onBatchUpdateEquipment) {
+          onBatchUpdateEquipment(deduplicated, true);
+        } else {
+          deduplicated.forEach(item => onUpdateEquipment(item));
+        }
+        showToast(`Berhasil Sinkron Cloud! ${deduplicated.length} unit alat unik & terbebas dari duplikasi.`, 'success', 'Sinkronisasi Cloud Berhasil');
       } else {
         // If cloud empty but we have local data, push local data to cloud
         if (equipmentList.length > 0) {
@@ -198,8 +205,8 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
   const [repStatusTarget, setRepStatusTarget] = useState<RepairStatus>('Rusak Belum Perbaikan');
   const [repNotes, setRepNotes] = useState('');
 
-  // Pure equipment list (strictly excludes any inadvertent store data)
-  const cleanEquipList = equipmentList.filter(e => !isStoreEquipment(e));
+  // Pure equipment list (strictly excludes any inadvertent store data and corrupted row indices)
+  const cleanEquipList = equipmentList.filter(e => !isStoreEquipment(e) && !isCorruptedEquipmentRecord(e));
 
   // Counts
   const totalCount = cleanEquipList.length;
@@ -456,8 +463,7 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
     // 1. Filter out sheet names that are obviously NOT equipment (e.g. stores, schedules, stocks)
     const ignoredSheetNames = [
       'stock', 'all toko', 'master toko', 'jadwal', 'will toko', 
-      'sheet1', 'sheet2', 'sheet3', 'sheet4', 'korlap', 'personil',
-      'data toko', 'rekap', 'target', 'summary', 'pedoman'
+      'korlap', 'personil', 'data toko', 'rekap', 'target', 'summary', 'pedoman'
     ];
 
     let bestRows: any[] = [];
@@ -490,9 +496,9 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
       if (!rawMatrix || rawMatrix.length === 0) continue;
 
       // Scan first 25 rows for header keywords
-      // MUST contain at least one explicit equipment keyword!
-      const explicitEquipKeywords = ['mac', 'serial', 'sn', 'wdcp', 'scanner', 'kondisi', 'warna scanner', 'qr barcode', 'alat'];
-      const generalKeywords = ['nama', 'user', 'petugas', 'pic', 'kategori', 'catatan'];
+      // MUST contain at least one explicit equipment serial/MAC keyword!
+      const explicitEquipKeywords = ['mac', 'serial number (mac)', 'serial number', 'serial', 'sn', 'wdcp', 'scanner', 'warna scanner', 'qr barcode'];
+      const generalKeywords = ['nama user', 'petugas', 'korlap', 'pemegang', 'kondisi', 'kategori', 'catatan'];
       
       let headerIdx = -1;
       let maxMatches = 0;
@@ -504,7 +510,7 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
         const rowStr = row.map(c => String(c || '').toLowerCase()).join(' ');
         
         // Discard header rows that contain store-specific columns like 'kdtk', 'kode toko', 'spd rab', 'luas tanah'
-        if (rowStr.includes('kdtk') || rowStr.includes('kode toko') || rowStr.includes('spd rab') || rowStr.includes('luas tanah')) {
+        if (rowStr.includes('kdtk') || rowStr.includes('kode toko') || rowStr.includes('spd rab') || rowStr.includes('luas tanah') || rowStr.includes('saldo toko') || rowStr.includes('kas toko') || rowStr.includes('jadwal so')) {
           continue;
         }
 
@@ -518,7 +524,7 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
           if (rowStr.includes(k)) genMatches++;
         });
 
-        const totalMatches = (explicitMatches * 3) + genMatches;
+        const totalMatches = (explicitMatches * 4) + genMatches;
         if (explicitMatches >= 1 && totalMatches > maxMatches) {
           maxMatches = totalMatches;
           headerIdx = i;
@@ -549,10 +555,6 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
     const results: SOEquipment[] = [];
     validRows.forEach((row: any, idx: number) => {
       const keys = Object.keys(row);
-      const isIndexKey = (kStr: string) => {
-        const clean = kStr.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-        return ['no', 'no.', 'nomor', 'index', 'idx', '#', 'bilangan', 'urutan'].includes(clean);
-      };
 
       const getVal = (possibleKeys: string[], excludeGenericKeys: string[] = ['no', 'no.', 'nomor', 'index', 'idx', '#', 'bilangan', 'urutan']) => {
         // 1. Exact match first in priority order of possibleKeys
@@ -588,17 +590,29 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
         return '';
       };
 
-      const user = getVal([
-        'Nama User', 'Nama Petugas', 'Nama Korlap', 'Nama PIC', 'Petugas', 'Korlap', 
-        'Auditor', 'User', 'PIC', 'Penanggung Jawab', 'Pengguna', 'Pemegang', 
-        'Pemegang Alat', 'Nama Pengguna', 'Nama'
-      ]) || `User ${idx + 1}`;
+      // 1. User detection
+      let user = getVal(
+        [
+          'Nama User', 'Nama Petugas', 'Nama Korlap', 'Nama PIC', 'Petugas', 'Korlap', 
+          'Auditor', 'User', 'PIC', 'Penanggung Jawab', 'Pengguna', 'Pemegang', 
+          'Pemegang Alat', 'Nama Pengguna', 'Nama'
+        ],
+        ['nama toko', 'nama alat', 'nama perangkat', 'device name', 'store name', 'toko', 'kdtk', 'no', 'nomor']
+      );
 
-      // Enhanced MAC extraction & normalization helper
+      // Enhanced MAC extraction & normalization helper (pure alphanumeric text or MAC format)
       const extractMacOrSerial = (text: string): string => {
         if (!text) return '';
-        const trimmed = String(text).trim();
-        
+        let trimmed = String(text).trim();
+        if (trimmed === '-' || trimmed === '—' || trimmed === 'N/A' || trimmed === 'null' || trimmed === 'undefined') {
+          return '';
+        }
+
+        // Normalize internal semicolons to colons (e.g. 00;23;A7...)
+        if (trimmed.includes(';') && !trimmed.includes(' ')) {
+          trimmed = trimmed.replace(/;/g, ':');
+        }
+
         // 1. Standard colon/hyphen separated MAC: 00:1A:2B:3C:4D:5E or 00-1A-2B-3C-4D-5E
         const standardMac = trimmed.match(/(?:[0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}/i);
         if (standardMac) {
@@ -618,48 +632,44 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
           return cleanHex.match(/.{1,2}/g)?.join(':').toUpperCase() || cleanHex.toUpperCase();
         }
 
-        // 4. WDCP prefixed codes: WDCP-1234 or SN: 12345
+        // 4. Hex segments with colons (e.g. A0:B0, A5:, 00:23:A7, D4:AD:20:)
+        if (/^[0-9a-fA-F:]{2,}$/i.test(trimmed)) {
+          return trimmed.toUpperCase();
+        }
+
+        // 5. WDCP prefixed codes: WDCP-1234
         const wdcpCode = trimmed.match(/WDCP[-_ ]?[A-Za-z0-9]+/i);
         if (wdcpCode) return wdcpCode[0].toUpperCase();
 
-        return trimmed.replace(/;/g, ':').replace(/\s+/g, ' ');
+        // 6. Alphanumeric text input (e.g. MC3190, HH ZEBRA HOLTSVILLE, etc.)
+        return trimmed.replace(/\s+/g, ' ');
       };
 
-      // High-precision MAC & Serial Number detection
+      // Direct, high-precision MAC & Serial Number detection from MAC column
       let rawSerial = getVal(
         [
-          'Kode MAC WDCP', 'Kode MAC', 'MAC WDCP', 'WDCP MAC', 'Kode WDCP',
-          'Serial Number (MAC)', 'Serial Number', 'MAC Address', 'MAC Scanner', 'MacAddress', 
+          'Serial Number (MAC)', 'Serial Number', 'Kode MAC WDCP', 'Kode MAC',
+          'MAC', 'MAC Address', 'MAC WDCP', 'WDCP MAC', 'Kode WDCP',
           'SN WDCP', 'Serial WDCP', 'Kode Alat (MAC)', 'Kode Alat / MAC', 'No. MAC', 'No MAC', 
           'Nomor MAC', 'SN', 'S/N', 'Serial', 'No Serial', 'Nomor Serial', 'No. Serial',
-          'Barcode / MAC', 'MAC / QR',
-          'Kode Alat', 'Kode Scanner'
+          'Barcode / MAC', 'MAC / QR', 'Kode Alat', 'Kode Scanner'
         ],
-        ['no', 'no.', 'nomor', 'index', 'idx', '#', 'bilangan', 'urutan', 'nama', 'name', 'kondisi', 'warna', 'catatan', 'keterangan', 'user', 'petugas', 'pic']
+        [
+          'no', 'no.', 'nomor', 'index', 'idx', '#', 'bilangan', 'urutan',
+          'nama', 'nama user', 'nama petugas', 'user', 'petugas', 'korlap', 'pic',
+          'kondisi', 'status', 'warna', 'warna scanner', 'bisa scan qr barcode',
+          'bisa scan qr', 'scan qr', 'kategori', 'catatan', 'keterangan'
+        ]
       );
-
-      // Fallback: If rawSerial is not found or matches a non-MAC value, inspect cell values for valid MAC format
-      const macPatternRegex = /(?:[0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}|(?:[0-9a-fA-F]{4}\.){2}[0-9a-fA-F]{4}|(?:[0-9a-fA-F]{1,4}[:;]){1,5}[0-9a-fA-F]{1,4}|^[0-9a-fA-F]{12}$|^WDCP-/i;
-      const isInvalidSerial = !rawSerial || 
-        (rawSerial.length <= 2 && /^\d+$/.test(rawSerial)) ||
-        rawSerial.toLowerCase().includes('scanner') ||
-        rawSerial.toLowerCase().includes('rusak') ||
-        rawSerial.toLowerCase().includes('baik');
-
-      if (isInvalidSerial) {
-        for (const k of keys) {
-          if (isIndexKey(k)) continue;
-          const val = String(row[k] || '').trim();
-          if (val && macPatternRegex.test(val)) {
-            rawSerial = val;
-            break;
-          }
-        }
-      }
 
       // Clean and normalize serial number / MAC
       let serial = extractMacOrSerial(rawSerial);
-      
+
+      // Guard: Purge false positives where serial was parsed as just a 1-2 digit row index number
+      if (/^\d{1,2}$/.test(serial)) {
+        serial = '';
+      }
+
       let rawKondisi = getVal(['Kondisi', 'Status', 'Kondisi Alat', 'Condition', 'Status Alat', 'Kondisi WDCP']) || 'Baik';
       let kondisi: EquipmentCondition = 'Baik';
       const kLower = rawKondisi.toLowerCase();
@@ -686,22 +696,25 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
       const cleanSnForAsset = serial.replace(/[^a-zA-Z0-9]/g, '');
       let explicitAssetId = getVal(['ID Asset', 'Asset ID', 'No Asset', 'Nomor Asset']);
       let assetId = explicitAssetId || (cleanSnForAsset.length >= 2 ? `WDCP-${cleanSnForAsset.toUpperCase()}` : `WDCP-${String(idx + 1).padStart(3, '0')}`);
-      
-      // If serial is still empty but assetId contains a MAC-like string, backfill serial
-      if (!serial && macPatternRegex.test(assetId)) {
-        serial = assetId;
-      }
 
       let name = getVal(['Nama Alat / WDCP', 'Nama Alat', 'Nama Perangkat', 'Device Name', 'Nama Barang']) || `Scanner ${category}`;
 
-      // If the row matches a store pattern, discard it immediately
-      if (isStoreEquipment({ assignedUser: user, name, assetId, serialNumber: serial })) {
+      // Discard store rows immediately
+      if (isStoreEquipment({ assignedUser: user, name, assetId, serialNumber: serial, notes })) {
         return;
+      }
+
+      // If user is empty and serial is empty, skip this row
+      if (!user && !serial) {
+        return;
+      }
+      if (!user) {
+        user = `User ${idx + 1}`;
       }
 
       const deterministicId = getDeterministicEquipmentId({ serialNumber: serial, assetId, assignedUser: user, name });
 
-      results.push({
+      const equipRecord: SOEquipment = {
         id: deterministicId,
         assetId,
         name,
@@ -714,7 +727,14 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
         notes,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
-      });
+      };
+
+      // Discard any record failing integrity checks
+      if (isCorruptedEquipmentRecord(equipRecord) || isStoreEquipment(equipRecord)) {
+        return;
+      }
+
+      results.push(equipRecord);
     });
 
     return results;
@@ -796,27 +816,30 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
         // Append / Merge mode
         const getItemKey = (e: SOEquipment) => {
           const sn = (e.serialNumber || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-          const isFullSerial = sn && sn.length >= 6 && !sn.startsWith('000000');
+          const isFullSerial = sn && sn.length >= 4 && !sn.startsWith('000000') && !/^\d{1,2}$/.test(sn);
           if (isFullSerial) return `sn_${sn}`;
-          const ast = (e.assetId || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-          if (ast && ast.length >= 6 && !ast.startsWith('wdcp-00')) return `ast_${ast}`;
           const usr = (e.assignedUser || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-          const nm = (e.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-          if (usr && nm) return `usr_${usr}_${nm}`;
+          const cat = (e.category || 'wdcp').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+          if (usr) return `usr_${usr}_${cat}`;
           return (e.id || '').toLowerCase();
         };
         const existingMap = new Map<string, SOEquipment>();
-        equipmentList.forEach(e => {
-          existingMap.set(getItemKey(e), e);
-        });
-        parsedImportData.forEach(item => {
-          existingMap.set(getItemKey(item), item);
-        });
+        equipmentList
+          .filter(e => !isStoreEquipment(e) && !isCorruptedEquipmentRecord(e))
+          .forEach(e => {
+            existingMap.set(getItemKey(e), e);
+          });
+        parsedImportData
+          .filter(e => !isStoreEquipment(e) && !isCorruptedEquipmentRecord(e))
+          .forEach(item => {
+            existingMap.set(getItemKey(item), item);
+          });
         finalEquipmentList = Array.from(existingMap.values());
       }
 
-      // Final deduplication
-      const { deduplicated: cleanFinalList } = deduplicateEntityList('equipment', finalEquipmentList);
+      // Filter and Final deduplication
+      const cleanList = finalEquipmentList.filter(e => !isStoreEquipment(e) && !isCorruptedEquipmentRecord(e));
+      const { deduplicated: cleanFinalList } = deduplicateEntityList('equipment', cleanList);
 
       // Persist immediately to localStorage & update local state (zero latency)
       await saveEquipment(cleanFinalList, isReplace);

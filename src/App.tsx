@@ -48,7 +48,9 @@ import {
   untrackDeletedMasterDataset,
   isMasterDatasetDeleted,
   deduplicateEntityList,
-  normalizeSingleActiveDataset
+  normalizeSingleActiveDataset,
+  isStoreEquipment,
+  isCorruptedEquipmentRecord
 } from './services/storageService';
 import { ensureStoreCoordinates, autoSyncStoreRegionAndKabupaten } from './utils/geoUtils';
 import { formatSmartSODate, detectSmartMonthAndYear } from './utils/formatters';
@@ -378,6 +380,13 @@ export default function App() {
     setRepairLogs(loadedRepairLogs);
     setDatasets(syncedDatasets);
 
+    const sanitizeEquipmentList = (list: any[]): SOEquipment[] => {
+      if (!Array.isArray(list)) return [];
+      const clean = list.filter(e => e && !isStoreEquipment(e) && !isCorruptedEquipmentRecord(e));
+      const { deduplicated } = deduplicateEntityList('equipment', clean);
+      return deduplicated;
+    };
+
     // Helper to apply multi-device Cloudinary synced data
     const handleApplyCloudinarySynced = (synced: any) => {
       if (!synced) return;
@@ -386,7 +395,7 @@ export default function App() {
         setStores(syncedStores);
         setSchedules(prev => syncScheduleRegionsWithStores(prev, syncedStores));
       }
-      if (synced.equipment && Array.isArray(synced.equipment)) setEquipment(synced.equipment);
+      if (synced.equipment && Array.isArray(synced.equipment)) setEquipment(sanitizeEquipmentList(synced.equipment));
       if (synced.personnel && Array.isArray(synced.personnel)) setPersonnel(synced.personnel);
       if (synced.onCallPersonnel && Array.isArray(synced.onCallPersonnel)) setOnCallRecords(synced.onCallPersonnel);
       if (synced.schedules && Array.isArray(synced.schedules)) {
@@ -448,7 +457,7 @@ export default function App() {
         if (p && Array.isArray(p) && p.length > 0) setPersonnel(p);
       },
       onEquipment: (eq) => {
-        if (eq && Array.isArray(eq) && eq.length > 0) setEquipment(eq);
+        if (eq && Array.isArray(eq) && eq.length > 0) setEquipment(sanitizeEquipmentList(eq));
       },
       onRepairLogs: (rl) => {
         if (rl && Array.isArray(rl) && rl.length > 0) setRepairLogs(rl);
@@ -483,7 +492,7 @@ export default function App() {
       } else if (key === STORAGE_KEYS.PERSONNEL) {
         setPersonnel(data as AuditorPersonnel[]);
       } else if (key === STORAGE_KEYS.EQUIPMENT) {
-        setEquipment(data as SOEquipment[]);
+        setEquipment(sanitizeEquipmentList(data as SOEquipment[]));
       } else if (key === STORAGE_KEYS.REPAIR_LOGS) {
         setRepairLogs(data as EquipmentRepairLog[]);
       } else if (key === STORAGE_KEYS.ONCALL_PERSONNEL) {
