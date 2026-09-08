@@ -234,6 +234,49 @@ export function notifyDataChanged(storageKey: string, data: any) {
 }
 
 // Deterministic ID generators to ensure 100% idempotent documents across imports and syncs
+export function isStoreEquipment(item: Partial<SOEquipment> | any): boolean {
+  if (!item) return false;
+  const user = (item.assignedUser || '').toUpperCase().trim();
+  const name = (item.name || '').toUpperCase().trim();
+  const asset = (item.assetId || '').toUpperCase().trim();
+  const serial = (item.serialNumber || '').trim();
+
+  // Store indicators in assignedUser / name
+  if (user.startsWith('PC.') || user.startsWith('YCG.') || user.startsWith('SPBU ') || user.startsWith('PLUS ')) {
+    return true;
+  }
+  if (user.includes(' - ') || user.includes('_')) {
+    return true;
+  }
+  if (
+    user.endsWith(' -DPS') || user.endsWith(' -BDG') || user.endsWith(' -GYR') || 
+    user.endsWith(' -TBN') || user.endsWith(' -BGL') || user.endsWith(' -SRA') || 
+    user.endsWith(' -JBN') || user.endsWith(' -KSM')
+  ) {
+    return true;
+  }
+  if (
+    user.includes(' DENPASAR') || user.includes(' BADUNG') || user.includes(' GIANYAR') || 
+    user.includes(' TABANAN') || user.includes(' SINGARAJA') || user.includes(' KELUNGKUNG') || 
+    user.includes(' BANGLI') || user.includes(' JEMBRANA') || user.includes(' BULELENG') || 
+    user.includes(' KARANGASEM') || user.includes(' KUTA') || user.includes(' SANUR')
+  ) {
+    return true;
+  }
+  // Store code column or generic store keyword
+  if (user.includes('TOKO') || user.includes('STORE') || user.includes('KDTK')) {
+    return true;
+  }
+  // Generated WDCP asset ID without a genuine serial number (common artifact when stores were ingested)
+  if (/^WDCP-0\d\d/.test(asset) && (!serial || serial === '')) {
+    return true;
+  }
+  if (/^WDCP-\d{3}$/.test(asset) && (!serial || serial === '')) {
+    return true;
+  }
+  return false;
+}
+
 export function getDeterministicEquipmentId(item: Partial<SOEquipment>): string {
   const cleanSerial = (item.serialNumber || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
   const cleanUser = (item.assignedUser || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
@@ -332,6 +375,11 @@ export function deduplicateEntityList<T extends { id: string }>(
       return `id_${it.id}`;
     }
     if (collectionName === 'equipment') {
+      if (isStoreEquipment(it)) {
+        // Tag store records in equipment collection as stale and purge them
+        staleDocIdsToDelete.push(it.id);
+        return `purge_store_${it.id}`;
+      }
       const sn = (it.serialNumber || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
       const isFullSerial = sn && sn.length >= 6 && !sn.startsWith('000000');
 
@@ -408,7 +456,10 @@ export function deduplicateEntityList<T extends { id: string }>(
 
   const deduplicated: T[] = [];
 
-  for (const [_, group] of groupMap.entries()) {
+  for (const [key, group] of groupMap.entries()) {
+    if (key.startsWith('purge_store_')) {
+      continue;
+    }
     if (group.length === 1) {
       const item = group[0];
       const canonicalId = getCanonicalId(item);
@@ -1210,7 +1261,10 @@ export function getStoredEquipment(): SOEquipment[] {
   if (local) {
     try {
       const parsed = JSON.parse(local);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) {
+        const clean = parsed.filter(e => !isStoreEquipment(e));
+        if (clean.length > 0) return clean;
+      }
     } catch {
       // fallback
     }
@@ -1222,15 +1276,17 @@ export function getStoredEquipment(): SOEquipment[] {
 }
 
 export async function saveEquipment(equipment: SOEquipment[], isReplaceMode = false): Promise<void> {
-  untrackDeletedIdsForItems(STORAGE_KEYS.EQUIPMENT, equipment.map(e => e.id));
-  localStorage.setItem(STORAGE_KEYS.EQUIPMENT, JSON.stringify(equipment));
-  notifyDataChanged(STORAGE_KEYS.EQUIPMENT, equipment);
-  uploadRawJsonToCloudinary(equipment, 'Master_Alat', 'SO Sistem IC BALI/Master Alat').catch(() => {});
+  // Always filter out any store entries that may have accidentally been passed
+  const cleanEquipment = equipment.filter(e => !isStoreEquipment(e));
+  untrackDeletedIdsForItems(STORAGE_KEYS.EQUIPMENT, cleanEquipment.map(e => e.id));
+  localStorage.setItem(STORAGE_KEYS.EQUIPMENT, JSON.stringify(cleanEquipment));
+  notifyDataChanged(STORAGE_KEYS.EQUIPMENT, cleanEquipment);
+  uploadRawJsonToCloudinary(cleanEquipment, 'Master_Alat', 'SO Sistem IC BALI/Master Alat').catch(() => {});
   if (!isFirestoreQuotaExceeded) {
     if (isReplaceMode) {
-      replaceFirestoreCollection('equipment', equipment).catch(() => {});
+      replaceFirestoreCollection('equipment', cleanEquipment).catch(() => {});
     } else {
-      queueSyncFirestoreCollection('equipment', equipment, isReplaceMode);
+      queueSyncFirestoreCollection('equipment', cleanEquipment, isReplaceMode);
     }
   }
 }

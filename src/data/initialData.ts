@@ -1,8 +1,9 @@
 import { Store, SOSchedule, SOResult, SOTeam, RegionArea, AuditorPersonnel, SOEquipment, EquipmentRepairLog } from '../types/stockOpname';
 import { BALI_PERSONNEL_DATA, BALI_SCHEDULES_DATA } from './baliData';
+import BALI_EQUIPMENT_RAW from './baliEquipmentData.json';
 
 export const INITIAL_PERSONNEL: AuditorPersonnel[] = BALI_PERSONNEL_DATA;
-export const INITIAL_EQUIPMENT: SOEquipment[] = [];
+export const INITIAL_EQUIPMENT: SOEquipment[] = BALI_EQUIPMENT_RAW as SOEquipment[];
 export const INITIAL_REPAIR_LOGS: EquipmentRepairLog[] = [];
 
 export const REGIONS: RegionArea[] = [

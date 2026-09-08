@@ -38,6 +38,7 @@ import {
   getDeterministicEquipmentId,
   cleanAllDatabaseDuplicates,
   deduplicateEntityList,
+  isStoreEquipment,
   STORAGE_KEYS
 } from '../../services/storageService';
 import { ConfirmDeleteModal } from '../Common/ConfirmDeleteModal';
@@ -197,18 +198,21 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
   const [repStatusTarget, setRepStatusTarget] = useState<RepairStatus>('Rusak Belum Perbaikan');
   const [repNotes, setRepNotes] = useState('');
 
+  // Pure equipment list (strictly excludes any inadvertent store data)
+  const cleanEquipList = equipmentList.filter(e => !isStoreEquipment(e));
+
   // Counts
-  const totalCount = equipmentList.length;
-  const okCount = equipmentList.filter(e => e.status === 'Oke' || e.status === 'Baik').length;
-  const rusakCount = equipmentList.filter(e => e.status === 'Rusak').length;
-  const perbaikanCount = equipmentList.filter(e => e.status === 'Perbaikan').length;
+  const totalCount = cleanEquipList.length;
+  const okCount = cleanEquipList.filter(e => e.status === 'Oke' || e.status === 'Baik').length;
+  const rusakCount = cleanEquipList.filter(e => e.status === 'Rusak').length;
+  const perbaikanCount = cleanEquipList.filter(e => e.status === 'Perbaikan').length;
 
   const pendingRepairLogsCount = repairLogs.filter(r => r.repairStatus === 'Rusak Belum Perbaikan').length;
   const activeRepairLogsCount = repairLogs.filter(r => r.repairStatus === 'Sedang Perbaikan').length;
   const doneRepairLogsCount = repairLogs.filter(r => r.repairStatus === 'Selesai Perbaikan').length;
 
   // Filter Equipment
-  const filteredEquipment = equipmentList.filter(e => {
+  const filteredEquipment = cleanEquipList.filter(e => {
     const matchSearch = e.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                         e.assetId.toLowerCase().includes(searchQuery.toLowerCase()) ||
                         e.assignedUser.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -449,48 +453,85 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
   };
 
   const processWorkbookToEquipment = (wb: XLSX.WorkBook): SOEquipment[] => {
-    // Scan all sheets to find the one with the best match for equipment columns
+    // 1. Filter out sheet names that are obviously NOT equipment (e.g. stores, schedules, stocks)
+    const ignoredSheetNames = [
+      'stock', 'all toko', 'master toko', 'jadwal', 'will toko', 
+      'sheet1', 'sheet2', 'sheet3', 'sheet4', 'korlap', 'personil',
+      'data toko', 'rekap', 'target', 'summary', 'pedoman'
+    ];
+
     let bestRows: any[] = [];
     let bestHeaderIdx = 0;
+    let highestEquipmentMatches = 0;
 
-    for (const sheetName of wb.SheetNames) {
+    // Prioritize sheets whose name contains 'alat', 'wdcp', 'scanner', 'perangkat', 'hardware', 'equipment'
+    const sortedSheetNames = [...wb.SheetNames].sort((a, b) => {
+      const aName = a.toLowerCase();
+      const bName = b.toLowerCase();
+      const aIsEquip = aName.includes('alat') || aName.includes('wdcp') || aName.includes('scanner') || aName.includes('perangkat');
+      const bIsEquip = bName.includes('alat') || bName.includes('wdcp') || bName.includes('scanner') || bName.includes('perangkat');
+      if (aIsEquip && !bIsEquip) return -1;
+      if (!aIsEquip && bIsEquip) return 1;
+      return 0;
+    });
+
+    for (const sheetName of sortedSheetNames) {
+      const lowerSheetName = sheetName.toLowerCase().trim();
+      // Skip if explicitly in ignored sheets and doesn't contain equipment words
+      const isExplicitEquipSheet = lowerSheetName.includes('alat') || lowerSheetName.includes('wdcp') || lowerSheetName.includes('scanner') || lowerSheetName.includes('perangkat');
+      if (!isExplicitEquipSheet && ignoredSheetNames.some(ign => lowerSheetName.includes(ign))) {
+        continue;
+      }
+
       const ws = wb.Sheets[sheetName];
       if (!ws) continue;
 
       const rawMatrix = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, defval: '' });
       if (!rawMatrix || rawMatrix.length === 0) continue;
 
-      // Scan first 20 rows for header keywords
-      const keywords = ['nama', 'user', 'petugas', 'pic', 'serial', 'mac', 'kondisi', 'warna', 'scanner', 'kategori', 'wdcp', 'catatan'];
+      // Scan first 25 rows for header keywords
+      // MUST contain at least one explicit equipment keyword!
+      const explicitEquipKeywords = ['mac', 'serial', 'sn', 'wdcp', 'scanner', 'kondisi', 'warna scanner', 'qr barcode', 'alat'];
+      const generalKeywords = ['nama', 'user', 'petugas', 'pic', 'kategori', 'catatan'];
+      
       let headerIdx = -1;
       let maxMatches = 0;
+      let hasExplicitEquipKeyword = false;
 
       for (let i = 0; i < Math.min(rawMatrix.length, 25); i++) {
         const row = rawMatrix[i];
         if (!Array.isArray(row)) continue;
         const rowStr = row.map(c => String(c || '').toLowerCase()).join(' ');
-        let matches = 0;
-        keywords.forEach(k => {
-          if (rowStr.includes(k)) matches++;
+        
+        // Discard header rows that contain store-specific columns like 'kdtk', 'kode toko', 'spd rab', 'luas tanah'
+        if (rowStr.includes('kdtk') || rowStr.includes('kode toko') || rowStr.includes('spd rab') || rowStr.includes('luas tanah')) {
+          continue;
+        }
+
+        let explicitMatches = 0;
+        explicitEquipKeywords.forEach(k => {
+          if (rowStr.includes(k)) explicitMatches++;
         });
-        if (matches > maxMatches) {
-          maxMatches = matches;
+
+        let genMatches = 0;
+        generalKeywords.forEach(k => {
+          if (rowStr.includes(k)) genMatches++;
+        });
+
+        const totalMatches = (explicitMatches * 3) + genMatches;
+        if (explicitMatches >= 1 && totalMatches > maxMatches) {
+          maxMatches = totalMatches;
           headerIdx = i;
+          hasExplicitEquipKeyword = true;
         }
       }
 
-      if (maxMatches >= 2 && headerIdx >= 0) {
-        // Convert to JSON using headerIdx with raw: false to preserve formatted text (e.g. times/dates/MAC colons)
+      if (hasExplicitEquipKeyword && headerIdx >= 0 && maxMatches > highestEquipmentMatches) {
         const json: any[] = XLSX.utils.sheet_to_json(ws, { range: headerIdx, defval: '', raw: false });
-        if (json.length > bestRows.length) {
+        if (json.length > 0) {
           bestRows = json;
           bestHeaderIdx = headerIdx;
-        }
-      } else if (bestRows.length === 0) {
-        // Fallback standard sheet_to_json
-        const fallbackJson: any[] = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
-        if (fallbackJson.length > bestRows.length) {
-          bestRows = fallbackJson;
+          highestEquipmentMatches = maxMatches;
         }
       }
     }
@@ -505,7 +546,8 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
       return Object.values(row).some(v => v !== null && v !== undefined && String(v).trim() !== '');
     });
 
-    return validRows.map((row: any, idx: number) => {
+    const results: SOEquipment[] = [];
+    validRows.forEach((row: any, idx: number) => {
       const keys = Object.keys(row);
       const isIndexKey = (kStr: string) => {
         const clean = kStr.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -652,9 +694,14 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
 
       let name = getVal(['Nama Alat / WDCP', 'Nama Alat', 'Nama Perangkat', 'Device Name', 'Nama Barang']) || `Scanner ${category}`;
 
+      // If the row matches a store pattern, discard it immediately
+      if (isStoreEquipment({ assignedUser: user, name, assetId, serialNumber: serial })) {
+        return;
+      }
+
       const deterministicId = getDeterministicEquipmentId({ serialNumber: serial, assetId, assignedUser: user, name });
 
-      return {
+      results.push({
         id: deterministicId,
         assetId,
         name,
@@ -667,8 +714,10 @@ export const EquipmentManager: React.FC<EquipmentManagerProps> = ({
         notes,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
-      };
+      });
     });
+
+    return results;
   };
 
   const closeImportModal = () => {
