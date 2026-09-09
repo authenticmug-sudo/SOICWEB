@@ -586,8 +586,8 @@ export default function App() {
     localStorage.setItem('spv_target_so_types', JSON.stringify(types));
   };
 
-  // Summary calculated dynamically based on filtered period and target SO types, synchronized with global results
-  const summary = getDashboardSummary(stores, filteredSchedules, filteredResults, targetSoTypes, results);
+  // Summary calculated dynamically based on filtered period and target SO types, strictly isolated by active month & year
+  const summary = getDashboardSummary(stores, filteredSchedules, filteredResults, targetSoTypes, filteredResults, selectedMonth, selectedYear);
 
   const purgeStaleSchedules = (ids: string[]) => {
     if (!ids || ids.length === 0) return;
@@ -1981,6 +1981,8 @@ export default function App() {
         isOpen={isImportStoresModalOpen}
         onClose={() => setIsImportStoresModalOpen(false)}
         onImportBulkStores={handleImportBulkStores}
+        onResetMasterStores={handleResetMasterStores}
+        currentStoresCount={stores.length}
       />
 
       <KorlapScheduleImageModal

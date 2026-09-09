@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 import { Store } from '../types/stockOpname';
 import { parseCoordinates, autoSyncStoreRegionAndKabupaten } from './geoUtils';
-import { formatSmartSODate } from './formatters';
+import { formatSmartSODate, parseSmartDate, formatDateISO } from './formatters';
 import { normalizeKorlapName } from './korlapUtils';
 import { getDeterministicStoreId } from '../services/storageService';
 import { isStoreZonaHitam } from './storeSyncUtils';
@@ -345,14 +345,54 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
       const tglSoMei = formatSmartSODate(findVal(["so mei '26", 'so mei', 'tgl so mei', 'mei']));
       const tglSoJuni = formatSmartSODate(findVal(["so juni '26", 'so juni', 'tgl so juni', 'juni']));
       const tglSoJuli = formatSmartSODate(findVal(["so juli '26", 'so juli', 'tgl so juli', 'juli']));
-      const soAgustus = formatSmartSODate(findVal(["so agustus '26", 'so agustus', 'tgl so agustus', 'agustus']));
-      const soSeptemberRaw = findVal(["so september '26", 'so september', 'tgl so september', 'september', 'so sep', 'tgl so sep']);
+      const soAgustusRaw = findVal(["so agustus '26", 'so agustus', 'tgl so agustus', 'agustus', 'so ags']);
+      const soAgustus = formatSmartSODate(soAgustusRaw);
+      const soSeptemberRaw = findVal(["so september '26", 'so september', 'tgl so september', 'september', 'so sep', 'tgl so sep', 'so sep 26', 'so september 2026']);
       let soSeptember = formatSmartSODate(soSeptemberRaw);
+      const soOktoberRaw = findVal(["so oktober '26", 'so oktober', 'tgl so oktober', 'oktober', 'so okt']);
+      let soOktober = formatSmartSODate(soOktoberRaw);
+      const soNovemberRaw = findVal(["so november '26", 'so november', 'tgl so november', 'november', 'so nov']);
+      let soNovember = formatSmartSODate(soNovemberRaw);
+      const soDesemberRaw = findVal(["so desember '26", 'so desember', 'tgl so desember', 'desember', 'so des']);
+      let soDesember = formatSmartSODate(soDesemberRaw);
       
       // Generic SO schedule date (e.g. from a monthly master sheet with header "TGL SO" or "JADWAL SO")
-      const genericScheduleDate = formatSmartSODate(findVal(['tgl so', 'tanggal so', 'jadwal so', 'tgl jadwal so', 'tgl pelaksanaan so', 'jadwal']));
-      if (!hasSpecificSeptemberCol && (!soSeptember || soSeptember === '-') && genericScheduleDate && genericScheduleDate !== '-') {
-        soSeptember = genericScheduleDate;
+      const genericScheduleRaw = findVal([
+        'tgl so', 'tanggal so', 'jadwal so', 'tgl jadwal so', 'tgl pelaksanaan so', 
+        'tgl pelaksanaan', 'tanggal pelaksanaan', 'jadwal pelaksanaan', 'jadwal', 'tanggal', 
+        'tgl rencana so', 'rencana so', 'tgl audit so', 'so periode ini', 'so bulan ini'
+      ]);
+      const genericScheduleDate = formatSmartSODate(genericScheduleRaw);
+
+      // Determine active scheduled date and smart month mapping
+      let activeScheduledDateIso: string | undefined = undefined;
+      let activeTglSo: string | undefined = undefined;
+
+      const rawForParsing = genericScheduleRaw || soSeptemberRaw || soAgustusRaw || soOktoberRaw;
+      if (rawForParsing) {
+        const parsed = parseSmartDate(rawForParsing);
+        if (parsed) {
+          const m = String(parsed.getMonth() + 1).padStart(2, '0');
+          const d = String(parsed.getDate()).padStart(2, '0');
+          const y = String(parsed.getFullYear());
+          activeScheduledDateIso = `${y}-${m}-${d}`;
+          activeTglSo = formatSmartSODate(rawForParsing);
+
+          if (m === '09' && (!soSeptember || soSeptember === '-')) soSeptember = activeTglSo;
+          else if (m === '08' && (!soAgustus || soAgustus === '-')) { /* keep august */ }
+          else if (m === '10' && (!soOktober || soOktober === '-')) soOktober = activeTglSo;
+          else if (m === '11' && (!soNovember || soNovember === '-')) soNovember = activeTglSo;
+          else if (m === '12' && (!soDesember || soDesember === '-')) soDesember = activeTglSo;
+        } else if (!hasSpecificSeptemberCol && (!soSeptember || soSeptember === '-') && genericScheduleDate && genericScheduleDate !== '-') {
+          soSeptember = genericScheduleDate;
+          activeTglSo = genericScheduleDate;
+          const iso = formatDateISO(genericScheduleDate);
+          if (iso) activeScheduledDateIso = iso;
+        }
+      } else if (soSeptember && soSeptember !== '-') {
+        activeTglSo = soSeptember;
+        const iso = formatDateISO(soSeptember);
+        if (iso) activeScheduledDateIso = iso;
       }
 
       // Explicit SPV approval date ONLY (must NOT match generic "tgl so")
@@ -473,6 +513,11 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
         tglSoJuli: tglSoJuli !== '-' ? tglSoJuli : undefined,
         soAgustus: soAgustus !== '-' ? soAgustus : undefined,
         soSeptember: soSeptember !== '-' ? soSeptember : undefined,
+        soOktober: soOktober !== '-' ? soOktober : undefined,
+        soNovember: soNovember !== '-' ? soNovember : undefined,
+        soDesember: soDesember !== '-' ? soDesember : undefined,
+        scheduledDate: activeScheduledDateIso,
+        tglSo: activeTglSo,
         statusApproveSO: statusApproveSO,
         tglSoApproved: tglSoApproved !== '-' ? tglSoApproved : undefined,
         storeType: 'Regular Minimarket',

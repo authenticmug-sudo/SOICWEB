@@ -135,7 +135,40 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
 
   const [storeToDelete, setStoreToDelete] = useState<Store | null>(null);
   const [isConfirmResetOpen, setIsConfirmResetOpen] = useState(false);
+  const [resetPasswordInput, setResetPasswordInput] = useState('');
+  const [resetConfirmText, setResetConfirmText] = useState('');
+  const [resetError, setResetError] = useState('');
+  const [resetSuccess, setResetSuccess] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const handleConfirmResetMasterSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setResetError('');
+    setResetSuccess('');
+
+    if (resetPasswordInput !== '020594') {
+      setResetError('❌ Password Salah! Masukkan kode Super Admin: 020594');
+      return;
+    }
+
+    if (resetConfirmText.trim().toLowerCase() !== 'ya') {
+      setResetError('❌ Mohon ketik kata "ya" untuk mengonfirmasi pembersihan master toko!');
+      return;
+    }
+
+    if (onResetMasterStores) {
+      onResetMasterStores();
+      setResetSuccess('✅ Berhasil menghapus semua data master toko & membersihkan residu jadwal!');
+      setToastMessage('Berhasil menghapus semua data master toko!');
+      setTimeout(() => {
+        setIsConfirmResetOpen(false);
+        setResetPasswordInput('');
+        setResetConfirmText('');
+        setResetSuccess('');
+        setResetError('');
+      }, 1500);
+    }
+  };
 
   // Helper to dynamically get assigned Korlap/Officer based on SPV approval or master data
   const getEffectiveKorlap = (s: Store): string => {
@@ -1055,28 +1088,101 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
         dangerBadgeText="Data toko ini akan dihapus permanen dari database master."
       />
 
-      {/* Confirmation Modal for Resetting Master */}
-      <ConfirmDeleteModal
-        isOpen={isConfirmResetOpen}
-        onClose={() => setIsConfirmResetOpen(false)}
-        onConfirm={() => {
-          setIsConfirmResetOpen(false);
-          if (onResetMasterStores) {
-            onResetMasterStores();
-            setToastMessage('Master Toko berhasil dikosongkan dan residu jadwal dibersihkan secara tuntas!');
-          }
-        }}
-        title="Kosongkan Master Toko & Bersihkan Residu"
-        subtitle="Apakah Anda yakin ingin mengosongkan seluruh data Master Toko?"
-        itemName={`${stores.length} Toko Terdaftar`}
-        itemDetails={[
-          { label: 'Total Toko', value: `${stores.length} Toko` },
-          { label: 'Aksi Pembersihan', value: 'Hapus master toko & bersihkan jadwal unapproved' },
-          { label: 'Data Aman', value: 'Riwayat hasil audit SO yang sudah disetujui SPV tetap tersimpan aman' }
-        ]}
-        confirmText="Ya, Kosongkan Master"
-        dangerBadgeText="Tindakan ini mengosongkan master toko dan jadwal yang belum disetujui agar Anda dapat upload master baru secara bersih."
-      />
+      {/* Confirmation Modal for Resetting Master Toko with Password 020594 and text 'ya' */}
+      {isConfirmResetOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-rose-200 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-4 bg-gradient-to-r from-rose-900 to-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-rose-600 flex items-center justify-center border border-rose-400/40">
+                  <RotateCcw className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h4 className="font-black text-sm">Kosongkan Seluruh Master Toko</h4>
+                  <p className="text-[10px] text-rose-200">Proteksi Super Admin Reset Data</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsConfirmResetOpen(false)}
+                className="p-1 text-slate-300 hover:text-white rounded hover:bg-white/10 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmResetMasterSubmit} className="p-5 space-y-3.5 text-xs">
+              <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 space-y-1">
+                <p className="font-extrabold flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-700" />
+                  Konfirmasi Penghapusan Master Toko
+                </p>
+                <p className="text-[11px] leading-relaxed text-amber-800">
+                  Tindakan ini akan mengosongkan <strong>{stores.length} data Master Toko</strong> dan membersihkan jadwal yang belum disetujui. Riwayat audit yang telah di-approve SPV tetap tersimpan aman.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-slate-700 uppercase tracking-wider mb-1">
+                  1. Masukkan Password Super Admin (020594):
+                </label>
+                <input
+                  type="password"
+                  placeholder="Password: 020594"
+                  value={resetPasswordInput}
+                  onChange={(e) => setResetPasswordInput(e.target.value)}
+                  autoFocus
+                  required
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-sm font-mono font-bold tracking-widest focus:outline-none focus:border-rose-500 focus:bg-white transition"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-slate-700 uppercase tracking-wider mb-1">
+                  2. Ketik kata "ya" untuk konfirmasi:
+                </label>
+                <input
+                  type="text"
+                  placeholder='Ketik kata: ya'
+                  value={resetConfirmText}
+                  onChange={(e) => setResetConfirmText(e.target.value)}
+                  required
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-sm font-bold focus:outline-none focus:border-rose-500 focus:bg-white transition"
+                />
+              </div>
+
+              {resetError && (
+                <div className="p-2.5 bg-rose-50 text-rose-800 rounded-xl text-xs font-bold border border-rose-200">
+                  {resetError}
+                </div>
+              )}
+
+              {resetSuccess && (
+                <div className="p-3 bg-emerald-50 text-emerald-800 rounded-xl text-xs font-bold border border-emerald-200 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{resetSuccess}</span>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsConfirmResetOpen(false)}
+                  className="px-3.5 py-2 text-slate-600 hover:bg-slate-100 rounded-xl text-xs font-bold transition"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-xl text-xs font-black shadow-md transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Hapus & Kosongkan Master</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Success Toast Feedback */}
       {toastMessage && (

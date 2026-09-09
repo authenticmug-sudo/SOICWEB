@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Upload, FileSpreadsheet, CheckCircle2, Download, AlertCircle, FileText, Cloud, ExternalLink } from 'lucide-react';
+import { X, Upload, FileSpreadsheet, CheckCircle2, Download, AlertCircle, FileText, Cloud, ExternalLink, Trash2, RotateCcw, ShieldAlert, KeyRound } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Store, StoreType, RiskLevel } from '../../types/stockOpname';
 import { REGIONS } from '../../data/initialData';
@@ -10,19 +10,23 @@ import {
   deduplicateEntityList
 } from '../../services/storageService';
 import { parseCoordinates, autoSyncStoreRegionAndKabupaten } from '../../utils/geoUtils';
-import { formatSmartSODate } from '../../utils/formatters';
+import { formatSmartSODate, parseSmartDate, formatDateISO } from '../../utils/formatters';
 import { isStoreZonaHitam } from '../../utils/storeSyncUtils';
 
 interface ImportStoresModalProps {
   isOpen: boolean;
   onClose: () => void;
   onImportBulkStores: (newStores: Store[], mode?: 'replace' | 'merge') => void;
+  onResetMasterStores?: () => void;
+  currentStoresCount?: number;
 }
 
 export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
   isOpen,
   onClose,
-  onImportBulkStores
+  onImportBulkStores,
+  onResetMasterStores,
+  currentStoresCount = 0
 }) => {
   const [activeTab, setActiveTab] = useState<'excel' | 'paste'>('excel');
   const [importMode, setImportMode] = useState<'replace' | 'merge'>('replace');
@@ -36,6 +40,13 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [cloudinaryUrl, setCloudinaryUrl] = useState<string | null>(null);
   const [isUploadingCloudinary, setIsUploadingCloudinary] = useState(false);
+
+  // Clear / Reset Master Store inside Import Modal states
+  const [isClearModalOpen, setIsClearModalOpen] = useState(false);
+  const [clearPasswordInput, setClearPasswordInput] = useState('');
+  const [clearConfirmText, setClearConfirmText] = useState('');
+  const [clearError, setClearError] = useState('');
+  const [clearSuccess, setClearSuccess] = useState('');
 
   if (!isOpen) return null;
 
@@ -203,11 +214,51 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
         return lk.includes('september') || lk.includes('sep 26') || lk.includes('so sep');
       });
 
-      const soAgustus = formatSmartSODate(getVal(['so agustus', 'tgl so agustus', 'agustus', 'so bulan ini', 'jadwal so'], ''));
-      let soSeptember = formatSmartSODate(getVal(["so september '26", 'so september', 'tgl so september', 'september', 'so sep', 'tgl so sep', 'so sep 26', 'so september 2026'], ''));
-      const genericScheduleDate = formatSmartSODate(getVal(['tgl so', 'tanggal so', 'jadwal so', 'tgl jadwal so', 'tgl pelaksanaan so', 'jadwal'], ''));
-      if (!hasSpecificSeptemberCol && (!soSeptember || soSeptember === '-') && genericScheduleDate && genericScheduleDate !== '-') {
-        soSeptember = genericScheduleDate;
+      const soAgustusRaw = getVal(['so agustus', 'tgl so agustus', 'agustus', 'so ags'], '');
+      const soAgustus = formatSmartSODate(soAgustusRaw);
+      const soSeptemberRaw = getVal(["so september '26", 'so september', 'tgl so september', 'september', 'so sep', 'tgl so sep', 'so sep 26', 'so september 2026'], '');
+      let soSeptember = formatSmartSODate(soSeptemberRaw);
+      const soOktoberRaw = getVal(["so oktober '26", 'so oktober', 'tgl so oktober', 'oktober', 'so okt'], '');
+      let soOktober = formatSmartSODate(soOktoberRaw);
+      const soNovemberRaw = getVal(["so november '26", 'so november', 'tgl so november', 'november', 'so nov'], '');
+      let soNovember = formatSmartSODate(soNovemberRaw);
+      const soDesemberRaw = getVal(["so desember '26", 'so desember', 'tgl so desember', 'desember', 'so des'], '');
+      let soDesember = formatSmartSODate(soDesemberRaw);
+
+      const genericScheduleRaw = getVal([
+        'tgl so', 'tanggal so', 'jadwal so', 'tgl jadwal so', 'tgl pelaksanaan so', 
+        'tgl pelaksanaan', 'tanggal pelaksanaan', 'jadwal pelaksanaan', 'jadwal', 'tanggal', 
+        'tgl rencana so', 'rencana so', 'tgl audit so', 'so periode ini', 'so bulan ini'
+      ], '');
+      const genericScheduleDate = formatSmartSODate(genericScheduleRaw);
+
+      let activeScheduledDateIso: string | undefined = undefined;
+      let activeTglSo: string | undefined = undefined;
+
+      const rawForParsing = genericScheduleRaw || soSeptemberRaw || soAgustusRaw || soOktoberRaw;
+      if (rawForParsing) {
+        const parsed = parseSmartDate(rawForParsing);
+        if (parsed) {
+          const m = String(parsed.getMonth() + 1).padStart(2, '0');
+          const d = String(parsed.getDate()).padStart(2, '0');
+          const y = String(parsed.getFullYear());
+          activeScheduledDateIso = `${y}-${m}-${d}`;
+          activeTglSo = formatSmartSODate(rawForParsing);
+
+          if (m === '09' && (!soSeptember || soSeptember === '-')) soSeptember = activeTglSo;
+          else if (m === '10' && (!soOktober || soOktober === '-')) soOktober = activeTglSo;
+          else if (m === '11' && (!soNovember || soNovember === '-')) soNovember = activeTglSo;
+          else if (m === '12' && (!soDesember || soDesember === '-')) soDesember = activeTglSo;
+        } else if (!hasSpecificSeptemberCol && (!soSeptember || soSeptember === '-') && genericScheduleDate && genericScheduleDate !== '-') {
+          soSeptember = genericScheduleDate;
+          activeTglSo = genericScheduleDate;
+          const iso = formatDateISO(genericScheduleDate);
+          if (iso) activeScheduledDateIso = iso;
+        }
+      } else if (soSeptember && soSeptember !== '-') {
+        activeTglSo = soSeptember;
+        const iso = formatDateISO(soSeptember);
+        if (iso) activeScheduledDateIso = iso;
       }
       
       const tglSoApprovedRaw = getVal(['tgl so approved', 'tgl approved so', 'tgl approve so', 'tanggal so approved', 'tanggal approve so', 'tgl approval spv', 'tgl approved spv', 'tgl so disetujui'], '');
@@ -349,6 +400,11 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
         tglSoJuli: tglSoJuli !== '-' ? tglSoJuli : undefined,
         soAgustus: soAgustus !== '-' ? soAgustus : undefined,
         soSeptember: soSeptember !== '-' ? soSeptember : undefined,
+        soOktober: soOktober !== '-' ? soOktober : undefined,
+        soNovember: soNovember !== '-' ? soNovember : undefined,
+        soDesember: soDesember !== '-' ? soDesember : undefined,
+        scheduledDate: activeScheduledDateIso,
+        tglSo: activeTglSo,
         tglSoApproved: tglSoApproved !== '-' ? tglSoApproved : undefined,
         statusApproveSO: statusApproveSO,
         zona: zonaFormatted,
@@ -565,6 +621,35 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
       }
     };
     reader.readAsBinaryString(file);
+  };
+
+  // Handler for clearing master stores before uploading new master
+  const handleConfirmClearMaster = (e: React.FormEvent) => {
+    e.preventDefault();
+    setClearError('');
+    setClearSuccess('');
+
+    if (clearPasswordInput !== '020594') {
+      setClearError('❌ Password Salah! Masukkan kode Super Admin: 020594');
+      return;
+    }
+
+    if (clearConfirmText.trim().toLowerCase() !== 'ya') {
+      setClearError('❌ Mohon ketik kata "ya" untuk mengonfirmasi pembersihan master toko!');
+      return;
+    }
+
+    if (onResetMasterStores) {
+      onResetMasterStores();
+      setClearSuccess('✅ Berhasil menghapus seluruh data master toko yang ada! Sekarang sistem bersih dan siap membaca file master baru.');
+      setTimeout(() => {
+        setIsClearModalOpen(false);
+        setClearPasswordInput('');
+        setClearConfirmText('');
+        setClearSuccess('');
+        setClearError('');
+      }, 1500);
+    }
   };
 
   const handleProcessImport = () => {
@@ -969,28 +1054,147 @@ TLID, ALAS KEDATON, TABANAN, Jl. Raya Alas Kedaton No.46 Banjar Anyar Kediri Tab
           )}
 
           {/* Buttons */}
-          <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-3.5 py-1.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium transition"
-            >
-              Batal
-            </button>
-            <button
-              type="button"
-              onClick={handleProcessImport}
-              disabled={activeTab === 'excel' ? parsedStores.length === 0 : !csvText.trim()}
-              className="px-4 py-1.5 rounded bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-semibold transition shadow-xs flex items-center gap-1.5"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              Proses & Tambah Toko
-            </button>
+          <div className="pt-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              {onResetMasterStores && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setClearError('');
+                    setClearSuccess('');
+                    setClearPasswordInput('');
+                    setClearConfirmText('');
+                    setIsClearModalOpen(true);
+                  }}
+                  className="px-3.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-black border border-rose-300 transition flex items-center gap-1.5 active:scale-95 shadow-2xs cursor-pointer"
+                  title="Bersihkan master toko yang ada agar master baru terbaca bersih dan akurat"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Hapus Data Master Toko ({currentStoresCount})</span>
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3.5 py-1.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium transition"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleProcessImport}
+                disabled={activeTab === 'excel' ? parsedStores.length === 0 : !csvText.trim()}
+                className="px-4 py-1.5 rounded bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-semibold transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                Proses & Tambah Toko
+              </button>
+            </div>
           </div>
 
         </div>
 
       </div>
+
+      {/* MODAL KONFIRMASI HAPUS MASTER TOKO SEBELUM UPLOAD */}
+      {isClearModalOpen && (
+        <div className="fixed inset-0 z-60 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-rose-200 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-4 bg-gradient-to-r from-rose-900 to-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-rose-600 flex items-center justify-center border border-rose-400/40">
+                  <ShieldAlert className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h4 className="font-black text-sm">Bersihkan Master Toko Saat Ini</h4>
+                  <p className="text-[10px] text-rose-200">Persiapan Upload Master Baru Cerdas</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsClearModalOpen(false)}
+                className="p-1 text-slate-300 hover:text-white rounded hover:bg-white/10 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmClearMaster} className="p-5 space-y-3.5 text-xs">
+              <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 space-y-1">
+                <p className="font-extrabold flex items-center gap-1.5">
+                  <KeyRound className="w-3.5 h-3.5 text-amber-700" />
+                  Konfirmasi Keamanan Penghapusan
+                </p>
+                <p className="text-[11px] leading-relaxed text-amber-800">
+                  Fungsi ini membersihkan seluruh <strong>{currentStoresCount} data master toko</strong> dan jadwal unapproved yang ada, sehingga saat file master baru di-upload, sistem membaca baris toko dan jadwal SO secara cerdas tanpa tumpang tindih data lama. Riwayat audit yang telah di-approve SPV tetap tersimpan aman.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-slate-700 uppercase tracking-wider mb-1">
+                  1. Masukkan Kode Super Admin (020594):
+                </label>
+                <input
+                  type="password"
+                  placeholder="Kode: 020594"
+                  value={clearPasswordInput}
+                  onChange={(e) => setClearPasswordInput(e.target.value)}
+                  autoFocus
+                  required
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-sm font-mono font-bold tracking-widest focus:outline-none focus:border-rose-500 focus:bg-white transition"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-slate-700 uppercase tracking-wider mb-1">
+                  2. Ketik kata "ya" untuk konfirmasi:
+                </label>
+                <input
+                  type="text"
+                  placeholder='Ketik kata: ya'
+                  value={clearConfirmText}
+                  onChange={(e) => setClearConfirmText(e.target.value)}
+                  required
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-sm font-bold focus:outline-none focus:border-rose-500 focus:bg-white transition"
+                />
+              </div>
+
+              {clearError && (
+                <div className="p-2.5 bg-rose-50 text-rose-800 rounded-xl text-xs font-bold border border-rose-200">
+                  {clearError}
+                </div>
+              )}
+
+              {clearSuccess && (
+                <div className="p-3 bg-emerald-50 text-emerald-800 rounded-xl text-xs font-bold border border-emerald-200 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{clearSuccess}</span>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsClearModalOpen(false)}
+                  className="px-3.5 py-2 text-slate-600 hover:bg-slate-100 rounded-xl text-xs font-bold transition"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-xl text-xs font-black shadow-md transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Hapus & Bersihkan Master</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

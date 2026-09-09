@@ -50,11 +50,17 @@ export interface Store {
   coverage?: string; // COVERAGE: DC / IGR
   typeSo?: string; // Type SO: M / Q1 / Q2 / Q3
   qm?: string; // Q/M (M, Q2, etc.)
+  soJanuari?: string; // SO JANUARI '26
+  soFebruari?: string; // SO FEBRUARI '26
+  soMaret?: string; // SO MARET '26
+  soApril?: string; // SO APRIL '26
   tglSoMei?: string; // SO MEI '26
   tglSoJuni?: string; // SO JUNI '26
   tglSoJuli?: string; // SO JULI '26
   soAgustus?: string; // SO AGUSTUS '26
   soSeptember?: string; // SO SEPTEMBER '26
+  scheduledDate?: string; // Tanggal SO ISO YYYY-MM-DD
+  tglSo?: string; // Tanggal SO Terformat (misal "8 Sep 2026")
   statusApproveSO?: 'Sudah Approve' | 'Belum SO' | 'Belum Terapprove' | string; // Kolom status approve SO (Sudah Approve / Belum SO / Belum Terapprove)
   soOktober?: string; // SO OKTOBER '26
   soNovember?: string; // SO NOVEMBER '26

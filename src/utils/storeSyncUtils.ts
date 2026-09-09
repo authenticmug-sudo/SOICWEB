@@ -1,5 +1,5 @@
 import { Store, SOSchedule, SOResult } from '../types/stockOpname';
-import { formatSmartSODate, formatDateISO } from './formatters';
+import { formatSmartSODate, formatDateISO, parseSmartDate, parseSmartDateWithContext } from './formatters';
 import { normalizeKorlapName } from './korlapUtils';
 
 /**
@@ -211,19 +211,25 @@ export function isStoreSOApprovedInMonth(
     if (hasApprovedResult) return true;
   }
 
-  // 3. Check explicit statusApproveSO
-  if (store.statusApproveSO) {
+  // 3. Check general tglSoApproved if explicitly set
+  if (store.tglSoApproved && store.tglSoApproved !== '-' && store.tglSoApproved !== '0' && !store.tglSoApproved.toLowerCase().includes('belum')) {
+    if (targetMonth === 'ALL') return true;
+    const parsed = parseSmartDateWithContext(store.tglSoApproved, targetMonth, targetYear);
+    if (parsed && !isNaN(parsed.getTime())) {
+      const pMonth = String(parsed.getMonth() + 1).padStart(2, '0');
+      const pYear = String(parsed.getFullYear());
+      if (pMonth === targetMonth && (targetYear === 'ALL' || pYear === targetYear)) {
+        return true;
+      }
+    }
+  }
+
+  // 4. Explicit statusApproveSO property from store: only valid if targetMonth is ALL or matching current month
+  if (targetMonth === 'ALL' && store.statusApproveSO) {
     const s = String(store.statusApproveSO).toLowerCase();
     if (s.includes('sudah') || s.includes('approved') || s.includes('setuju')) {
       return true;
     }
-  }
-
-  // 4. Check general tglSoApproved if explicitly set
-  if (store.tglSoApproved && store.tglSoApproved !== '-' && store.tglSoApproved !== '0' && !store.tglSoApproved.toLowerCase().includes('belum')) {
-    if (targetMonth === 'ALL') return true;
-    if (store.tglSoApproved.includes(`-${targetMonth}-`)) return true;
-    return true;
   }
 
   return false;
@@ -330,6 +336,89 @@ export function autoSyncStoreWithApprovedSchedule(
 }
 
 /**
+ * Extract target SO date for a store in a specific month and year reliably.
+ * Handles specific month columns, generic scheduledDate/tglSo, day numbers, and Excel formats.
+ */
+export function extractStoreSODateForPeriod(st: Store, targetMonth: string = '09', targetYear: string = '2026'): { isoDate: string; rawVal: string } {
+  let rawDateVal = '';
+  if (targetMonth === '01') rawDateVal = st.soJanuari || '';
+  else if (targetMonth === '02') rawDateVal = st.soFebruari || '';
+  else if (targetMonth === '03') rawDateVal = st.soMaret || '';
+  else if (targetMonth === '04') rawDateVal = st.soApril || '';
+  else if (targetMonth === '05') rawDateVal = st.tglSoMei || '';
+  else if (targetMonth === '06') rawDateVal = st.tglSoJuni || '';
+  else if (targetMonth === '07') rawDateVal = st.tglSoJuli || '';
+  else if (targetMonth === '08') rawDateVal = st.soAgustus || '';
+  else if (targetMonth === '09') rawDateVal = st.soSeptember || '';
+  else if (targetMonth === '10') rawDateVal = st.soOktober || '';
+  else if (targetMonth === '11') rawDateVal = st.soNovember || '';
+  else if (targetMonth === '12') rawDateVal = st.soDesember || '';
+
+  // Check scheduledDate or tglSo if matches targetMonth and targetYear
+  if (!rawDateVal && st.scheduledDate) {
+    const parts = st.scheduledDate.split('-');
+    if (parts.length >= 3 && parts[1] === targetMonth && (targetYear === 'ALL' || parts[0] === targetYear)) {
+      rawDateVal = st.scheduledDate;
+    }
+  }
+  if (!rawDateVal && st.tglSo) {
+    const parsed = parseSmartDateWithContext(st.tglSo, targetMonth, targetYear);
+    if (parsed) {
+      const m = String(parsed.getMonth() + 1).padStart(2, '0');
+      const y = String(parsed.getFullYear());
+      if (m === targetMonth && (targetYear === 'ALL' || y === targetYear)) {
+        rawDateVal = st.tglSo;
+      }
+    }
+  }
+
+  // Also check if rawDateVal is a single day number (1-31) or "Tgl 8"
+  const tglMatch = String(rawDateVal || '').trim().match(/^(?:tgl|tanggal)?[\s\.]*(\d{1,2})$/i);
+  if (tglMatch) {
+    const d = parseInt(tglMatch[1], 10);
+    if (d >= 1 && d <= 31) {
+      const iso = `${targetYear}-${targetMonth}-${String(d).padStart(2, '0')}`;
+      return { isoDate: iso, rawVal: rawDateVal };
+    }
+  }
+
+  const parsed = parseSmartDateWithContext(rawDateVal, targetMonth, targetYear);
+  if (parsed && !isNaN(parsed.getTime())) {
+    const y = String(parsed.getFullYear());
+    const m = String(parsed.getMonth() + 1).padStart(2, '0');
+    const d = String(parsed.getDate()).padStart(2, '0');
+    if (m === targetMonth && (targetYear === 'ALL' || y === targetYear)) {
+      return { isoDate: `${y}-${m}-${d}`, rawVal: rawDateVal };
+    }
+  }
+
+  // Fallback: check if store only has one single date in any property that falls into targetMonth/targetYear
+  const candidates = [st.scheduledDate, st.tglSo, st.soSeptember, st.soAgustus, st.soOktober, st.soNovember, st.soDesember];
+  for (const cand of candidates) {
+    if (!cand || cand === '-' || cand === '0') continue;
+    const p = parseSmartDateWithContext(cand, targetMonth, targetYear);
+    if (p && !isNaN(p.getTime())) {
+      const ym = String(p.getFullYear());
+      const mm = String(p.getMonth() + 1).padStart(2, '0');
+      const dd = String(p.getDate()).padStart(2, '0');
+      if (mm === targetMonth && (targetYear === 'ALL' || ym === targetYear)) {
+        return { isoDate: `${ym}-${mm}-${dd}`, rawVal: String(cand) };
+      }
+    }
+  }
+
+  const directIso = formatDateISO(rawDateVal);
+  if (directIso && directIso.length >= 10 && !directIso.startsWith('1970')) {
+    const parts = directIso.split('-');
+    if (parts[1] === targetMonth && (targetYear === 'ALL' || parts[0] === targetYear)) {
+      return { isoDate: directIso, rawVal: rawDateVal };
+    }
+  }
+
+  return { isoDate: '', rawVal: rawDateVal };
+}
+
+/**
  * Intelligently generate and synchronize SOSchedules from Master Store monthly date columns
  * (e.g. SO SEPTEMBER '26 or SO AGUSTUS) when a new master file is uploaded or activated.
  * Correctly handles schedule date modifications from Excel without residual ghost schedules.
@@ -422,20 +511,7 @@ export function syncSchedulesFromMasterStores(
     handledStoreKeys.add(primaryKey);
 
     // Determine target SO date for this store strictly from the target month column in the uploaded master
-    let rawDateVal = '';
-    if (targetMonth === '09') {
-      rawDateVal = st.soSeptember || '';
-    } else if (targetMonth === '08') {
-      rawDateVal = st.soAgustus || '';
-    } else if (targetMonth === '07') {
-      rawDateVal = st.tglSoJuli || '';
-    } else if (targetMonth === '06') {
-      rawDateVal = st.tglSoJuni || '';
-    } else if (targetMonth === '05') {
-      rawDateVal = st.tglSoMei || '';
-    }
-
-    const isoDate = formatDateISO(rawDateVal);
+    const { isoDate, rawVal: rawDateVal } = extractStoreSODateForPeriod(st, targetMonth, targetYear);
     const hasValidDate = !!isoDate && !isoDate.startsWith('1970') && !isoDate.startsWith('1900') && isoDate.length >= 10;
 
     const existingUnapprovedList = (codeKey ? unapprovedMap.get(codeKey) : undefined) || 

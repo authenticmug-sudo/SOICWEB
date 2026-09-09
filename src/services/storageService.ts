@@ -1,6 +1,6 @@
 import { Store, SOSchedule, SOResult, SOTeam, DashboardSummary, AuditorPersonnel, SOEquipment, EquipmentRepairLog, UniformRecord, MasterTokoDataset, OnCallPersonnelRecord } from '../types/stockOpname';
 import { ensureStoreCoordinates } from '../utils/geoUtils';
-import { getStoreSOApprovalStatus, isStoreZonaHitam } from '../utils/storeSyncUtils';
+import { getStoreSOApprovalStatus, isStoreZonaHitam, isStoreSOApprovedInMonth, extractStoreSODateForPeriod } from '../utils/storeSyncUtils';
 import { db } from './firebase';
 import { collection, doc, setDoc, deleteDoc, onSnapshot, getDocs, getDoc, setLogLevel, disableNetwork, writeBatch } from 'firebase/firestore';
 import { uploadToCloudinary, getCloudinaryConfig, getFormattedDateSuffix, uploadRawJsonToCloudinary, fetchCloudinaryJsonBackup } from './cloudinaryService';
@@ -2075,7 +2075,9 @@ export function getDashboardSummary(
   schedules: SOSchedule[], 
   results: SOResult[],
   targetTypes: string[] = ['M', 'Q3'],
-  allResults?: SOResult[]
+  allResults?: SOResult[],
+  targetMonth: string = '09',
+  targetYear: string = '2026'
 ): DashboardSummary {
   const totalStores = stores.length;
   const now = new Date();
@@ -2123,10 +2125,13 @@ export function getDashboardSummary(
   const zonaHitamStores = stores.filter(isZonaHitamStore);
   const totalZonaHitam = zonaHitamStores.length;
 
-  // Check which stores have been SO'd / approved by SPV
+  // Default targetMonth & targetYear if not supplied
+  const activeMonth = targetMonth || '09';
+  const activeYear = targetYear || '2026';
+
+  // Check which stores have been SO'd / approved by SPV strictly in activeMonth & activeYear
   const isStoreCompletedOrApproved = (st: Store) => {
-    const status = getStoreSOApprovalStatus(st, schedules, resultsToAudit);
-    return status === 'Sudah Approve';
+    return isStoreSOApprovedInMonth(st, schedules, resultsToAudit, activeMonth, activeYear);
   };
 
   const zonaHitamTerSO = zonaHitamStores.filter(isStoreCompletedOrApproved).length;
@@ -2153,21 +2158,14 @@ export function getDashboardSummary(
     }
   });
 
-  // Filter stores that match target types OR have valid SO date in September
+  // Filter stores that match target types OR have valid SO date in active month
   const isWajibSOStore = (st: Store) => {
     const rawType = (st.typeSo || st.qm || '').trim().toUpperCase();
     const matchesTargetType = normalizedTargetTypes.some(t => rawType === t || rawType.startsWith(t));
     
-    // Also include if store explicitly has filled September SO date
-    const hasSepDate = Boolean(
-      st.soSeptember && 
-      st.soSeptember !== '-' && 
-      st.soSeptember !== '0' && 
-      st.soSeptember !== '0-Jan-00' && 
-      st.soSeptember.toLowerCase() !== 'belum so'
-    );
-
-    return matchesTargetType || hasSepDate;
+    // Also include if store explicitly has filled date in active target month
+    const { isoDate } = extractStoreSODateForPeriod(st, activeMonth, activeYear);
+    return matchesTargetType || Boolean(isoDate);
   };
 
   const tokoWajibSOList = stores.filter(isWajibSOStore);
@@ -2179,36 +2177,40 @@ export function getDashboardSummary(
   // ------------------- GLOBAL PROGRESS: TERJADWAL, BELUM TERJADWAL, SUDAH TER-SO & BELUM TER-SO ------------------- //
   const totalMasterStores = totalStores;
   
-  // 1. Check if store is scheduled (Reads column SO SEPTEMBER '26 or active schedule in September)
+  // 1. Check if store is scheduled in active target month
   const isStoreScheduled = (st: Store) => {
-    const sepDate = String(st.soSeptember || '').trim();
-    if (sepDate && sepDate !== '-' && sepDate !== '0' && sepDate !== '0-Jan-00' && !sepDate.toLowerCase().includes('belum')) {
-      return true;
-    }
+    const { isoDate } = extractStoreSODateForPeriod(st, activeMonth, activeYear);
+    if (isoDate) return true;
 
     const hasActiveSchedule = schedules.some(sch => 
       (sch.storeCode === st.code || sch.storeId === st.id) &&
       sch.status !== 'Dibatalkan' &&
-      sch.status !== 'Gagal SO'
+      sch.status !== 'Gagal SO' &&
+      (!sch.scheduledDate || activeMonth === 'ALL' || sch.scheduledDate.split('-')[1] === activeMonth)
     );
-    if (hasActiveSchedule) return true;
-
-    return false;
+    return hasActiveSchedule;
   };
 
   const tokoTerjadwal = stores.filter(isStoreScheduled).length;
   const tokoBelumTerjadwal = Math.max(0, totalMasterStores - tokoTerjadwal);
 
-  // 2. Status Approval SPV Breakdown
+  // 2. Status Approval SPV Breakdown with strict month isolation
   let countSudahApprove = 0;
   let countBelumTerapprove = 0;
   let countBelumSO = 0;
 
   stores.forEach(st => {
-    const stStatus = getStoreSOApprovalStatus(st, schedules, resultsToAudit);
-    if (stStatus === 'Sudah Approve') countSudahApprove++;
-    else if (stStatus === 'Belum Terapprove') countBelumTerapprove++;
-    else countBelumSO++;
+    const isApproved = isStoreSOApprovedInMonth(st, schedules, resultsToAudit, activeMonth, activeYear);
+    if (isApproved) {
+      countSudahApprove++;
+    } else {
+      const stStatus = getStoreSOApprovalStatus(st, schedules, resultsToAudit);
+      if (stStatus === 'Belum Terapprove') {
+        countBelumTerapprove++;
+      } else {
+        countBelumSO++;
+      }
+    }
   });
 
   // Calculate synchronized pending approval count

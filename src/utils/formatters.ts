@@ -115,13 +115,20 @@ const ID_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 
  * Otomatis menangani desimal Excel (misal 46177.0 / 46177 -> 3 Jun 2026), string kosong, '0-Jan-00', dsb.
  */
 export function parseSmartDate(dateStr: any): Date | null {
+  return parseSmartDateWithContext(dateStr);
+}
+
+export function parseSmartDateWithContext(dateStr: any, contextMonth?: string, contextYear?: string): Date | null {
   if (dateStr === null || dateStr === undefined || dateStr === '') return null;
 
   if (dateStr instanceof Date) {
     return isNaN(dateStr.getTime()) ? null : dateStr;
   }
 
-  const rawStr = String(dateStr).trim();
+  let rawStr = String(dateStr).trim();
+  // Strip .0 / .00 suffix from excel
+  rawStr = rawStr.replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
+
   if (
     !rawStr || 
     rawStr === '-' || 
@@ -135,6 +142,18 @@ export function parseSmartDate(dateStr: any): Date | null {
     rawStr.toLowerCase() === 'undefined'
   ) {
     return null;
+  }
+
+  // Handle single day number (e.g. "8", "15", "Tgl 8", "Tgl. 15", "Tanggal 20")
+  const tglMatch = rawStr.match(/^(?:tgl|tanggal)?[\s\.]*(\d{1,2})$/i);
+  if (tglMatch && contextMonth && contextYear) {
+    const day = parseInt(tglMatch[1], 10);
+    if (day >= 1 && day <= 31) {
+      const mIdx = parseInt(contextMonth, 10) - 1;
+      const y = parseInt(contextYear, 10);
+      const dt = new Date(y, mIdx, day);
+      if (!isNaN(dt.getTime())) return dt;
+    }
   }
 
   // Handle Excel Serial Date Number (misal: 42717 = 13 Dec 2016, 46177 = 3 Jun 2026, 46177.0, etc.)
@@ -343,15 +362,61 @@ export function detectSmartMonthAndYear(
     }
   }
 
-  // 2. Check stores column content
+  // 2. Check stores content and frequency of dates across all months
   if (stores && Array.isArray(stores) && stores.length > 0) {
-    const hasSeptember = stores.some(s => s.soSeptember && s.soSeptember !== '-' && s.soSeptember !== '0' && !s.soSeptember.toLowerCase().includes('belum'));
-    if (hasSeptember) {
-      return { month: '09', year: defaultYear, source: 'stores' };
-    }
-    const hasAugust = stores.some(s => s.soAgustus && s.soAgustus !== '-' && s.soAgustus !== '0' && !s.soAgustus.toLowerCase().includes('belum'));
-    if (hasAugust) {
-      return { month: '08', year: defaultYear, source: 'stores' };
+    const monthCounts: Record<string, number> = {};
+    let detectedStoreYear = defaultYear;
+
+    stores.forEach(s => {
+      // Check specific month fields
+      if (s.soSeptember && s.soSeptember !== '-' && s.soSeptember !== '0' && !s.soSeptember.toLowerCase().includes('belum')) {
+        monthCounts['09'] = (monthCounts['09'] || 0) + 1;
+      }
+      if (s.soAgustus && s.soAgustus !== '-' && s.soAgustus !== '0' && !s.soAgustus.toLowerCase().includes('belum')) {
+        monthCounts['08'] = (monthCounts['08'] || 0) + 1;
+      }
+      if (s.soOktober && s.soOktober !== '-' && s.soOktober !== '0') {
+        monthCounts['10'] = (monthCounts['10'] || 0) + 1;
+      }
+      if (s.soNovember && s.soNovember !== '-' && s.soNovember !== '0') {
+        monthCounts['11'] = (monthCounts['11'] || 0) + 1;
+      }
+      if (s.soDesember && s.soDesember !== '-' && s.soDesember !== '0') {
+        monthCounts['12'] = (monthCounts['12'] || 0) + 1;
+      }
+      if (s.tglSoJuli && s.tglSoJuli !== '-' && s.tglSoJuli !== '0') {
+        monthCounts['07'] = (monthCounts['07'] || 0) + 1;
+      }
+      if (s.tglSoJuni && s.tglSoJuni !== '-' && s.tglSoJuni !== '0') {
+        monthCounts['06'] = (monthCounts['06'] || 0) + 1;
+      }
+      if (s.tglSoMei && s.tglSoMei !== '-' && s.tglSoMei !== '0') {
+        monthCounts['05'] = (monthCounts['05'] || 0) + 1;
+      }
+
+      // Check generic scheduledDate or tglSo
+      const candDate = s.scheduledDate || s.tglSo || s.tglSoApproved;
+      if (candDate) {
+        const parsed = parseSmartDate(candDate);
+        if (parsed) {
+          const m = String(parsed.getMonth() + 1).padStart(2, '0');
+          monthCounts[m] = (monthCounts[m] || 0) + 1;
+          detectedStoreYear = String(parsed.getFullYear());
+        }
+      }
+    });
+
+    let bestMonth = '';
+    let maxCount = 0;
+    Object.entries(monthCounts).forEach(([m, count]) => {
+      if (count > maxCount) {
+        maxCount = count;
+        bestMonth = m;
+      }
+    });
+
+    if (bestMonth && maxCount > 0) {
+      return { month: bestMonth, year: detectedStoreYear, source: 'stores' };
     }
   }
 
