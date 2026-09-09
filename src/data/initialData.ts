@@ -22,7 +22,52 @@ export const REGIONS: RegionArea[] = [
 export const INITIAL_TEAMS: SOTeam[] = [];
 
 export function generateInitialStores(): Store[] {
-  return [];
+  const storeMap = new Map<string, Store>();
+  
+  BALI_SCHEDULES_DATA.forEach(s => {
+    const code = (s.storeCode || '').trim().toUpperCase();
+    if (code && !storeMap.has(code)) {
+      const reg = (s.region || 'Kab. Badung') as RegionArea;
+      const parsedDate = s.scheduledDate;
+      const formattedDate = s.scheduledDate ? `${parseInt(s.scheduledDate.slice(8, 10), 10)} Sep 2026` : '-';
+      
+      storeMap.set(code, {
+        id: s.storeId || `STORE-BALI-${code}`,
+        code: s.storeCode,
+        name: s.storeName,
+        region: reg,
+        city: s.region || 'Kab. Badung',
+        kabupaten: s.region || 'Kab. Badung',
+        district: s.region || 'Kab. Badung',
+        kecamatan: s.region || 'Kab. Badung',
+        address: `Jl. Raya ${s.storeName}`,
+        korlap: s.officerInCharge || s.groupName || 'I WAYAN ANGGA RISTA',
+        saldoToko: Number(s.stockRp) || 385000000,
+        kasToko: Number(s.kasToko) || 5000000,
+        typeSo: s.typeSo || 'M',
+        qm: s.typeSo || 'M',
+        coverage: 'DC',
+        zona: s.zona || 'NON ZONA HITAM',
+        isZonaHitam: s.zona === 'ZONA HITAM',
+        soAktiva: s.soAktiva || 'Tidak',
+        statusApproveSO: s.spvApprovalStatus === 'Disetujui' ? 'Sudah Approve' : 'Belum SO',
+        scheduledDate: parsedDate,
+        tglSo: formattedDate,
+        soSeptember: formattedDate,
+        frekuensiTidakSO: 0,
+        jenisToko: 'STANDART NEW',
+        am: 'Area Manager Bali',
+        as: s.asInitial || 'AS Bali',
+        keterangan: 'TOKO EKSIS',
+        riskLevel: 'Rendah',
+        storeType: 'Regular Minimarket',
+        managerName: s.officerInCharge || s.groupName || 'I WAYAN ANGGA RISTA',
+        phone: '08123456789'
+      });
+    }
+  });
+
+  return Array.from(storeMap.values());
 }
 
 export function generateInitialSchedules(stores: Store[]): SOSchedule[] {

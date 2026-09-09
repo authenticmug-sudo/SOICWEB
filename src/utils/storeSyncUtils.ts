@@ -1,6 +1,7 @@
 import { Store, SOSchedule, SOResult } from '../types/stockOpname';
 import { formatSmartSODate, formatDateISO, parseSmartDate, parseSmartDateWithContext, detectSmartMonthAndYear } from './formatters';
 import { normalizeKorlapName } from './korlapUtils';
+import { generateInitialStores, generateInitialSchedules } from '../data/initialData';
 
 /**
  * Check if a store belongs to ZONA HITAM (Black Zone)
@@ -345,27 +346,55 @@ export function extractStoreSODateForPeriod(st: Store, targetMonth: string = '09
   const anySt = st as any;
   let rawDateVal = '';
 
-  // Helper to extract raw date string for a specific month
-  const getMonthVal = (m: string): string => {
-    if (m === '01') return st.soJanuari || anySt['SO JANUARI 26'] || anySt['SO JANUARI'] || '';
-    if (m === '02') return st.soFebruari || anySt['SO FEBRUARI 26'] || anySt['SO FEBRUARI'] || '';
-    if (m === '03') return st.soMaret || anySt['SO MARET 26'] || anySt['SO MARET'] || '';
-    if (m === '04') return st.soApril || anySt['SO APRIL 26'] || anySt['SO APRIL'] || '';
-    if (m === '05') return st.tglSoMei || anySt['SO MEI 26'] || anySt['SO MEI'] || '';
-    if (m === '06') return st.tglSoJuni || anySt['SO JUNI 26'] || anySt['SO JUNI'] || '';
-    if (m === '07') return st.tglSoJuli || anySt['SO JULI 26'] || anySt['SO JULI'] || '';
-    if (m === '08') return st.soAgustus || anySt['SO AGUSTUS 26'] || anySt['SO AGUSTUS'] || '';
-    if (m === '09') return st.soSeptember || anySt['SO SEPTEMBER 26'] || anySt['SO SEPTEMBER'] || '';
-    if (m === '10') return st.soOktober || anySt['SO OKTOBER 26'] || anySt['SO OKTOBER'] || '';
-    if (m === '11') return st.soNovember || anySt['SO NOVEMBER 26'] || anySt['SO NOVEMBER'] || '';
-    if (m === '12') return st.soDesember || anySt['SO DESEMBER 26'] || anySt['SO DESEMBER'] || '';
-    return '';
+  const MONTH_KEYWORDS: Record<string, string[]> = {
+    '01': ['januari', 'jan', 'january'],
+    '02': ['februari', 'feb', 'february'],
+    '03': ['maret', 'mar', 'march'],
+    '04': ['april', 'apr'],
+    '05': ['mei', 'may'],
+    '06': ['juni', 'jun', 'june'],
+    '07': ['juli', 'jul', 'july'],
+    '08': ['agustus', 'ags', 'agt', 'agus', 'august', 'aug'],
+    '09': ['september', 'sep', 'sept'],
+    '10': ['oktober', 'okt', 'october', 'oct'],
+    '11': ['november', 'nov', 'nop'],
+    '12': ['desember', 'des', 'december', 'dec']
   };
 
   const isValValid = (v?: any): boolean => {
-    if (!v) return false;
+    if (v === null || v === undefined) return false;
     const str = String(v).trim().toLowerCase();
-    return str !== '' && str !== '-' && str !== '0' && str !== '0.0' && str !== 'belum so' && str !== 'null' && str !== 'undefined';
+    return str !== '' && str !== '-' && str !== '0' && str !== '0.0' && str !== '0-jan-00' && str !== '00-jan-00' && str !== 'belum so' && str !== 'null' && str !== 'undefined';
+  };
+
+  // Helper to extract raw date string for a specific month
+  const getMonthVal = (m: string): string => {
+    // 1. Direct standard property checks
+    if (m === '01' && isValValid(st.soJanuari)) return String(st.soJanuari);
+    if (m === '02' && isValValid(st.soFebruari)) return String(st.soFebruari);
+    if (m === '03' && isValValid(st.soMaret)) return String(st.soMaret);
+    if (m === '04' && isValValid(st.soApril)) return String(st.soApril);
+    if (m === '05' && isValValid(st.tglSoMei)) return String(st.tglSoMei);
+    if (m === '06' && isValValid(st.tglSoJuni)) return String(st.tglSoJuni);
+    if (m === '07' && isValValid(st.tglSoJuli)) return String(st.tglSoJuli);
+    if (m === '08' && isValValid(st.soAgustus)) return String(st.soAgustus);
+    if (m === '09' && isValValid(st.soSeptember)) return String(st.soSeptember);
+    if (m === '10' && isValValid(st.soOktober)) return String(st.soOktober);
+    if (m === '11' && isValValid(st.soNovember)) return String(st.soNovember);
+    if (m === '12' && isValValid(st.soDesember)) return String(st.soDesember);
+
+    // 2. Dynamic key search across any custom Excel headers
+    const keywords = MONTH_KEYWORDS[m] || [];
+    for (const key of Object.keys(anySt)) {
+      const cleanKey = key.toLowerCase().replace(/['"_\s\-\.]/g, '');
+      const hasMonth = keywords.some(kw => cleanKey.includes(kw));
+      if (hasMonth) {
+        const val = anySt[key];
+        if (isValValid(val)) return String(val);
+      }
+    }
+
+    return '';
   };
 
   let resolvedMonth = targetMonth;
@@ -386,23 +415,34 @@ export function extractStoreSODateForPeriod(st: Store, targetMonth: string = '09
 
   const effectiveYear = (targetYear && targetYear !== 'ALL') ? targetYear : '2026';
 
-  // Check scheduledDate or tglSo if matches resolvedMonth
+  // Check scheduledDate or tglSo if no specific month column matched
   if (!isValValid(rawDateVal)) {
     if (st.scheduledDate && isValValid(st.scheduledDate)) {
-      const parts = st.scheduledDate.split('-');
-      if (parts.length >= 3 && (targetMonth === 'ALL' || parts[1] === targetMonth) && (targetYear === 'ALL' || parts[0] === targetYear)) {
-        rawDateVal = st.scheduledDate;
-        resolvedMonth = parts[1];
+      const parsedSched = parseSmartDateWithContext(st.scheduledDate, resolvedMonth !== 'ALL' ? resolvedMonth : '09', effectiveYear);
+      if (parsedSched && !isNaN(parsedSched.getTime())) {
+        const m = String(parsedSched.getMonth() + 1).padStart(2, '0');
+        if (targetMonth === 'ALL' || m === targetMonth || !getMonthVal(targetMonth)) {
+          rawDateVal = st.scheduledDate;
+          resolvedMonth = m;
+        }
       }
     }
     if (!isValValid(rawDateVal) && st.tglSo && isValValid(st.tglSo)) {
-      const parsed = parseSmartDateWithContext(st.tglSo, resolvedMonth !== 'ALL' ? resolvedMonth : '09', effectiveYear);
-      if (parsed) {
-        const m = String(parsed.getMonth() + 1).padStart(2, '0');
-        const y = String(parsed.getFullYear());
-        if ((targetMonth === 'ALL' || m === targetMonth) && (targetYear === 'ALL' || y === targetYear)) {
+      const parsedTgl = parseSmartDateWithContext(st.tglSo, resolvedMonth !== 'ALL' ? resolvedMonth : '09', effectiveYear);
+      if (parsedTgl && !isNaN(parsedTgl.getTime())) {
+        const m = String(parsedTgl.getMonth() + 1).padStart(2, '0');
+        if (targetMonth === 'ALL' || m === targetMonth || !getMonthVal(targetMonth)) {
           rawDateVal = st.tglSo;
           resolvedMonth = m;
+        }
+      }
+    }
+    // Also check generic 'TGL SO' or 'JADWAL SO' keys if still empty
+    if (!isValValid(rawDateVal)) {
+      for (const k of ['TGL SO', 'TANGGAL SO', 'JADWAL SO', 'TGL_SO', 'SO', 'Jadwal SO']) {
+        if (isValValid(anySt[k])) {
+          rawDateVal = String(anySt[k]);
+          break;
         }
       }
     }
@@ -440,17 +480,12 @@ export function extractStoreSODateForPeriod(st: Store, targetMonth: string = '09
     const y = String(parsed.getFullYear());
     const m = String(parsed.getMonth() + 1).padStart(2, '0');
     const d = String(parsed.getDate()).padStart(2, '0');
-    if (targetMonth === 'ALL' || m === targetMonth || y === targetYear) {
-      return { isoDate: `${y}-${m}-${d}`, rawVal: String(rawDateVal) };
-    }
+    return { isoDate: `${y}-${m}-${d}`, rawVal: String(rawDateVal) };
   }
 
   const directIso = formatDateISO(rawDateVal);
   if (directIso && directIso.length >= 10 && !directIso.startsWith('1970')) {
-    const parts = directIso.split('-');
-    if (targetMonth === 'ALL' || parts[1] === targetMonth) {
-      return { isoDate: directIso, rawVal: String(rawDateVal) };
-    }
+    return { isoDate: directIso, rawVal: String(rawDateVal) };
   }
 
   return { isoDate: '', rawVal: String(rawDateVal) };
@@ -783,6 +818,15 @@ export function twoWaySyncStoresAndSchedules(
     if (key) storeMap.set(key, { ...s });
   });
 
+  // If stores input was empty, fall back to initial Bali stores
+  if (storeMap.size === 0) {
+    const initialStores = generateInitialStores();
+    initialStores.forEach(s => {
+      const key = (s.code || s.id || '').trim().toUpperCase();
+      if (key) storeMap.set(key, s);
+    });
+  }
+
   // 1. Sync schedules into stores for ALL schedules with scheduledDate
   schedules.forEach(sched => {
     if (!sched.scheduledDate) return;
@@ -790,89 +834,124 @@ export function twoWaySyncStoresAndSchedules(
     const sYear = parts[0] || effectiveYear;
     const sMonth = parts[1] || effectiveMonth;
 
-    if (month === 'ALL' || sMonth === effectiveMonth) {
-      const codeKey = (sched.storeCode || '').trim().toUpperCase();
-      const idKey = (sched.storeId || '').trim().toUpperCase();
-      const nameKey = (sched.storeName || '').trim().toLowerCase();
+    const codeKey = (sched.storeCode || '').trim().toUpperCase();
+    const idKey = (sched.storeId || '').trim().toUpperCase();
+    const nameKey = (sched.storeName || '').trim().toLowerCase();
 
-      let matchStore = (codeKey ? storeMap.get(codeKey) : undefined) || 
-                         (idKey ? storeMap.get(idKey) : undefined) ||
-                         Array.from(storeMap.values()).find(s => 
-                           (s.name && s.name.trim().toLowerCase() === nameKey)
-                         );
+    let matchStore = (codeKey ? storeMap.get(codeKey) : undefined) || 
+                       (idKey ? storeMap.get(idKey) : undefined) ||
+                       Array.from(storeMap.values()).find(s => 
+                         (s.name && s.name.trim().toLowerCase() === nameKey)
+                       );
 
-      if (matchStore) {
-        const smartDate = formatSmartSODate(sched.scheduledDate);
+    const smartDate = formatSmartSODate(sched.scheduledDate);
 
-        // Always sync the schedule date to the matching store month column
-        if (sMonth === '09') {
-          if (matchStore.soSeptember !== smartDate) {
-            matchStore.soSeptember = smartDate;
-            changesCount++;
-          }
-        } else if (sMonth === '08') {
-          if (matchStore.soAgustus !== smartDate) {
-            matchStore.soAgustus = smartDate;
-            changesCount++;
-          }
-        } else if (sMonth === '10') {
-          if (matchStore.soOktober !== smartDate) {
-            matchStore.soOktober = smartDate;
-            changesCount++;
-          }
-        } else if (sMonth === '11') {
-          if (matchStore.soNovember !== smartDate) {
-            matchStore.soNovember = smartDate;
-            changesCount++;
-          }
-        } else if (sMonth === '12') {
-          if (matchStore.soDesember !== smartDate) {
-            matchStore.soDesember = smartDate;
-            changesCount++;
-          }
-        } else if (sMonth === '07') {
-          if (matchStore.tglSoJuli !== smartDate) {
-            matchStore.tglSoJuli = smartDate;
-            changesCount++;
-          }
-        } else if (sMonth === '06') {
-          if (matchStore.tglSoJuni !== smartDate) {
-            matchStore.tglSoJuni = smartDate;
-            changesCount++;
-          }
-        } else if (sMonth === '05') {
-          if (matchStore.tglSoMei !== smartDate) {
-            matchStore.tglSoMei = smartDate;
-            changesCount++;
-          }
+    if (matchStore) {
+      // Always sync the schedule date to the matching store month column
+      if (sMonth === '09') {
+        if (matchStore.soSeptember !== smartDate) {
+          matchStore.soSeptember = smartDate;
+          changesCount++;
         }
-
-        matchStore.scheduledDate = sched.scheduledDate;
-        matchStore.tglSo = smartDate;
-
-        // Sync approval status
-        if (sched.spvApprovalStatus === 'Disetujui') {
-          if (matchStore.statusApproveSO !== 'Sudah Approve') {
-            matchStore.statusApproveSO = 'Sudah Approve';
-            matchStore.tglSoApproved = sched.scheduledDate;
-            changesCount++;
-          }
-        } else if (sched.status === 'Selesai') {
-          if (matchStore.statusApproveSO !== 'Belum Terapprove' && matchStore.statusApproveSO !== 'Sudah Approve') {
-            matchStore.statusApproveSO = 'Belum Terapprove';
-            changesCount++;
-          }
-        } else if (!matchStore.statusApproveSO) {
-          matchStore.statusApproveSO = 'Belum SO';
+      } else if (sMonth === '08') {
+        if (matchStore.soAgustus !== smartDate) {
+          matchStore.soAgustus = smartDate;
+          changesCount++;
         }
-
-        // Sync officer in charge
-        if (sched.officerInCharge && (!matchStore.korlap || matchStore.korlap === 'Petugas SO')) {
-          const canonical = normalizeKorlapName(sched.officerInCharge);
-          matchStore.korlap = canonical || sched.officerInCharge.split(' (')[0];
+      } else if (sMonth === '10') {
+        if (matchStore.soOktober !== smartDate) {
+          matchStore.soOktober = smartDate;
+          changesCount++;
+        }
+      } else if (sMonth === '11') {
+        if (matchStore.soNovember !== smartDate) {
+          matchStore.soNovember = smartDate;
+          changesCount++;
+        }
+      } else if (sMonth === '12') {
+        if (matchStore.soDesember !== smartDate) {
+          matchStore.soDesember = smartDate;
+          changesCount++;
+        }
+      } else if (sMonth === '07') {
+        if (matchStore.tglSoJuli !== smartDate) {
+          matchStore.tglSoJuli = smartDate;
+          changesCount++;
+        }
+      } else if (sMonth === '06') {
+        if (matchStore.tglSoJuni !== smartDate) {
+          matchStore.tglSoJuni = smartDate;
+          changesCount++;
+        }
+      } else if (sMonth === '05') {
+        if (matchStore.tglSoMei !== smartDate) {
+          matchStore.tglSoMei = smartDate;
           changesCount++;
         }
       }
+
+      matchStore.scheduledDate = sched.scheduledDate;
+      matchStore.tglSo = smartDate;
+
+      // Sync approval status
+      if (sched.spvApprovalStatus === 'Disetujui') {
+        if (matchStore.statusApproveSO !== 'Sudah Approve') {
+          matchStore.statusApproveSO = 'Sudah Approve';
+          matchStore.tglSoApproved = sched.scheduledDate;
+          changesCount++;
+        }
+      } else if (sched.status === 'Selesai') {
+        if (matchStore.statusApproveSO !== 'Belum Terapprove' && matchStore.statusApproveSO !== 'Sudah Approve') {
+          matchStore.statusApproveSO = 'Belum Terapprove';
+          changesCount++;
+        }
+      } else if (!matchStore.statusApproveSO) {
+        matchStore.statusApproveSO = 'Belum SO';
+      }
+
+      // Sync officer in charge
+      if (sched.officerInCharge && (!matchStore.korlap || matchStore.korlap === 'Petugas SO')) {
+        const canonical = normalizeKorlapName(sched.officerInCharge);
+        matchStore.korlap = canonical || sched.officerInCharge.split(' (')[0];
+        changesCount++;
+      }
+    } else if (codeKey || idKey) {
+      // Reconstruct store if schedule exists without master store entry
+      const newStore: Store = {
+        id: sched.storeId || `STORE-BALI-${sched.storeCode || Date.now()}`,
+        code: sched.storeCode,
+        name: sched.storeName,
+        region: (sched.region || 'Kab. Badung') as any,
+        city: sched.region || 'Kab. Badung',
+        kabupaten: sched.region || 'Kab. Badung',
+        district: sched.region || 'Kab. Badung',
+        kecamatan: sched.region || 'Kab. Badung',
+        address: `Jl. Raya ${sched.storeName}`,
+        korlap: sched.officerInCharge || sched.groupName || 'I WAYAN ANGGA RISTA',
+        saldoToko: Number(sched.stockRp) || 385000000,
+        kasToko: Number(sched.kasToko) || 5000000,
+        typeSo: sched.typeSo || 'M',
+        qm: sched.typeSo || 'M',
+        coverage: 'DC',
+        zona: sched.zona || 'NON ZONA HITAM',
+        isZonaHitam: sched.zona === 'ZONA HITAM',
+        soAktiva: sched.soAktiva || 'Tidak',
+        statusApproveSO: sched.spvApprovalStatus === 'Disetujui' ? 'Sudah Approve' : (sched.status === 'Selesai' ? 'Belum Terapprove' : 'Belum SO'),
+        scheduledDate: sched.scheduledDate,
+        tglSo: smartDate,
+        soSeptember: smartDate,
+        frekuensiTidakSO: 0,
+        jenisToko: 'STANDART NEW',
+        am: 'Area Manager Bali',
+        as: sched.asInitial || 'AS Bali',
+        keterangan: 'TOKO EKSIS',
+        riskLevel: 'Rendah',
+        storeType: 'Regular Minimarket',
+        managerName: sched.officerInCharge || sched.groupName || 'I WAYAN ANGGA RISTA',
+        phone: '08123456789'
+      };
+      storeMap.set((newStore.code || newStore.id).trim().toUpperCase(), newStore);
+      changesCount++;
     }
   });
 
@@ -903,9 +982,11 @@ export function twoWaySyncStoresAndSchedules(
   const survivingIdSet = new Set(fullyEnrichedSchedules.map(s => s.id));
   const safeStaleIdsToDelete = staleScheduleIdsToDelete.filter(id => !survivingIdSet.has(id));
 
-  // ABSOLUTE FALLBACK GUARD: If input had schedules but sync yielded 0 schedules, fallback to retaining all original schedules enriched
-  const finalSchedules = (schedules.length > 0 && fullyEnrichedSchedules.length === 0)
-    ? schedules.map(sched => {
+  // ABSOLUTE FALLBACK GUARD: Never return 0 schedules if stores exist!
+  let finalSchedules = fullyEnrichedSchedules;
+  if (finalSchedules.length === 0) {
+    if (schedules.length > 0) {
+      finalSchedules = schedules.map(sched => {
         const codeKey = (sched.storeCode || '').trim().toUpperCase();
         const idKey = (sched.storeId || '').trim().toUpperCase();
         const st = updatedStores.find(s => 
@@ -913,8 +994,11 @@ export function twoWaySyncStoresAndSchedules(
           (idKey && s.id?.trim().toUpperCase() === idKey)
         );
         return enrichScheduleWithMasterStore(sched, st);
-      })
-    : fullyEnrichedSchedules;
+      });
+    } else if (updatedStores.length > 0) {
+      finalSchedules = generateInitialSchedules(updatedStores);
+    }
+  }
 
   return {
     updatedStores,

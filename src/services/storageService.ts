@@ -5,7 +5,7 @@ import { db } from './firebase';
 import { collection, doc, setDoc, deleteDoc, onSnapshot, getDocs, getDoc, setLogLevel, disableNetwork, writeBatch } from 'firebase/firestore';
 import { uploadToCloudinary, getCloudinaryConfig, getFormattedDateSuffix, uploadRawJsonToCloudinary, fetchCloudinaryJsonBackup } from './cloudinaryService';
 export { getFormattedDateSuffix };
-import { INITIAL_EQUIPMENT, INITIAL_PERSONNEL, INITIAL_REPAIR_LOGS, INITIAL_TEAMS } from '../data/initialData';
+import { INITIAL_EQUIPMENT, INITIAL_PERSONNEL, INITIAL_REPAIR_LOGS, INITIAL_TEAMS, generateInitialStores, generateInitialSchedules } from '../data/initialData';
 import * as XLSX from 'xlsx';
 
 export const STORAGE_KEYS = {
@@ -1153,10 +1153,19 @@ export function getStoredStores(): Store[] {
   if (local) {
     try {
       const stores: Store[] = JSON.parse(local);
-      return stores.map(s => ensureStoreCoordinates(s));
+      if (Array.isArray(stores) && stores.length > 0) {
+        return stores.map(s => ensureStoreCoordinates(s));
+      }
     } catch {
       // fallback
     }
+  }
+  const initial = generateInitialStores();
+  if (initial && initial.length > 0) {
+    try {
+      localStorage.setItem(STORAGE_KEYS.STORES, JSON.stringify(initial));
+    } catch {}
+    return initial;
   }
   return [];
 }
@@ -1179,10 +1188,21 @@ export function getStoredSchedules(): SOSchedule[] {
   const local = localStorage.getItem(STORAGE_KEYS.SCHEDULES);
   if (local) {
     try {
-      return JSON.parse(local);
+      const schedules = JSON.parse(local);
+      if (Array.isArray(schedules) && schedules.length > 0) {
+        return schedules;
+      }
     } catch {
       // fallback
     }
+  }
+  const initialStores = getStoredStores();
+  const initial = generateInitialSchedules(initialStores);
+  if (initial && initial.length > 0) {
+    try {
+      localStorage.setItem(STORAGE_KEYS.SCHEDULES, JSON.stringify(initial));
+    } catch {}
+    return initial;
   }
   return [];
 }

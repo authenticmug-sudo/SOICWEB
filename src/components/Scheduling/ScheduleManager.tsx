@@ -862,7 +862,13 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                 <button
                   onClick={() => {
                     onTwoWaySync();
-                    setToastMessage('Sinkronisasi 2-Arah Master Toko Bali & Sheet Jadwal Berhasil!');
+                    setActiveScheduleTab('ALL_SEPTEMBER');
+                    setSelectedSpecificDate('');
+                    setSelectedGroupKorlap('ALL');
+                    setSelectedRegion('ALL');
+                    setSelectedStatus('ALL');
+                    setSearchQuery('');
+                    setToastMessage('Sinkronisasi 2-Arah Berhasil: Semua Jadwal & Master Toko Bali Berhasil Dihubungkan!');
                   }}
                   className="w-full sm:w-auto px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-2xs"
                 >
