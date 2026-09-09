@@ -90,7 +90,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
   onRejectSchedule,
   onTwoWaySync
 }) => {
-  const [activeScheduleTab, setActiveScheduleTab] = useState<'HARI_H' | 'H_MINUS_1' | 'ALL_SEPTEMBER'>('HARI_H');
+  const [activeScheduleTab, setActiveScheduleTab] = useState<'HARI_H' | 'H_MINUS_1' | 'ALL_SEPTEMBER'>('ALL_SEPTEMBER');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRegion, setSelectedRegion] = useState<string>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
@@ -356,6 +356,22 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
   tomorrow.setDate(tomorrow.getDate() + 1);
   const tomorrowStr = formatDateISO(tomorrow);
 
+  const todayCount = useMemo(() => {
+    return schedules.filter(s => {
+      const parsed = parseSmartDate(s.scheduledDate);
+      const iso = parsed ? formatDateISO(parsed) : s.scheduledDate;
+      return iso === todayStr || s.scheduledDate === todayStr;
+    }).length;
+  }, [schedules, todayStr]);
+
+  const tomorrowCount = useMemo(() => {
+    return schedules.filter(s => {
+      const parsed = parseSmartDate(s.scheduledDate);
+      const iso = parsed ? formatDateISO(parsed) : s.scheduledDate;
+      return iso === tomorrowStr || s.scheduledDate === tomorrowStr;
+    }).length;
+  }, [schedules, tomorrowStr]);
+
   const handleSelectScheduleTab = (tab: 'HARI_H' | 'H_MINUS_1' | 'ALL_SEPTEMBER') => {
     setActiveScheduleTab(tab);
     if (tab === 'HARI_H') {
@@ -486,6 +502,9 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-300" />
                 <span className="font-bold text-xs">📍 Jadwal Hari-H (Hari Ini)</span>
+                <span className={`px-1.5 py-0.2 text-[10px] font-black rounded-md ${todayCount > 0 ? 'bg-emerald-400 text-slate-900' : 'bg-white/10 text-slate-400'}`}>
+                  {todayCount} toko
+                </span>
               </div>
               <p className="text-[10px] opacity-80 mt-0.5">
                 Target: {todayStr} ({getDayNameIndo(todayStr)})
@@ -509,6 +528,9 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
               <div className="flex items-center gap-2">
                 <Clock className="w-4 h-4 text-amber-400" />
                 <span className="font-bold text-xs">📅 Jadwal H-1 (Persiapan Besok)</span>
+                <span className={`px-1.5 py-0.2 text-[10px] font-black rounded-md ${tomorrowCount > 0 ? 'bg-amber-300 text-slate-900' : 'bg-white/10 text-slate-400'}`}>
+                  {tomorrowCount} toko
+                </span>
               </div>
               <p className="text-[10px] opacity-80 mt-0.5">
                 Target: {tomorrowStr} ({getDayNameIndo(tomorrowStr)})
@@ -532,6 +554,9 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
               <div className="flex items-center gap-2">
                 <FileSpreadsheet className="w-4 h-4 text-purple-300" />
                 <span className="font-bold text-xs">🗓️ Semua Jadwal September</span>
+                <span className="px-1.5 py-0.2 text-[10px] font-black rounded-md bg-purple-300 text-slate-900">
+                  {schedules.length} toko
+                </span>
               </div>
               <p className="text-[10px] opacity-80 mt-0.5">
                 Total {schedules.length} Toko Master Terhubung
@@ -1263,8 +1288,22 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                 );
               })
             ) : (
-              <div className="py-12 text-center text-slate-400 text-xs">
-                Tidak ditemukan jadwal SO yang sesuai filter.
+              <div className="py-10 px-4 text-center bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                <CalendarIcon className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                <p className="text-slate-700 font-bold text-xs">Tidak ditemukan jadwal SO yang sesuai filter</p>
+                <p className="text-[11px] text-slate-400 mt-0.5 max-w-xs mx-auto">
+                  {schedules.length > 0 ? `Ada ${schedules.length} jadwal toko tersimpan. Coba bersihkan filter pencarian atau tanggal.` : 'Belum ada jadwal yang diunggah/dibuat.'}
+                </p>
+                {schedules.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleResetAllFilters}
+                    className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition shadow-2xs"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Tampilkan Semua ({schedules.length} Toko)</span>
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -1414,8 +1453,26 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                     })
                   ) : (
                     <tr>
-                      <td colSpan={15} className="py-12 text-center text-slate-400">
-                        Tidak ditemukan jadwal SO yang sesuai filter.
+                      <td colSpan={15} className="py-12 text-center">
+                        <div className="max-w-sm mx-auto space-y-2">
+                          <CalendarIcon className="w-8 h-8 text-slate-300 mx-auto" />
+                          <p className="text-slate-700 font-bold text-xs">Tidak ditemukan jadwal SO yang sesuai filter</p>
+                          <p className="text-[11px] text-slate-400">
+                            {schedules.length > 0 
+                              ? `Ada ${schedules.length} jadwal toko terhubung di database. Coba reset filter tanggal atau pencarian.` 
+                              : 'Belum ada jadwal yang diunggah atau disinkronkan.'}
+                          </p>
+                          {schedules.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={handleResetAllFilters}
+                              className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition shadow-2xs"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>Tampilkan Semua ({schedules.length} Toko)</span>
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )}
@@ -1517,8 +1574,26 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={6} className="py-12 text-center text-slate-400">
-                        Tidak ditemukan jadwal SO yang sesuai filter.
+                      <td colSpan={6} className="py-12 text-center">
+                        <div className="max-w-sm mx-auto space-y-2">
+                          <CalendarIcon className="w-8 h-8 text-slate-300 mx-auto" />
+                          <p className="text-slate-700 font-bold text-xs">Tidak ditemukan jadwal SO yang sesuai filter</p>
+                          <p className="text-[11px] text-slate-400">
+                            {schedules.length > 0 
+                              ? `Ada ${schedules.length} jadwal toko terhubung di database. Coba reset filter tanggal atau pencarian.` 
+                              : 'Belum ada jadwal yang diunggah atau disinkronkan.'}
+                          </p>
+                          {schedules.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={handleResetAllFilters}
+                              className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition shadow-2xs"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>Tampilkan Semua ({schedules.length} Toko)</span>
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )}

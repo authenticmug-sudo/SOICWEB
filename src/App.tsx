@@ -599,8 +599,27 @@ export default function App() {
 
   // Handlers for Schedules
   const handleTwoWaySync = () => {
-    const { updatedStores, updatedSchedules, staleScheduleIdsToDelete } = twoWaySyncStoresAndSchedules(stores, schedules, selectedMonth, selectedYear);
-    purgeStaleSchedules(staleScheduleIdsToDelete);
+    const result = twoWaySyncStoresAndSchedules(stores, schedules, selectedMonth, selectedYear);
+    const updatedStores = result.updatedStores;
+    let updatedSchedules = result.updatedSchedules;
+
+    // Critical Safety Guard: Never overwrite non-empty schedules with empty array!
+    if (schedules.length > 0 && updatedSchedules.length === 0) {
+      console.warn('[2-Way Sync] Warning: Resulting schedules were empty, retaining original schedules enriched.');
+      updatedSchedules = schedules.map(sch => {
+        const matchingStore = updatedStores.find(st => st.code === sch.storeCode || st.id === sch.storeId);
+        return enrichScheduleWithMasterStore(sch, matchingStore);
+      });
+    }
+
+    if (result.staleScheduleIdsToDelete && result.staleScheduleIdsToDelete.length > 0) {
+      const activeIds = new Set(updatedSchedules.map(s => s.id));
+      const realStaleIds = result.staleScheduleIdsToDelete.filter(id => !activeIds.has(id));
+      if (realStaleIds.length > 0) {
+        purgeStaleSchedules(realStaleIds);
+      }
+    }
+
     setStores(updatedStores);
     setSchedules(updatedSchedules);
     saveStores(updatedStores);

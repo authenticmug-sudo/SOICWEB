@@ -1,5 +1,5 @@
 import { Store, SOSchedule, SOResult } from '../types/stockOpname';
-import { formatSmartSODate, formatDateISO, parseSmartDate, parseSmartDateWithContext } from './formatters';
+import { formatSmartSODate, formatDateISO, parseSmartDate, parseSmartDateWithContext, detectSmartMonthAndYear } from './formatters';
 import { normalizeKorlapName } from './korlapUtils';
 
 /**
@@ -340,82 +340,120 @@ export function autoSyncStoreWithApprovedSchedule(
  * Handles specific month columns, generic scheduledDate/tglSo, day numbers, and Excel formats.
  */
 export function extractStoreSODateForPeriod(st: Store, targetMonth: string = '09', targetYear: string = '2026'): { isoDate: string; rawVal: string } {
-  let rawDateVal = '';
-  if (targetMonth === '01') rawDateVal = st.soJanuari || '';
-  else if (targetMonth === '02') rawDateVal = st.soFebruari || '';
-  else if (targetMonth === '03') rawDateVal = st.soMaret || '';
-  else if (targetMonth === '04') rawDateVal = st.soApril || '';
-  else if (targetMonth === '05') rawDateVal = st.tglSoMei || '';
-  else if (targetMonth === '06') rawDateVal = st.tglSoJuni || '';
-  else if (targetMonth === '07') rawDateVal = st.tglSoJuli || '';
-  else if (targetMonth === '08') rawDateVal = st.soAgustus || '';
-  else if (targetMonth === '09') rawDateVal = st.soSeptember || '';
-  else if (targetMonth === '10') rawDateVal = st.soOktober || '';
-  else if (targetMonth === '11') rawDateVal = st.soNovember || '';
-  else if (targetMonth === '12') rawDateVal = st.soDesember || '';
+  if (!st) return { isoDate: '', rawVal: '' };
 
-  // Check scheduledDate or tglSo if matches targetMonth and targetYear
-  if (!rawDateVal && st.scheduledDate) {
-    const parts = st.scheduledDate.split('-');
-    if (parts.length >= 3 && parts[1] === targetMonth && (targetYear === 'ALL' || parts[0] === targetYear)) {
-      rawDateVal = st.scheduledDate;
+  const anySt = st as any;
+  let rawDateVal = '';
+
+  // Helper to extract raw date string for a specific month
+  const getMonthVal = (m: string): string => {
+    if (m === '01') return st.soJanuari || anySt['SO JANUARI 26'] || anySt['SO JANUARI'] || '';
+    if (m === '02') return st.soFebruari || anySt['SO FEBRUARI 26'] || anySt['SO FEBRUARI'] || '';
+    if (m === '03') return st.soMaret || anySt['SO MARET 26'] || anySt['SO MARET'] || '';
+    if (m === '04') return st.soApril || anySt['SO APRIL 26'] || anySt['SO APRIL'] || '';
+    if (m === '05') return st.tglSoMei || anySt['SO MEI 26'] || anySt['SO MEI'] || '';
+    if (m === '06') return st.tglSoJuni || anySt['SO JUNI 26'] || anySt['SO JUNI'] || '';
+    if (m === '07') return st.tglSoJuli || anySt['SO JULI 26'] || anySt['SO JULI'] || '';
+    if (m === '08') return st.soAgustus || anySt['SO AGUSTUS 26'] || anySt['SO AGUSTUS'] || '';
+    if (m === '09') return st.soSeptember || anySt['SO SEPTEMBER 26'] || anySt['SO SEPTEMBER'] || '';
+    if (m === '10') return st.soOktober || anySt['SO OKTOBER 26'] || anySt['SO OKTOBER'] || '';
+    if (m === '11') return st.soNovember || anySt['SO NOVEMBER 26'] || anySt['SO NOVEMBER'] || '';
+    if (m === '12') return st.soDesember || anySt['SO DESEMBER 26'] || anySt['SO DESEMBER'] || '';
+    return '';
+  };
+
+  const isValValid = (v?: any): boolean => {
+    if (!v) return false;
+    const str = String(v).trim().toLowerCase();
+    return str !== '' && str !== '-' && str !== '0' && str !== '0.0' && str !== 'belum so' && str !== 'null' && str !== 'undefined';
+  };
+
+  let resolvedMonth = targetMonth;
+  if (targetMonth === 'ALL') {
+    // Look for any month that has a valid date, prioritizing September (09), August (08), October (10), etc.
+    const priorityMonths = ['09', '08', '10', '11', '12', '07', '06', '05', '04', '03', '02', '01'];
+    for (const m of priorityMonths) {
+      const v = getMonthVal(m);
+      if (isValValid(v)) {
+        resolvedMonth = m;
+        rawDateVal = String(v);
+        break;
+      }
     }
+  } else {
+    rawDateVal = getMonthVal(targetMonth);
   }
-  if (!rawDateVal && st.tglSo) {
-    const parsed = parseSmartDateWithContext(st.tglSo, targetMonth, targetYear);
-    if (parsed) {
-      const m = String(parsed.getMonth() + 1).padStart(2, '0');
-      const y = String(parsed.getFullYear());
-      if (m === targetMonth && (targetYear === 'ALL' || y === targetYear)) {
-        rawDateVal = st.tglSo;
+
+  const effectiveYear = (targetYear && targetYear !== 'ALL') ? targetYear : '2026';
+
+  // Check scheduledDate or tglSo if matches resolvedMonth
+  if (!isValValid(rawDateVal)) {
+    if (st.scheduledDate && isValValid(st.scheduledDate)) {
+      const parts = st.scheduledDate.split('-');
+      if (parts.length >= 3 && (targetMonth === 'ALL' || parts[1] === targetMonth) && (targetYear === 'ALL' || parts[0] === targetYear)) {
+        rawDateVal = st.scheduledDate;
+        resolvedMonth = parts[1];
+      }
+    }
+    if (!isValValid(rawDateVal) && st.tglSo && isValValid(st.tglSo)) {
+      const parsed = parseSmartDateWithContext(st.tglSo, resolvedMonth !== 'ALL' ? resolvedMonth : '09', effectiveYear);
+      if (parsed) {
+        const m = String(parsed.getMonth() + 1).padStart(2, '0');
+        const y = String(parsed.getFullYear());
+        if ((targetMonth === 'ALL' || m === targetMonth) && (targetYear === 'ALL' || y === targetYear)) {
+          rawDateVal = st.tglSo;
+          resolvedMonth = m;
+        }
       }
     }
   }
 
-  // Also check if rawDateVal is a single day number (1-31) or "Tgl 8"
-  const tglMatch = String(rawDateVal || '').trim().match(/^(?:tgl|tanggal)?[\s\.]*(\d{1,2})$/i);
+  if (!isValValid(rawDateVal)) {
+    return { isoDate: '', rawVal: '' };
+  }
+
+  // Check if rawDateVal is a single day number (1-31) or "Tgl 8"
+  const tglMatch = String(rawDateVal).trim().match(/^(?:tgl|tanggal)?[\s\.]*(\d{1,2})$/i);
   if (tglMatch) {
     const d = parseInt(tglMatch[1], 10);
     if (d >= 1 && d <= 31) {
-      const iso = `${targetYear}-${targetMonth}-${String(d).padStart(2, '0')}`;
-      return { isoDate: iso, rawVal: rawDateVal };
+      const safeMonth = (resolvedMonth && resolvedMonth !== 'ALL') ? resolvedMonth : '09';
+      const iso = `${effectiveYear}-${safeMonth}-${String(d).padStart(2, '0')}`;
+      return { isoDate: iso, rawVal: String(rawDateVal) };
     }
   }
 
-  const parsed = parseSmartDateWithContext(rawDateVal, targetMonth, targetYear);
+  // Check Excel serial number (e.g. 46275)
+  const numVal = Number(rawDateVal);
+  if (!isNaN(numVal) && numVal > 30000 && numVal < 60000) {
+    const excelDate = new Date((numVal - 25569) * 86400 * 1000);
+    if (!isNaN(excelDate.getTime())) {
+      const y = String(excelDate.getFullYear());
+      const m = String(excelDate.getMonth() + 1).padStart(2, '0');
+      const d = String(excelDate.getDate()).padStart(2, '0');
+      return { isoDate: `${y}-${m}-${d}`, rawVal: String(rawDateVal) };
+    }
+  }
+
+  const parsed = parseSmartDateWithContext(rawDateVal, resolvedMonth !== 'ALL' ? resolvedMonth : '09', effectiveYear);
   if (parsed && !isNaN(parsed.getTime())) {
     const y = String(parsed.getFullYear());
     const m = String(parsed.getMonth() + 1).padStart(2, '0');
     const d = String(parsed.getDate()).padStart(2, '0');
-    if (m === targetMonth && (targetYear === 'ALL' || y === targetYear)) {
-      return { isoDate: `${y}-${m}-${d}`, rawVal: rawDateVal };
-    }
-  }
-
-  // Fallback: check if store only has one single date in any property that falls into targetMonth/targetYear
-  const candidates = [st.scheduledDate, st.tglSo, st.soSeptember, st.soAgustus, st.soOktober, st.soNovember, st.soDesember];
-  for (const cand of candidates) {
-    if (!cand || cand === '-' || cand === '0') continue;
-    const p = parseSmartDateWithContext(cand, targetMonth, targetYear);
-    if (p && !isNaN(p.getTime())) {
-      const ym = String(p.getFullYear());
-      const mm = String(p.getMonth() + 1).padStart(2, '0');
-      const dd = String(p.getDate()).padStart(2, '0');
-      if (mm === targetMonth && (targetYear === 'ALL' || ym === targetYear)) {
-        return { isoDate: `${ym}-${mm}-${dd}`, rawVal: String(cand) };
-      }
+    if (targetMonth === 'ALL' || m === targetMonth || y === targetYear) {
+      return { isoDate: `${y}-${m}-${d}`, rawVal: String(rawDateVal) };
     }
   }
 
   const directIso = formatDateISO(rawDateVal);
   if (directIso && directIso.length >= 10 && !directIso.startsWith('1970')) {
     const parts = directIso.split('-');
-    if (parts[1] === targetMonth && (targetYear === 'ALL' || parts[0] === targetYear)) {
-      return { isoDate: directIso, rawVal: rawDateVal };
+    if (targetMonth === 'ALL' || parts[1] === targetMonth) {
+      return { isoDate: directIso, rawVal: String(rawDateVal) };
     }
   }
 
-  return { isoDate: '', rawVal: rawDateVal };
+  return { isoDate: '', rawVal: String(rawDateVal) };
 }
 
 /**
@@ -535,14 +573,22 @@ export function syncSchedulesFromMasterStores(
     }
 
     if (!hasValidDate) {
-      // Store has NO scheduled date in new master: strictly remove and purge any lingering unapproved schedule
-      if (existingUnapprovedList.length > 0) {
-        existingUnapprovedList.forEach(sch => {
-          staleScheduleIdsToDelete.push(sch.id);
-        });
-        removedCount += existingUnapprovedList.length;
+      if (options?.isReplaceMode) {
+        // Only strictly purge unapproved schedule in full replace mode
+        if (existingUnapprovedList.length > 0) {
+          existingUnapprovedList.forEach(sch => {
+            staleScheduleIdsToDelete.push(sch.id);
+          });
+          removedCount += existingUnapprovedList.length;
+        }
+        return;
+      } else {
+        // In merge or two-way sync mode: PRESERVE existing schedule!
+        if (existingUnapprovedList.length > 0) {
+          processedUnapprovedSchedules.push(...existingUnapprovedList);
+        }
+        return;
       }
-      return;
     }
 
     const canonicalOfficer = st.korlap && st.korlap !== 'Petugas SO' 
@@ -591,8 +637,8 @@ export function syncSchedulesFromMasterStores(
         officerInCharge: canonicalOfficer,
         groupName: canonicalOfficer,
         region: st.region || st.kabupaten || targetSched.region || 'Kota Denpasar',
-        status: 'Terjadwal',
-        spvApprovalStatus: 'Menunggu Approval SPV'
+        status: targetSched.status || 'Terjadwal',
+        spvApprovalStatus: targetSched.spvApprovalStatus || 'Menunggu Approval SPV'
       };
 
       processedUnapprovedSchedules.push(updatedSched);
@@ -725,22 +771,86 @@ export function twoWaySyncStoresAndSchedules(
   year: string = '2026'
 ): { updatedStores: Store[]; updatedSchedules: SOSchedule[]; changesCount: number; staleScheduleIdsToDelete: string[] } {
   let changesCount = 0;
-  const storeMap = new Map<string, Store>(stores.map(s => [s.code || s.id, { ...s }]));
 
-  // 1. Sync schedules into stores ONLY for approved or completed schedules
+  // Resolve effective month and year (fallback intelligently if 'ALL' passed)
+  const detected = detectSmartMonthAndYear([], stores);
+  const effectiveMonth = (month && month !== 'ALL') ? month : (detected.month || '09');
+  const effectiveYear = (year && year !== 'ALL') ? year : (detected.year || '2026');
+
+  const storeMap = new Map<string, Store>();
+  stores.forEach(s => {
+    const key = (s.code || s.id || '').trim().toUpperCase();
+    if (key) storeMap.set(key, { ...s });
+  });
+
+  // 1. Sync schedules into stores for ALL schedules with scheduledDate
   schedules.forEach(sched => {
     if (!sched.scheduledDate) return;
-    const [sYear, sMonth] = sched.scheduledDate.split('-');
-    if (sMonth === month && (year === 'ALL' || sYear === year)) {
-      const matchStore = storeMap.get(sched.storeCode) || Array.from(storeMap.values()).find(s => s.id === sched.storeId || s.code === sched.storeCode);
+    const parts = sched.scheduledDate.split('-');
+    const sYear = parts[0] || effectiveYear;
+    const sMonth = parts[1] || effectiveMonth;
+
+    if (month === 'ALL' || sMonth === effectiveMonth) {
+      const codeKey = (sched.storeCode || '').trim().toUpperCase();
+      const idKey = (sched.storeId || '').trim().toUpperCase();
+      const nameKey = (sched.storeName || '').trim().toLowerCase();
+
+      let matchStore = (codeKey ? storeMap.get(codeKey) : undefined) || 
+                         (idKey ? storeMap.get(idKey) : undefined) ||
+                         Array.from(storeMap.values()).find(s => 
+                           (s.name && s.name.trim().toLowerCase() === nameKey)
+                         );
+
       if (matchStore) {
         const smartDate = formatSmartSODate(sched.scheduledDate);
-        if (sched.spvApprovalStatus === 'Disetujui' || sched.status === 'Selesai') {
+
+        // Always sync the schedule date to the matching store month column
+        if (sMonth === '09') {
           if (matchStore.soSeptember !== smartDate) {
             matchStore.soSeptember = smartDate;
             changesCount++;
           }
+        } else if (sMonth === '08') {
+          if (matchStore.soAgustus !== smartDate) {
+            matchStore.soAgustus = smartDate;
+            changesCount++;
+          }
+        } else if (sMonth === '10') {
+          if (matchStore.soOktober !== smartDate) {
+            matchStore.soOktober = smartDate;
+            changesCount++;
+          }
+        } else if (sMonth === '11') {
+          if (matchStore.soNovember !== smartDate) {
+            matchStore.soNovember = smartDate;
+            changesCount++;
+          }
+        } else if (sMonth === '12') {
+          if (matchStore.soDesember !== smartDate) {
+            matchStore.soDesember = smartDate;
+            changesCount++;
+          }
+        } else if (sMonth === '07') {
+          if (matchStore.tglSoJuli !== smartDate) {
+            matchStore.tglSoJuli = smartDate;
+            changesCount++;
+          }
+        } else if (sMonth === '06') {
+          if (matchStore.tglSoJuni !== smartDate) {
+            matchStore.tglSoJuni = smartDate;
+            changesCount++;
+          }
+        } else if (sMonth === '05') {
+          if (matchStore.tglSoMei !== smartDate) {
+            matchStore.tglSoMei = smartDate;
+            changesCount++;
+          }
         }
+
+        matchStore.scheduledDate = sched.scheduledDate;
+        matchStore.tglSo = smartDate;
+
+        // Sync approval status
         if (sched.spvApprovalStatus === 'Disetujui') {
           if (matchStore.statusApproveSO !== 'Sudah Approve') {
             matchStore.statusApproveSO = 'Sudah Approve';
@@ -755,6 +865,8 @@ export function twoWaySyncStoresAndSchedules(
         } else if (!matchStore.statusApproveSO) {
           matchStore.statusApproveSO = 'Belum SO';
         }
+
+        // Sync officer in charge
         if (sched.officerInCharge && (!matchStore.korlap || matchStore.korlap === 'Petugas SO')) {
           const canonical = normalizeKorlapName(sched.officerInCharge);
           matchStore.korlap = canonical || sched.officerInCharge.split(' (')[0];
@@ -766,21 +878,49 @@ export function twoWaySyncStoresAndSchedules(
 
   const updatedStores = Array.from(storeMap.values());
 
-  // 2. Sync stores into schedules (Store.soSeptember -> Schedules)
-  const { updatedSchedules, newlyCreatedCount, staleScheduleIdsToDelete } = syncSchedulesFromMasterStores(updatedStores, schedules, month, year);
+  // 2. Sync stores into schedules with non-replace mode to preserve unapproved schedules
+  const { updatedSchedules, newlyCreatedCount, staleScheduleIdsToDelete } = syncSchedulesFromMasterStores(
+    updatedStores, 
+    schedules, 
+    effectiveMonth, 
+    effectiveYear, 
+    { isReplaceMode: false }
+  );
   changesCount += newlyCreatedCount;
 
   // 3. Enrich all schedules with latest Master Store details
   const fullyEnrichedSchedules = updatedSchedules.map(sched => {
-    const st = updatedStores.find(s => s.code === sched.storeCode || s.id === sched.storeId);
+    const codeKey = (sched.storeCode || '').trim().toUpperCase();
+    const idKey = (sched.storeId || '').trim().toUpperCase();
+    const st = updatedStores.find(s => 
+      (codeKey && s.code?.trim().toUpperCase() === codeKey) || 
+      (idKey && s.id?.trim().toUpperCase() === idKey)
+    );
     return enrichScheduleWithMasterStore(sched, st);
   });
 
+  // CRITICAL SAFETY CHECK: NEVER purge a schedule ID that exists in fullyEnrichedSchedules
+  const survivingIdSet = new Set(fullyEnrichedSchedules.map(s => s.id));
+  const safeStaleIdsToDelete = staleScheduleIdsToDelete.filter(id => !survivingIdSet.has(id));
+
+  // ABSOLUTE FALLBACK GUARD: If input had schedules but sync yielded 0 schedules, fallback to retaining all original schedules enriched
+  const finalSchedules = (schedules.length > 0 && fullyEnrichedSchedules.length === 0)
+    ? schedules.map(sched => {
+        const codeKey = (sched.storeCode || '').trim().toUpperCase();
+        const idKey = (sched.storeId || '').trim().toUpperCase();
+        const st = updatedStores.find(s => 
+          (codeKey && s.code?.trim().toUpperCase() === codeKey) || 
+          (idKey && s.id?.trim().toUpperCase() === idKey)
+        );
+        return enrichScheduleWithMasterStore(sched, st);
+      })
+    : fullyEnrichedSchedules;
+
   return {
     updatedStores,
-    updatedSchedules: fullyEnrichedSchedules,
+    updatedSchedules: finalSchedules,
     changesCount,
-    staleScheduleIdsToDelete
+    staleScheduleIdsToDelete: finalSchedules === fullyEnrichedSchedules ? safeStaleIdsToDelete : []
   };
 }
 
