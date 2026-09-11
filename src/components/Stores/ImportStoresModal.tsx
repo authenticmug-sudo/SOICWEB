@@ -10,7 +10,7 @@ import {
   deduplicateEntityList
 } from '../../services/storageService';
 import { parseCoordinates, autoSyncStoreRegionAndKabupaten } from '../../utils/geoUtils';
-import { formatSmartSODate, parseSmartDate, formatDateISO } from '../../utils/formatters';
+import { formatSmartSODate, parseSmartDate, formatDateISO, parseCurrentMonthSODate } from '../../utils/formatters';
 import { isStoreZonaHitam } from '../../utils/storeSyncUtils';
 
 interface ImportStoresModalProps {
@@ -208,56 +208,61 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
       const tglSoMei = formatSmartSODate(getVal(['tgl so mei', 'so mei', 'mei'], ''));
       const tglSoJuni = formatSmartSODate(getVal(['tgl so juni', 'so juni', 'juni'], ''));
       const tglSoJuli = formatSmartSODate(getVal(['tgl so juli', 'so juli', 'juli'], ''));
-      const rowKeys = Object.keys(row);
-      const hasSpecificSeptemberCol = rowKeys.some(k => {
-        const lk = k.trim().toLowerCase();
-        return lk.includes('september') || lk.includes('sep 26') || lk.includes('so sep');
-      });
 
-      const soAgustusRaw = getVal(['so agustus', 'tgl so agustus', 'agustus', 'so ags'], '');
-      const soAgustus = formatSmartSODate(soAgustusRaw);
-      const soSeptemberRaw = getVal(["so september '26", 'so september', 'tgl so september', 'september', 'so sep', 'tgl so sep', 'so sep 26', 'so september 2026'], '');
-      let soSeptember = formatSmartSODate(soSeptemberRaw);
-      const soOktoberRaw = getVal(["so oktober '26", 'so oktober', 'tgl so oktober', 'oktober', 'so okt'], '');
-      let soOktober = formatSmartSODate(soOktoberRaw);
-      const soNovemberRaw = getVal(["so november '26", 'so november', 'tgl so november', 'november', 'so nov'], '');
-      let soNovember = formatSmartSODate(soNovemberRaw);
-      const soDesemberRaw = getVal(["so desember '26", 'so desember', 'tgl so desember', 'desember', 'so des'], '');
-      let soDesember = formatSmartSODate(soDesemberRaw);
+      // 1. Direct and robust extraction of current running month (September 2026)
+      const soSeptemberRaw = getVal([
+        "so september '26", 'so september 2026', 'so september', 'september \'26', 'september 2026',
+        'september', 'so sep 26', 'so sep \'26', 'so sep', 'tgl so sep', 'tgl so september', 'sep \'26', 'sep 26', 'sep'
+      ], '');
+      const parsedSep = parseCurrentMonthSODate(soSeptemberRaw, '09', '2026');
+      let soSeptember = parsedSep.isValid ? parsedSep.displayDate : formatSmartSODate(soSeptemberRaw, '-', '09', '2026');
 
+      // 2. Extractions for other months
+      const soAgustusRaw = getVal(["so agustus '26", 'so agustus 2026', 'so agustus', 'agustus', 'so ags', 'tgl so agustus'], '');
+      const parsedAgs = parseCurrentMonthSODate(soAgustusRaw, '08', '2026');
+      const soAgustus = parsedAgs.isValid ? parsedAgs.displayDate : formatSmartSODate(soAgustusRaw, '-', '08', '2026');
+
+      const soOktoberRaw = getVal(["so oktober '26", 'so oktober 2026', 'so oktober', 'oktober', 'so okt', 'tgl so oktober'], '');
+      const parsedOkt = parseCurrentMonthSODate(soOktoberRaw, '10', '2026');
+      let soOktober = parsedOkt.isValid ? parsedOkt.displayDate : formatSmartSODate(soOktoberRaw, '-', '10', '2026');
+
+      const soNovemberRaw = getVal(["so november '26", 'so november 2026', 'so november', 'november', 'so nov', 'tgl so november'], '');
+      const parsedNov = parseCurrentMonthSODate(soNovemberRaw, '11', '2026');
+      let soNovember = parsedNov.isValid ? parsedNov.displayDate : formatSmartSODate(soNovemberRaw, '-', '11', '2026');
+
+      const soDesemberRaw = getVal(["so desember '26", 'so desember 2026', 'so desember', 'desember', 'so des', 'tgl so desember'], '');
+      const parsedDes = parseCurrentMonthSODate(soDesemberRaw, '12', '2026');
+      let soDesember = parsedDes.isValid ? parsedDes.displayDate : formatSmartSODate(soDesemberRaw, '-', '12', '2026');
+
+      // 3. Check generic schedule columns as fallback
       const genericScheduleRaw = getVal([
         'tgl so', 'tanggal so', 'jadwal so', 'tgl jadwal so', 'tgl pelaksanaan so', 
         'tgl pelaksanaan', 'tanggal pelaksanaan', 'jadwal pelaksanaan', 'jadwal', 'tanggal', 
         'tgl rencana so', 'rencana so', 'tgl audit so', 'so periode ini', 'so bulan ini'
       ], '');
-      const genericScheduleDate = formatSmartSODate(genericScheduleRaw);
+      const parsedGeneric = parseCurrentMonthSODate(genericScheduleRaw, '09', '2026');
 
       let activeScheduledDateIso: string | undefined = undefined;
       let activeTglSo: string | undefined = undefined;
 
-      const rawForParsing = genericScheduleRaw || soSeptemberRaw || soAgustusRaw || soOktoberRaw;
-      if (rawForParsing) {
-        const parsed = parseSmartDate(rawForParsing);
-        if (parsed) {
-          const m = String(parsed.getMonth() + 1).padStart(2, '0');
-          const d = String(parsed.getDate()).padStart(2, '0');
-          const y = String(parsed.getFullYear());
-          activeScheduledDateIso = `${y}-${m}-${d}`;
-          activeTglSo = formatSmartSODate(rawForParsing);
-
-          if (m === '09' && (!soSeptember || soSeptember === '-')) soSeptember = activeTglSo;
-          else if (m === '10' && (!soOktober || soOktober === '-')) soOktober = activeTglSo;
-          else if (m === '11' && (!soNovember || soNovember === '-')) soNovember = activeTglSo;
-          else if (m === '12' && (!soDesember || soDesember === '-')) soDesember = activeTglSo;
-        } else if (!hasSpecificSeptemberCol && (!soSeptember || soSeptember === '-') && genericScheduleDate && genericScheduleDate !== '-') {
-          soSeptember = genericScheduleDate;
-          activeTglSo = genericScheduleDate;
-          const iso = formatDateISO(genericScheduleDate);
-          if (iso) activeScheduledDateIso = iso;
-        }
+      // Prioritas 1: Kolom bulan berjalan (September)
+      if (parsedSep.isValid) {
+        activeScheduledDateIso = parsedSep.isoDate;
+        activeTglSo = parsedSep.displayDate;
+      } else if (parsedGeneric.isValid) {
+        // Prioritas 2: Kolom jadwal generic
+        activeScheduledDateIso = parsedGeneric.isoDate;
+        activeTglSo = parsedGeneric.displayDate;
+        if (!soSeptember || soSeptember === '-') soSeptember = activeTglSo;
+      } else if (parsedAgs.isValid) {
+        activeScheduledDateIso = parsedAgs.isoDate;
+        activeTglSo = parsedAgs.displayDate;
+      } else if (parsedOkt.isValid) {
+        activeScheduledDateIso = parsedOkt.isoDate;
+        activeTglSo = parsedOkt.displayDate;
       } else if (soSeptember && soSeptember !== '-') {
         activeTglSo = soSeptember;
-        const iso = formatDateISO(soSeptember);
+        const iso = formatDateISO(soSeptember, false, '09', '2026');
         if (iso) activeScheduledDateIso = iso;
       }
       
@@ -584,8 +589,14 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
           return;
         }
 
-        // Smart Sheet Selection: Find the most relevant sheet name
-        let targetSheet = sheets.find(s => /master|toko|bali|store|cabang|data toko/i.test(s.toLowerCase()));
+        // Smart Sheet Selection:
+        // Priority 1: Check if any sheet matches running month (e.g. September, Sep 2026, Sep '26, SO Sep)
+        let targetSheet = sheets.find(s => /september|sep 26|sep '26|so sep|jadwal sep|sep 2026/i.test(s.toLowerCase()));
+
+        // Priority 2: Standard master keywords (master, toko, bali, store, cabang)
+        if (!targetSheet) {
+          targetSheet = sheets.find(s => /master|toko|bali|store|cabang|data toko/i.test(s.toLowerCase()));
+        }
         
         // If not found by keyword, test each sheet to pick the one with data
         if (!targetSheet) {
@@ -641,6 +652,7 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
 
     if (onResetMasterStores) {
       onResetMasterStores();
+      setParsedStores([]);
       setClearSuccess('✅ Berhasil menghapus seluruh data master toko yang ada! Sekarang sistem bersih dan siap membaca file master baru.');
       setTimeout(() => {
         setIsClearModalOpen(false);
@@ -930,6 +942,7 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
                   <div className="flex flex-wrap gap-1.5 pt-1">
                     {availableSheetNames.map((sName) => {
                       const isSelected = sName === selectedSheetName;
+                      const isRunningMonth = /september|sep 26|sep '26|so sep|sep 2026/i.test(sName);
                       return (
                         <button
                           key={sName}
@@ -938,11 +951,20 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
                           className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
                             isSelected
                               ? 'bg-indigo-600 text-white shadow-xs'
-                              : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-300'
+                              : isRunningMonth
+                                ? 'bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100'
+                                : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-300'
                           }`}
                         >
-                          <FileSpreadsheet className={`w-3.5 h-3.5 ${isSelected ? 'text-white' : 'text-emerald-600'}`} />
+                          <FileSpreadsheet className={`w-3.5 h-3.5 ${isSelected ? 'text-white' : isRunningMonth ? 'text-amber-600' : 'text-emerald-600'}`} />
                           <span>{sName}</span>
+                          {isRunningMonth && (
+                            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${
+                              isSelected ? 'bg-amber-400 text-slate-950' : 'bg-amber-200/80 text-amber-950'
+                            }`}>
+                              Bulan Berjalan
+                            </span>
+                          )}
                           {isSelected && (
                             <span className="text-[10px] bg-white/20 text-white px-1.5 py-0.2 rounded-full">
                               {parsedStores.length} Toko

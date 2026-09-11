@@ -818,13 +818,14 @@ export function twoWaySyncStoresAndSchedules(
     if (key) storeMap.set(key, { ...s });
   });
 
-  // If stores input was empty, fall back to initial Bali stores
+  // If stores input was empty, respect user reset and do NOT fall back to initial Bali stores
   if (storeMap.size === 0) {
-    const initialStores = generateInitialStores();
-    initialStores.forEach(s => {
-      const key = (s.code || s.id || '').trim().toUpperCase();
-      if (key) storeMap.set(key, s);
-    });
+    return {
+      updatedStores: [],
+      updatedSchedules: schedules,
+      changesCount: 0,
+      staleScheduleIdsToDelete: []
+    };
   }
 
   // 1. Sync schedules into stores for ALL schedules with scheduledDate
@@ -915,43 +916,6 @@ export function twoWaySyncStoresAndSchedules(
         matchStore.korlap = canonical || sched.officerInCharge.split(' (')[0];
         changesCount++;
       }
-    } else if (codeKey || idKey) {
-      // Reconstruct store if schedule exists without master store entry
-      const newStore: Store = {
-        id: sched.storeId || `STORE-BALI-${sched.storeCode || Date.now()}`,
-        code: sched.storeCode,
-        name: sched.storeName,
-        region: (sched.region || 'Kab. Badung') as any,
-        city: sched.region || 'Kab. Badung',
-        kabupaten: sched.region || 'Kab. Badung',
-        district: sched.region || 'Kab. Badung',
-        kecamatan: sched.region || 'Kab. Badung',
-        address: `Jl. Raya ${sched.storeName}`,
-        korlap: sched.officerInCharge || sched.groupName || 'I WAYAN ANGGA RISTA',
-        saldoToko: Number(sched.stockRp) || 385000000,
-        kasToko: Number(sched.kasToko) || 5000000,
-        typeSo: sched.typeSo || 'M',
-        qm: sched.typeSo || 'M',
-        coverage: 'DC',
-        zona: sched.zona || 'NON ZONA HITAM',
-        isZonaHitam: sched.zona === 'ZONA HITAM',
-        soAktiva: sched.soAktiva || 'Tidak',
-        statusApproveSO: sched.spvApprovalStatus === 'Disetujui' ? 'Sudah Approve' : (sched.status === 'Selesai' ? 'Belum Terapprove' : 'Belum SO'),
-        scheduledDate: sched.scheduledDate,
-        tglSo: smartDate,
-        soSeptember: smartDate,
-        frekuensiTidakSO: 0,
-        jenisToko: 'STANDART NEW',
-        am: 'Area Manager Bali',
-        as: sched.asInitial || 'AS Bali',
-        keterangan: 'TOKO EKSIS',
-        riskLevel: 'Rendah',
-        storeType: 'Regular Minimarket',
-        managerName: sched.officerInCharge || sched.groupName || 'I WAYAN ANGGA RISTA',
-        phone: '08123456789'
-      };
-      storeMap.set((newStore.code || newStore.id).trim().toUpperCase(), newStore);
-      changesCount++;
     }
   });
 

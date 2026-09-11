@@ -29,11 +29,11 @@ export function formatDateIndo(dateStr: string): string {
   }
 }
 
-export function formatDateISO(dateStr: any, fallbackToToday = false): string {
-  if (!dateStr || dateStr === '-' || dateStr === '0' || dateStr === '0.0' || String(dateStr).toLowerCase() === '0-jan-00' || String(dateStr).toLowerCase() === 'belum so') {
+export function formatDateISO(dateStr: any, fallbackToToday = false, contextMonth?: string, contextYear?: string): string {
+  if (!dateStr || dateStr === '-' || dateStr === '0' || dateStr === '0.0' || String(dateStr).toLowerCase() === '0-jan-00' || String(dateStr).toLowerCase() === 'belum so' || String(dateStr).toLowerCase() === 'tidak so') {
     return fallbackToToday ? new Date().toISOString().split('T')[0] : '';
   }
-  const d = parseSmartDate(dateStr);
+  const d = parseSmartDateWithContext(dateStr, contextMonth, contextYear);
   if (!d) return fallbackToToday ? new Date().toISOString().split('T')[0] : '';
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -146,15 +146,18 @@ export function parseSmartDateWithContext(dateStr: any, contextMonth?: string, c
 
   // Handle single day number (e.g. "8", "15", "Tgl 8", "Tgl. 15", "Tanggal 20")
   const tglMatch = rawStr.match(/^(?:tgl|tanggal)?[\s\.]*(\d{1,2})$/i);
-  if (tglMatch && contextMonth && contextYear) {
+  if (tglMatch) {
     const day = parseInt(tglMatch[1], 10);
     if (day >= 1 && day <= 31) {
-      const mIdx = parseInt(contextMonth, 10) - 1;
-      const y = parseInt(contextYear, 10);
-      const dt = new Date(y, mIdx, day);
+      const effectiveMonth = contextMonth ? parseInt(contextMonth, 10) - 1 : 8; // default to Sep (month index 8)
+      const effectiveYear = contextYear ? parseInt(contextYear, 10) : 2026;
+      const dt = new Date(effectiveYear, effectiveMonth, day);
       if (!isNaN(dt.getTime())) return dt;
     }
   }
+
+  // Strip leading day-of-week names e.g. "Rabu, 9 Sep" -> "9 Sep"
+  rawStr = rawStr.replace(/^(?:senin|selasa|rabu|kamis|jumat|sabtu|minggu|mon|tue|wed|thu|fri|sat|sun)[\s,.-]+/i, '').trim();
 
   // Handle Excel Serial Date Number (misal: 42717 = 13 Dec 2016, 46177 = 3 Jun 2026, 46177.0, etc.)
   const numericVal = typeof dateStr === 'number' 
@@ -250,7 +253,7 @@ export function parseSmartDateWithContext(dateStr: any, contextMonth?: string, c
  * Format tanggal jadwal SO master toko secara cerdas & manusiawi (misal: "3 Jun 2026", "13 Ags 2026").
  * Menghilangkan angka desimal serial excel (46177.0 -> 3 Jun 2026) dan '0-Jan-00' -> '-'.
  */
-export function formatSmartSODate(val: any, fallback: string = '-'): string {
+export function formatSmartSODate(val: any, fallback: string = '-', contextMonth?: string, contextYear?: string): string {
   if (val === null || val === undefined || val === '') return fallback;
   let rawStr = String(val).trim();
   
@@ -267,13 +270,14 @@ export function formatSmartSODate(val: any, fallback: string = '-'): string {
     rawStr.toLowerCase() === '00-jan-00' || 
     rawStr === '0/0/0' || 
     rawStr.toLowerCase() === 'belum so' ||
+    rawStr.toLowerCase() === 'tidak so' ||
     rawStr.toLowerCase() === 'null' ||
     rawStr.toLowerCase() === 'undefined'
   ) {
     return fallback;
   }
 
-  const parsed = parseSmartDate(rawStr);
+  const parsed = parseSmartDateWithContext(rawStr, contextMonth, contextYear);
   if (parsed && !isNaN(parsed.getTime())) {
     const d = parsed.getDate();
     const m = ID_MONTH_NAMES[parsed.getMonth()];
@@ -284,11 +288,105 @@ export function formatSmartSODate(val: any, fallback: string = '-'): string {
   // Jika berupa angka tunggal 1 - 31 (misal tgl jadwal bulan berjalan: 15, 3, 28)
   const numOnly = Number(rawStr);
   if (!isNaN(numOnly) && numOnly >= 1 && numOnly <= 31 && Number.isInteger(numOnly)) {
-    return `Tgl ${numOnly}`;
+    const mName = contextMonth && parseInt(contextMonth, 10) >= 1 && parseInt(contextMonth, 10) <= 12
+      ? ID_MONTH_NAMES[parseInt(contextMonth, 10) - 1]
+      : 'Sep';
+    const y = contextYear || '2026';
+    return `${numOnly} ${mName} ${y}`;
   }
 
   // If already a readable non-decimal string, return trimmed
   return rawStr;
+}
+
+/**
+ * Universal extractor specifically tailored to parse current running month SO dates from master store sheets.
+ * Accurately translates day numbers (e.g. 9, 15), Excel serial numbers (e.g. 46274), and formatted dates into ISO and display.
+ */
+export function parseCurrentMonthSODate(
+  val: any,
+  targetMonth: string = '09',
+  targetYear: string = '2026'
+): { isoDate: string; displayDate: string; dayNumber: number | null; isValid: boolean } {
+  if (val === null || val === undefined || val === '') {
+    return { isoDate: '', displayDate: '', dayNumber: null, isValid: false };
+  }
+
+  let rawStr = String(val).trim();
+  // Strip trailing decimal artifacts e.g. 15.0 -> 15
+  rawStr = rawStr.replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
+
+  if (
+    !rawStr || 
+    rawStr === '-' || 
+    rawStr === '0' || 
+    rawStr === '0.0' ||
+    rawStr.toLowerCase() === '0-jan-00' || 
+    rawStr.toLowerCase() === 'belum so' ||
+    rawStr.toLowerCase() === 'tidak so' ||
+    rawStr.toLowerCase() === 'null' ||
+    rawStr.toLowerCase() === 'undefined'
+  ) {
+    return { isoDate: '', displayDate: '', dayNumber: null, isValid: false };
+  }
+
+  // 1. Single day number e.g. "9", "15", "Tgl 9", "Tanggal 15", "Tgl. 15"
+  const tglMatch = rawStr.match(/^(?:tgl|tanggal)?[\s\.]*(\d{1,2})$/i);
+  if (tglMatch) {
+    const d = parseInt(tglMatch[1], 10);
+    if (d >= 1 && d <= 31) {
+      const mPad = (targetMonth && targetMonth !== 'ALL' ? targetMonth : '09').padStart(2, '0');
+      const dPad = String(d).padStart(2, '0');
+      const y = (targetYear && targetYear !== 'ALL' ? targetYear : '2026');
+      const iso = `${y}-${mPad}-${dPad}`;
+      const mIdx = parseInt(mPad, 10) - 1;
+      const mName = ID_MONTH_NAMES[mIdx] || 'Sep';
+      return {
+        isoDate: iso,
+        displayDate: `${d} ${mName} ${y}`,
+        dayNumber: d,
+        isValid: true
+      };
+    }
+  }
+
+  // 2. Excel serial number e.g. 46274
+  const numVal = Number(rawStr);
+  if (!isNaN(numVal) && numVal > 20000 && numVal < 80000) {
+    const utcMs = Math.round((numVal - 25569) * 86400000);
+    const dateObj = new Date(utcMs);
+    if (!isNaN(dateObj.getTime())) {
+      const y = dateObj.getUTCFullYear();
+      const m = dateObj.getUTCMonth();
+      const d = dateObj.getUTCDate();
+      const mPad = String(m + 1).padStart(2, '0');
+      const dPad = String(d).padStart(2, '0');
+      return {
+        isoDate: `${y}-${mPad}-${dPad}`,
+        displayDate: `${d} ${ID_MONTH_NAMES[m]} ${y}`,
+        dayNumber: d,
+        isValid: true
+      };
+    }
+  }
+
+  // 3. Natural Date string with context month & year
+  const parsed = parseSmartDateWithContext(rawStr, targetMonth !== 'ALL' ? targetMonth : '09', targetYear !== 'ALL' ? targetYear : '2026');
+  if (parsed && !isNaN(parsed.getTime())) {
+    const y = parsed.getFullYear();
+    const m = parsed.getMonth();
+    const d = parsed.getDate();
+    const mPad = String(m + 1).padStart(2, '0');
+    const dPad = String(d).padStart(2, '0');
+    return {
+      isoDate: `${y}-${mPad}-${dPad}`,
+      displayDate: `${d} ${ID_MONTH_NAMES[m]} ${y}`,
+      dayNumber: d,
+      isValid: true
+    };
+  }
+
+  return { isoDate: '', displayDate: rawStr, dayNumber: null, isValid: false };
 }
 
 /**

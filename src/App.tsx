@@ -50,7 +50,8 @@ import {
   deduplicateEntityList,
   normalizeSingleActiveDataset,
   isStoreEquipment,
-  isCorruptedEquipmentRecord
+  isCorruptedEquipmentRecord,
+  resetMasterStoresCleanly
 } from './services/storageService';
 import { ensureStoreCoordinates, autoSyncStoreRegionAndKabupaten } from './utils/geoUtils';
 import { formatSmartSODate, detectSmartMonthAndYear } from './utils/formatters';
@@ -436,14 +437,14 @@ export default function App() {
     // Enable real-time Firestore listeners across all portals
     const unsubFirestore = subscribeFirestoreData({
       onStores: (s) => {
-        if (s && Array.isArray(s) && s.length > 0) {
+        if (s && Array.isArray(s)) {
           const syncedStores = s.map(st => autoSyncStoreRegionAndKabupaten(st));
           setStores(syncedStores);
           setSchedules(prev => syncScheduleRegionsWithStores(prev, syncedStores));
         }
       },
       onSchedules: (sch) => {
-        if (sch && Array.isArray(sch) && sch.length > 0) {
+        if (sch && Array.isArray(sch)) {
           setSchedules(syncScheduleRegionsWithStores(sch, storesRef.current));
         }
       },
@@ -1167,18 +1168,27 @@ export default function App() {
     }
   };
 
-  const handleResetMasterStores = () => {
-    clearAllDeletedIds(STORAGE_KEYS.STORES);
+  const handleResetMasterStores = async () => {
+    // 1. Wipe master stores and datasets completely across localStorage, Firestore, and Cloudinary
+    await resetMasterStoresCleanly();
     setStores([]);
-    saveStores([], true);
+    setDatasets([]);
+
+    // 2. Clean up unapproved schedules and purge their IDs to prevent ghost restoration
+    const unapprovedSchedIds = schedules
+      .filter(s => s.spvApprovalStatus !== 'Disetujui' && !results.some(r => r.approvalStatus === 'Disetujui' && (r.storeCode === s.storeCode || r.storeId === s.storeId)))
+      .map(s => s.id);
     
-    // Clean up unapproved schedules, keeping only approved historical audit records
+    if (unapprovedSchedIds.length > 0) {
+      purgeStaleSchedules(unapprovedSchedIds);
+    }
+
     const approvedOnlySchedules = schedules.filter(s => 
       s.spvApprovalStatus === 'Disetujui' || 
       results.some(r => r.approvalStatus === 'Disetujui' && (r.storeCode === s.storeCode || r.storeId === s.storeId))
     );
     setSchedules(approvedOnlySchedules);
-    saveSchedules(approvedOnlySchedules, true);
+    await saveSchedules(approvedOnlySchedules, true);
   };
 
   // Handlers for Personnel

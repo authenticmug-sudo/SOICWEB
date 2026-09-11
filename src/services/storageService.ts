@@ -603,6 +603,10 @@ function mergeAndSyncFirestoreWithLocal<T extends { id: string }>(
 
   // Check reset timestamp constraint to prevent wiped data resurrection
   const systemResetTime = Number(localStorage.getItem('spv_system_reset_timestamp') || '0');
+  const storesResetTime = (storageKey === STORAGE_KEYS.STORES || storageKey === STORAGE_KEYS.MASTER_TOKO_DATASETS)
+    ? Number(localStorage.getItem('spv_stores_reset_timestamp') || '0')
+    : 0;
+  const effectiveResetTime = Math.max(systemResetTime, storesResetTime);
   const isHardCleared = localStorage.getItem(STORAGE_KEYS.CLEARED_SAMPLE_FLAG) === 'true';
 
   let localItems: T[] = [];
@@ -621,7 +625,7 @@ function mergeAndSyncFirestoreWithLocal<T extends { id: string }>(
   for (const item of dedupedFsItems) {
     if (item && item.id) {
       const itemTime = (item as any).updatedAt ? new Date((item as any).updatedAt).getTime() : ((item as any).createdAt ? new Date((item as any).createdAt).getTime() : 0);
-      if (isHardCleared && localItems.length === 0 && systemResetTime > 0 && itemTime > 0 && itemTime <= systemResetTime) {
+      if (isHardCleared && localItems.length === 0 && effectiveResetTime > 0 && itemTime > 0 && itemTime <= effectiveResetTime) {
         // Pre-reset artifact; clean it from Firestore
         if (!isFirestoreQuotaExceeded) {
           deleteDoc(doc(db, collectionName, item.id)).catch(() => {});
@@ -1149,16 +1153,20 @@ export async function deleteRepairLogFromFirestore(logId: string): Promise<void>
 // ------------------- LOCAL STORAGE GETTERS/SETTERS ------------------- //
 
 export function getStoredStores(): Store[] {
+  const isSampleCleared = localStorage.getItem(STORAGE_KEYS.CLEARED_SAMPLE_FLAG) === 'true';
   const local = localStorage.getItem(STORAGE_KEYS.STORES);
-  if (local) {
+  if (local !== null) {
     try {
       const stores: Store[] = JSON.parse(local);
-      if (Array.isArray(stores) && stores.length > 0) {
+      if (Array.isArray(stores)) {
         return stores.map(s => ensureStoreCoordinates(s));
       }
     } catch {
       // fallback
     }
+  }
+  if (isSampleCleared) {
+    return [];
   }
   const initial = generateInitialStores();
   if (initial && initial.length > 0) {
@@ -1184,17 +1192,72 @@ export async function saveStores(stores: Store[], isReplaceMode = false): Promis
   }
 }
 
+/**
+ * Cleanly and completely wipes Master Toko and its datasets from all storage layers:
+ * localStorage, Firestore (batch deletes), and Cloudinary backups, while locking resurrection timestamps.
+ */
+export async function resetMasterStoresCleanly(): Promise<void> {
+  const resetTimestamp = Date.now();
+  
+  // 1. Record reset timestamp specifically for master stores to prevent resurrection
+  localStorage.setItem('spv_stores_reset_timestamp', String(resetTimestamp));
+  localStorage.setItem(STORAGE_KEYS.CLEARED_SAMPLE_FLAG, 'true');
+  localStorage.setItem(STORAGE_KEYS.STORES, JSON.stringify([]));
+  localStorage.setItem(STORAGE_KEYS.MASTER_TOKO_DATASETS, JSON.stringify([]));
+  clearAllDeletedIds(STORAGE_KEYS.STORES);
+
+  // Clear hash caches so memory doesn't think items still exist
+  if (syncedItemsHash['stores']) syncedItemsHash['stores'].clear();
+  if (syncedItemsHash['master_toko_datasets']) syncedItemsHash['master_toko_datasets'].clear();
+
+  // Notify listeners immediately that stores and datasets are empty
+  notifyDataChanged(STORAGE_KEYS.STORES, []);
+  notifyDataChanged(STORAGE_KEYS.MASTER_TOKO_DATASETS, []);
+
+  // 2. Clear Firestore collections thoroughly
+  if (!isFirestoreQuotaExceeded) {
+    for (const colName of ['stores', 'master_toko_datasets']) {
+      try {
+        const snap = await getDocs(collection(db, colName));
+        if (snap && !snap.empty) {
+          const docs = snap.docs;
+          for (let i = 0; i < docs.length; i += 250) {
+            const batch = writeBatch(db);
+            docs.slice(i, i + 250).forEach(d => batch.delete(doc(db, colName, d.id)));
+            await batch.commit();
+          }
+        }
+      } catch (e) {
+        handleFirestoreError(e);
+      }
+    }
+    // Update manifest to 0
+    try {
+      await setDoc(doc(db, '_metadata_manifests', 'stores'), { count: 0, updatedAt: new Date().toISOString(), hash: 'empty' }, { merge: true });
+      await setDoc(doc(db, '_metadata_manifests', 'master_toko_datasets'), { count: 0, updatedAt: new Date().toISOString(), hash: 'empty' }, { merge: true });
+    } catch {}
+  }
+
+  // 3. Clear Cloudinary backups for master stores & datasets
+  uploadRawJsonToCloudinary([], 'Master_Stores', 'SO Sistem IC BALI/Master Toko', true).catch(() => {});
+  uploadRawJsonToCloudinary([], 'Master_Toko_Datasets', 'SO Sistem IC BALI/Master Toko', true).catch(() => {});
+}
+
 export function getStoredSchedules(): SOSchedule[] {
+  const isSampleCleared = localStorage.getItem(STORAGE_KEYS.CLEARED_SAMPLE_FLAG) === 'true';
   const local = localStorage.getItem(STORAGE_KEYS.SCHEDULES);
-  if (local) {
+  if (local !== null) {
     try {
       const schedules = JSON.parse(local);
-      if (Array.isArray(schedules) && schedules.length > 0) {
+      if (Array.isArray(schedules)) {
         return schedules;
       }
     } catch {
       // fallback
     }
+  }
+  if (isSampleCleared) {
+    return [];
   }
   const initialStores = getStoredStores();
   const initial = generateInitialSchedules(initialStores);
@@ -1750,6 +1813,10 @@ export async function syncCollectionFromCloudinary<T extends { id: string }>(
 
     // Check reset timestamp constraint to prevent wiped data resurrection
     const systemResetTime = Number(localStorage.getItem('spv_system_reset_timestamp') || '0');
+    const storesResetTime = (storageKey === STORAGE_KEYS.STORES || storageKey === STORAGE_KEYS.MASTER_TOKO_DATASETS)
+      ? Number(localStorage.getItem('spv_stores_reset_timestamp') || '0')
+      : 0;
+    const effectiveResetTime = Math.max(systemResetTime, storesResetTime);
     const isHardCleared = localStorage.getItem(STORAGE_KEYS.CLEARED_SAMPLE_FLAG) === 'true';
 
     deletedIds = getDeletedIdsSet(storageKey);
@@ -1758,9 +1825,9 @@ export async function syncCollectionFromCloudinary<T extends { id: string }>(
     const validCloudinaryItems = cloudinaryData.filter(item => {
       if (!item || !item.id || deletedIds.has(item.id)) return false;
       if (storageKey === STORAGE_KEYS.MASTER_TOKO_DATASETS && isMasterDatasetDeleted(item as any)) return false;
-      if (isHardCleared && localItems.length === 0 && systemResetTime > 0) {
+      if (isHardCleared && localItems.length === 0 && effectiveResetTime > 0) {
         const itemTime = (item as any).updatedAt ? new Date((item as any).updatedAt).getTime() : ((item as any).createdAt ? new Date((item as any).createdAt).getTime() : 0);
-        if (itemTime > 0 && itemTime <= systemResetTime) return false;
+        if (itemTime > 0 && itemTime <= effectiveResetTime) return false;
       }
       return true;
     });
