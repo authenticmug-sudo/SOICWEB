@@ -600,7 +600,19 @@ export default function App() {
 
   // Handlers for Schedules
   const handleTwoWaySync = () => {
-    const result = twoWaySyncStoresAndSchedules(stores, schedules, selectedMonth, selectedYear);
+    let baseStores = stores;
+    const activeDs = datasets.find(d => d.isActiveForScheduling) || (datasets.length > 0 ? datasets[0] : null);
+    if (activeDs && activeDs.stores && activeDs.stores.length > 0) {
+      // Merge active dataset stores with current stores to retain all raw Excel columns and SO dates
+      const dsMap = new Map<string, Store>(activeDs.stores.map(s => [(s.code || s.id || '').trim().toUpperCase(), s]));
+      baseStores = baseStores.map(st => {
+        const key = (st.code || st.id || '').trim().toUpperCase();
+        const fromDs = dsMap.get(key);
+        return fromDs ? { ...fromDs, ...st, soSeptember: st.soSeptember || fromDs.soSeptember, tglSo: st.tglSo || fromDs.tglSo, korlap: st.korlap || fromDs.korlap } : st;
+      });
+    }
+
+    const result = twoWaySyncStoresAndSchedules(baseStores, schedules, selectedMonth, selectedYear);
     const updatedStores = result.updatedStores;
     let updatedSchedules = result.updatedSchedules;
 

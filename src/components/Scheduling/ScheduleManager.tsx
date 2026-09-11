@@ -35,7 +35,7 @@ import {
 } from 'lucide-react';
 import { SOSchedule, Store, SOTeam, RegionArea, UserRole, AuditorPersonnel, SOResult } from '../../types/stockOpname';
 import { REGIONS } from '../../data/initialData';
-import { getStatusBadgeClass, formatDateIndo, formatRupiah, parseSmartDate, formatDateISO } from '../../utils/formatters';
+import { getStatusBadgeClass, formatDateIndo, formatRupiah, parseSmartDate, parseSmartDateWithContext, formatDateISO } from '../../utils/formatters';
 import { getDayNameIndo } from '../../utils/storeSyncUtils';
 import { exportToCSV } from '../../services/storageService';
 import { KorlapDashboard } from './KorlapDashboard';
@@ -224,30 +224,34 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
       let matchesGroup = true;
       if (selectedGroupKorlap !== 'ALL') {
         const scheduleOfficer = s.groupName || s.officerInCharge || '';
-        const matchingStore = stores.find(st => st.code === s.storeCode || st.id === s.storeId);
+        const matchingStore = stores.find(st => 
+          (st.code && s.storeCode && st.code.trim().toUpperCase() === s.storeCode.trim().toUpperCase()) || 
+          (st.id && s.storeId && st.id.trim().toUpperCase() === s.storeId.trim().toUpperCase()) ||
+          (st.name && s.storeName && st.name.trim().toLowerCase() === s.storeName.trim().toLowerCase())
+        );
         const storeOfficer = matchingStore?.korlap || '';
-        if (scheduleOfficer && scheduleOfficer.trim() !== '' && scheduleOfficer !== 'PETUGAS SO') {
-          matchesGroup = isKorlapMatch(scheduleOfficer, selectedGroupKorlap);
-        } else if (storeOfficer) {
-          matchesGroup = isKorlapMatch(storeOfficer, selectedGroupKorlap);
-        } else {
-          matchesGroup = false;
-        }
+        
+        // Match if EITHER schedule officer OR master store korlap matches target Korlap!
+        const matchSchedule = !!scheduleOfficer && scheduleOfficer !== 'PETUGAS SO' && isKorlapMatch(scheduleOfficer, selectedGroupKorlap);
+        const matchStore = !!storeOfficer && isKorlapMatch(storeOfficer, selectedGroupKorlap);
+        matchesGroup = matchSchedule || matchStore;
       }
 
       // Date Filtering Logic
       let matchesDate = true;
       if (selectedSpecificDate) {
-        const parsed = parseSmartDate(s.scheduledDate);
-        if (parsed) {
+        const parsed = parseSmartDateWithContext(s.scheduledDate, '09', '2026');
+        if (parsed && !isNaN(parsed.getTime())) {
           const iso = formatDateISO(parsed);
           matchesDate = iso === selectedSpecificDate || s.scheduledDate === selectedSpecificDate;
         } else {
           matchesDate = s.scheduledDate.includes(selectedSpecificDate);
         }
       } else if (selectedYear !== 'ALL' || selectedMonth !== 'ALL' || selectedDay !== 'ALL') {
-        const parsed = parseSmartDate(s.scheduledDate);
-        if (parsed) {
+        const targetMonthCtx = (selectedMonth !== 'ALL') ? selectedMonth : '09';
+        const targetYearCtx = (selectedYear !== 'ALL') ? selectedYear : '2026';
+        const parsed = parseSmartDateWithContext(s.scheduledDate, targetMonthCtx, targetYearCtx);
+        if (parsed && !isNaN(parsed.getTime())) {
           const y = String(parsed.getFullYear());
           const m = String(parsed.getMonth() + 1).padStart(2, '0');
           const d = String(parsed.getDate()).padStart(2, '0');
@@ -358,16 +362,16 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
 
   const todayCount = useMemo(() => {
     return schedules.filter(s => {
-      const parsed = parseSmartDate(s.scheduledDate);
-      const iso = parsed ? formatDateISO(parsed) : s.scheduledDate;
+      const parsed = parseSmartDateWithContext(s.scheduledDate, '09', '2026');
+      const iso = (parsed && !isNaN(parsed.getTime())) ? formatDateISO(parsed) : s.scheduledDate;
       return iso === todayStr || s.scheduledDate === todayStr;
     }).length;
   }, [schedules, todayStr]);
 
   const tomorrowCount = useMemo(() => {
     return schedules.filter(s => {
-      const parsed = parseSmartDate(s.scheduledDate);
-      const iso = parsed ? formatDateISO(parsed) : s.scheduledDate;
+      const parsed = parseSmartDateWithContext(s.scheduledDate, '09', '2026');
+      const iso = (parsed && !isNaN(parsed.getTime())) ? formatDateISO(parsed) : s.scheduledDate;
       return iso === tomorrowStr || s.scheduledDate === tomorrowStr;
     }).length;
   }, [schedules, tomorrowStr]);
@@ -657,6 +661,22 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
             >
               Sep 2026
             </button>
+
+            {onTwoWaySync && (
+              <button
+                type="button"
+                id="btn-two-way-sync-primary"
+                onClick={() => {
+                  onTwoWaySync();
+                  setToastMessage('✅ Sinkronisasi 2-Arah Berhasil: Seluruh jadwal toko dan korlap diperbarui langsung dari Master Toko!');
+                }}
+                className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold rounded-xl border border-emerald-500 shadow-sm transition flex items-center gap-1.5 shrink-0"
+                title="Tarik dan sinkronkan jadwal dari Master Toko ke daftar jadwal & korlap"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-emerald-100" />
+                <span>2-Way Sync (Baca Master)</span>
+              </button>
+            )}
 
             {activeFiltersCount > 0 && (
               <button

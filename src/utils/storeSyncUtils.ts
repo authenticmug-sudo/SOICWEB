@@ -1,5 +1,5 @@
 import { Store, SOSchedule, SOResult } from '../types/stockOpname';
-import { formatSmartSODate, formatDateISO, parseSmartDate, parseSmartDateWithContext, detectSmartMonthAndYear } from './formatters';
+import { formatSmartSODate, formatDateISO, parseSmartDate, parseSmartDateWithContext, parseCurrentMonthSODate, detectSmartMonthAndYear } from './formatters';
 import { normalizeKorlapName } from './korlapUtils';
 import { generateInitialStores, generateInitialSchedules } from '../data/initialData';
 
@@ -418,9 +418,9 @@ export function extractStoreSODateForPeriod(st: Store, targetMonth: string = '09
   // Check scheduledDate or tglSo if no specific month column matched
   if (!isValValid(rawDateVal)) {
     if (st.scheduledDate && isValValid(st.scheduledDate)) {
-      const parsedSched = parseSmartDateWithContext(st.scheduledDate, resolvedMonth !== 'ALL' ? resolvedMonth : '09', effectiveYear);
-      if (parsedSched && !isNaN(parsedSched.getTime())) {
-        const m = String(parsedSched.getMonth() + 1).padStart(2, '0');
+      const parsedSched = parseCurrentMonthSODate(st.scheduledDate, resolvedMonth !== 'ALL' ? resolvedMonth : '09', effectiveYear);
+      if (parsedSched.isValid) {
+        const m = parsedSched.isoDate.split('-')[1];
         if (targetMonth === 'ALL' || m === targetMonth || !getMonthVal(targetMonth)) {
           rawDateVal = st.scheduledDate;
           resolvedMonth = m;
@@ -428,9 +428,9 @@ export function extractStoreSODateForPeriod(st: Store, targetMonth: string = '09
       }
     }
     if (!isValValid(rawDateVal) && st.tglSo && isValValid(st.tglSo)) {
-      const parsedTgl = parseSmartDateWithContext(st.tglSo, resolvedMonth !== 'ALL' ? resolvedMonth : '09', effectiveYear);
-      if (parsedTgl && !isNaN(parsedTgl.getTime())) {
-        const m = String(parsedTgl.getMonth() + 1).padStart(2, '0');
+      const parsedTgl = parseCurrentMonthSODate(st.tglSo, resolvedMonth !== 'ALL' ? resolvedMonth : '09', effectiveYear);
+      if (parsedTgl.isValid) {
+        const m = parsedTgl.isoDate.split('-')[1];
         if (targetMonth === 'ALL' || m === targetMonth || !getMonthVal(targetMonth)) {
           rawDateVal = st.tglSo;
           resolvedMonth = m;
@@ -439,7 +439,7 @@ export function extractStoreSODateForPeriod(st: Store, targetMonth: string = '09
     }
     // Also check generic 'TGL SO' or 'JADWAL SO' keys if still empty
     if (!isValValid(rawDateVal)) {
-      for (const k of ['TGL SO', 'TANGGAL SO', 'JADWAL SO', 'TGL_SO', 'SO', 'Jadwal SO']) {
+      for (const k of ['TGL SO', 'TANGGAL SO', 'JADWAL SO', 'TGL_SO', 'SO', 'Jadwal SO', 'TGL', 'TANGGAL', 'JADWAL', 'TGL SO BALI', 'TGL SO SEP', 'TGL AUDIT']) {
         if (isValValid(anySt[k])) {
           rawDateVal = String(anySt[k]);
           break;
@@ -452,7 +452,13 @@ export function extractStoreSODateForPeriod(st: Store, targetMonth: string = '09
     return { isoDate: '', rawVal: '' };
   }
 
-  // Check if rawDateVal is a single day number (1-31) or "Tgl 8"
+  // 1. Primary parser: parseCurrentMonthSODate handles day numbers ("12"), Excel serials (46274), text ("12 Sep 2026"), slash, and dashes
+  const parsedCurrent = parseCurrentMonthSODate(rawDateVal, resolvedMonth !== 'ALL' ? resolvedMonth : '09', effectiveYear);
+  if (parsedCurrent.isValid && parsedCurrent.isoDate) {
+    return { isoDate: parsedCurrent.isoDate, rawVal: String(rawDateVal) };
+  }
+
+  // 2. Check if rawDateVal is a single day number (1-31) or "Tgl 8"
   const tglMatch = String(rawDateVal).trim().match(/^(?:tgl|tanggal)?[\s\.]*(\d{1,2})$/i);
   if (tglMatch) {
     const d = parseInt(tglMatch[1], 10);
@@ -463,7 +469,7 @@ export function extractStoreSODateForPeriod(st: Store, targetMonth: string = '09
     }
   }
 
-  // Check Excel serial number (e.g. 46275)
+  // 3. Check Excel serial number (e.g. 46275)
   const numVal = Number(rawDateVal);
   if (!isNaN(numVal) && numVal > 30000 && numVal < 60000) {
     const excelDate = new Date((numVal - 25569) * 86400 * 1000);
@@ -475,6 +481,7 @@ export function extractStoreSODateForPeriod(st: Store, targetMonth: string = '09
     }
   }
 
+  // 4. parseSmartDateWithContext
   const parsed = parseSmartDateWithContext(rawDateVal, resolvedMonth !== 'ALL' ? resolvedMonth : '09', effectiveYear);
   if (parsed && !isNaN(parsed.getTime())) {
     const y = String(parsed.getFullYear());
@@ -828,108 +835,92 @@ export function twoWaySyncStoresAndSchedules(
     };
   }
 
-  // 1. Sync schedules into stores for ALL schedules with scheduledDate
-  schedules.forEach(sched => {
-    if (!sched.scheduledDate) return;
-    const parts = sched.scheduledDate.split('-');
-    const sYear = parts[0] || effectiveYear;
-    const sMonth = parts[1] || effectiveMonth;
-
-    const codeKey = (sched.storeCode || '').trim().toUpperCase();
-    const idKey = (sched.storeId || '').trim().toUpperCase();
-    const nameKey = (sched.storeName || '').trim().toLowerCase();
-
-    let matchStore = (codeKey ? storeMap.get(codeKey) : undefined) || 
-                       (idKey ? storeMap.get(idKey) : undefined) ||
-                       Array.from(storeMap.values()).find(s => 
-                         (s.name && s.name.trim().toLowerCase() === nameKey)
-                       );
-
-    const smartDate = formatSmartSODate(sched.scheduledDate);
-
-    if (matchStore) {
-      // Always sync the schedule date to the matching store month column
-      if (sMonth === '09') {
-        if (matchStore.soSeptember !== smartDate) {
-          matchStore.soSeptember = smartDate;
-          changesCount++;
-        }
-      } else if (sMonth === '08') {
-        if (matchStore.soAgustus !== smartDate) {
-          matchStore.soAgustus = smartDate;
-          changesCount++;
-        }
-      } else if (sMonth === '10') {
-        if (matchStore.soOktober !== smartDate) {
-          matchStore.soOktober = smartDate;
-          changesCount++;
-        }
-      } else if (sMonth === '11') {
-        if (matchStore.soNovember !== smartDate) {
-          matchStore.soNovember = smartDate;
-          changesCount++;
-        }
-      } else if (sMonth === '12') {
-        if (matchStore.soDesember !== smartDate) {
-          matchStore.soDesember = smartDate;
-          changesCount++;
-        }
-      } else if (sMonth === '07') {
-        if (matchStore.tglSoJuli !== smartDate) {
-          matchStore.tglSoJuli = smartDate;
-          changesCount++;
-        }
-      } else if (sMonth === '06') {
-        if (matchStore.tglSoJuni !== smartDate) {
-          matchStore.tglSoJuni = smartDate;
-          changesCount++;
-        }
-      } else if (sMonth === '05') {
-        if (matchStore.tglSoMei !== smartDate) {
-          matchStore.tglSoMei = smartDate;
-          changesCount++;
-        }
-      }
-
-      matchStore.scheduledDate = sched.scheduledDate;
-      matchStore.tglSo = smartDate;
-
-      // Sync approval status
-      if (sched.spvApprovalStatus === 'Disetujui') {
-        if (matchStore.statusApproveSO !== 'Sudah Approve') {
-          matchStore.statusApproveSO = 'Sudah Approve';
-          matchStore.tglSoApproved = sched.scheduledDate;
-          changesCount++;
-        }
-      } else if (sched.status === 'Selesai') {
-        if (matchStore.statusApproveSO !== 'Belum Terapprove' && matchStore.statusApproveSO !== 'Sudah Approve') {
-          matchStore.statusApproveSO = 'Belum Terapprove';
-          changesCount++;
-        }
-      } else if (!matchStore.statusApproveSO) {
-        matchStore.statusApproveSO = 'Belum SO';
-      }
-
-      // Sync officer in charge
-      if (sched.officerInCharge && (!matchStore.korlap || matchStore.korlap === 'Petugas SO')) {
-        const canonical = normalizeKorlapName(sched.officerInCharge);
-        matchStore.korlap = canonical || sched.officerInCharge.split(' (')[0];
-        changesCount++;
-      }
-    }
-  });
-
-  const updatedStores = Array.from(storeMap.values());
-
-  // 2. Sync stores into schedules with non-replace mode to preserve unapproved schedules
+  // 1. PRIMARY DIRECTION: MASTER STORE IS THE SOURCE OF TRUTH.
+  // Extract schedule dates, Korlap, and store details from Master Stores into SOSchedules.
+  // Unapproved schedules are updated to match Master dates and Korlap.
   const { updatedSchedules, newlyCreatedCount, staleScheduleIdsToDelete } = syncSchedulesFromMasterStores(
-    updatedStores, 
+    Array.from(storeMap.values()), 
     schedules, 
     effectiveMonth, 
     effectiveYear, 
     { isReplaceMode: false }
   );
   changesCount += newlyCreatedCount;
+
+  // 2. SECONDARY DIRECTION: SYNC SCHEDULE APPROVALS & COMPLETED STATUS BACK TO MASTER STORES
+  // CRITICAL: We NEVER overwrite a store's valid Master SO date with an unapproved draft schedule!
+  updatedSchedules.forEach(sched => {
+    if (!sched.scheduledDate) return;
+
+    const codeKey = (sched.storeCode || '').trim().toUpperCase();
+    const idKey = (sched.storeId || '').trim().toUpperCase();
+    const nameKey = (sched.storeName || '').trim().toLowerCase();
+
+    let matchStore = (codeKey ? storeMap.get(codeKey) : undefined) || 
+                     (idKey ? storeMap.get(idKey) : undefined) ||
+                     Array.from(storeMap.values()).find(s => 
+                       (s.name && s.name.trim().toLowerCase() === nameKey)
+                     );
+
+    if (!matchStore) return;
+
+    const smartDate = formatSmartSODate(sched.scheduledDate);
+    const hasExistingMasterDate = !!(
+      matchStore.soSeptember || 
+      matchStore.soAgustus || 
+      matchStore.soOktober || 
+      matchStore.soNovember || 
+      matchStore.soDesember ||
+      matchStore.tglSoMei ||
+      matchStore.tglSoJuni ||
+      matchStore.tglSoJuli ||
+      matchStore.scheduledDate ||
+      matchStore.tglSo
+    );
+
+    // Sync approval status from SPV
+    if (sched.spvApprovalStatus === 'Disetujui') {
+      if (matchStore.statusApproveSO !== 'Sudah Approve') {
+        matchStore.statusApproveSO = 'Sudah Approve';
+        matchStore.tglSoApproved = sched.scheduledDate;
+        changesCount++;
+      }
+    } else if (sched.status === 'Selesai') {
+      if (matchStore.statusApproveSO !== 'Belum Terapprove' && matchStore.statusApproveSO !== 'Sudah Approve') {
+        matchStore.statusApproveSO = 'Belum Terapprove';
+        changesCount++;
+      }
+    } else if (!matchStore.statusApproveSO) {
+      matchStore.statusApproveSO = 'Belum SO';
+    }
+
+    // Only update master date if store had NO date originally in Master
+    if (!hasExistingMasterDate) {
+      if (effectiveMonth === '09') {
+        matchStore.soSeptember = smartDate;
+      } else if (effectiveMonth === '08') {
+        matchStore.soAgustus = smartDate;
+      } else if (effectiveMonth === '10') {
+        matchStore.soOktober = smartDate;
+      } else if (effectiveMonth === '11') {
+        matchStore.soNovember = smartDate;
+      } else if (effectiveMonth === '12') {
+        matchStore.soDesember = smartDate;
+      }
+      matchStore.scheduledDate = sched.scheduledDate;
+      matchStore.tglSo = smartDate;
+      changesCount++;
+    }
+
+    // Ensure korlap is synced if store had no korlap or generic 'Petugas SO'
+    if (sched.officerInCharge && (!matchStore.korlap || matchStore.korlap === 'Petugas SO')) {
+      const canonical = normalizeKorlapName(sched.officerInCharge);
+      matchStore.korlap = canonical || sched.officerInCharge.split(' (')[0];
+      changesCount++;
+    }
+  });
+
+  const updatedStores = Array.from(storeMap.values());
 
   // 3. Enrich all schedules with latest Master Store details
   const fullyEnrichedSchedules = updatedSchedules.map(sched => {

@@ -102,15 +102,16 @@ export const KorlapAvatarBar: React.FC<KorlapAvatarBarProps> = ({
 
       schedules.forEach(s => {
         const scheduleOfficer = s.officerInCharge || s.groupName || '';
-        const store = stores.find(st => st.id === s.storeId || st.code === s.storeCode);
+        const store = stores.find(st => 
+          (st.id && s.storeId && st.id.trim().toUpperCase() === s.storeId.trim().toUpperCase()) || 
+          (st.code && s.storeCode && st.code.trim().toUpperCase() === s.storeCode.trim().toUpperCase()) ||
+          (st.name && s.storeName && st.name.trim().toLowerCase() === s.storeName.trim().toLowerCase())
+        );
         const storeOfficer = store?.korlap || '';
 
-        let matched = false;
-        if (scheduleOfficer && scheduleOfficer.trim() !== '' && scheduleOfficer !== 'PETUGAS SO') {
-          matched = isKorlapMatch(scheduleOfficer, kName);
-        } else if (storeOfficer) {
-          matched = isKorlapMatch(storeOfficer, kName);
-        }
+        const matchSchedule = !!scheduleOfficer && scheduleOfficer !== 'PETUGAS SO' && isKorlapMatch(scheduleOfficer, kName);
+        const matchStore = !!storeOfficer && isKorlapMatch(storeOfficer, kName);
+        const matched = matchSchedule || matchStore;
 
         if (matched) {
           count++;
