@@ -190,7 +190,7 @@ export const KorlapAvatarBar: React.FC<KorlapAvatarBarProps> = ({
 
         {/* Individual Korlap Avatars */}
         {korlapData.map((korlap, idx) => {
-          const isSelected = isKorlapMatch(selectedKorlap, korlap.fullName);
+          const isSelected = selectedKorlap !== 'ALL' && (selectedKorlap === korlap.fullName || isKorlapMatch(korlap.fullName, selectedKorlap));
           const palette = COLOR_PALETTES[idx % COLOR_PALETTES.length];
 
           return (

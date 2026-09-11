@@ -600,19 +600,59 @@ export default function App() {
 
   // Handlers for Schedules
   const handleTwoWaySync = () => {
-    let baseStores = stores;
+    const isValValid = (v?: any): boolean => {
+      if (v === null || v === undefined) return false;
+      const s = String(v).trim().toLowerCase();
+      return s !== '' && s !== '-' && s !== '0' && s !== 'belum so' && s !== 'null' && s !== 'undefined';
+    };
+
+    let baseStores: Store[] = [...stores];
     const activeDs = datasets.find(d => d.isActiveForScheduling) || (datasets.length > 0 ? datasets[0] : null);
+    
     if (activeDs && activeDs.stores && activeDs.stores.length > 0) {
-      // Merge active dataset stores with current stores to retain all raw Excel columns and SO dates
-      const dsMap = new Map<string, Store>(activeDs.stores.map(s => [(s.code || s.id || '').trim().toUpperCase(), s]));
-      baseStores = baseStores.map(st => {
-        const key = (st.code || st.id || '').trim().toUpperCase();
-        const fromDs = dsMap.get(key);
-        return fromDs ? { ...fromDs, ...st, soSeptember: st.soSeptember || fromDs.soSeptember, tglSo: st.tglSo || fromDs.tglSo, korlap: st.korlap || fromDs.korlap } : st;
+      const mergedMap = new Map<string, Store>();
+
+      // 1. Seed with active dataset stores (Master Source of Truth)
+      activeDs.stores.forEach(s => {
+        const key = (s.code || s.id || '').trim().toUpperCase();
+        if (key) mergedMap.set(key, { ...s });
       });
+
+      // 2. Merge with existing stores to retain runtime metadata & approval statuses
+      stores.forEach(st => {
+        const key = (st.code || st.id || '').trim().toUpperCase();
+        if (!key) return;
+        const fromDs = mergedMap.get(key);
+        if (fromDs) {
+          // Master dataset has priority for schedule dates and assigned korlap
+          const validMasterSep = isValValid(fromDs.soSeptember) ? fromDs.soSeptember : (isValValid(st.soSeptember) ? st.soSeptember : fromDs.soSeptember);
+          const validKorlap = (fromDs.korlap && fromDs.korlap !== 'Petugas SO') ? fromDs.korlap : (st.korlap || fromDs.korlap);
+
+          mergedMap.set(key, {
+            ...st,
+            ...fromDs,
+            soSeptember: validMasterSep,
+            korlap: normalizeKorlapName(validKorlap) || validKorlap,
+            managerName: normalizeKorlapName(validKorlap) || validKorlap,
+            soAktiva: fromDs.soAktiva || st.soAktiva,
+            saldoToko: fromDs.saldoToko || st.saldoToko,
+            zona: fromDs.zona || st.zona,
+            statusApproveSO: st.statusApproveSO || fromDs.statusApproveSO
+          });
+        } else {
+          mergedMap.set(key, { ...st });
+        }
+      });
+
+      baseStores = Array.from(mergedMap.values());
     }
 
-    const result = twoWaySyncStoresAndSchedules(baseStores, schedules, selectedMonth, selectedYear);
+    // Auto detect target month/year
+    const detected = detectSmartMonthAndYear(datasets, baseStores);
+    const targetMonth = (selectedMonth && selectedMonth !== 'ALL') ? selectedMonth : (detected.month || '09');
+    const targetYear = (selectedYear && selectedYear !== 'ALL') ? selectedYear : (detected.year || '2026');
+
+    const result = twoWaySyncStoresAndSchedules(baseStores, schedules, targetMonth, targetYear);
     const updatedStores = result.updatedStores;
     let updatedSchedules = result.updatedSchedules;
 

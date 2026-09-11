@@ -12,6 +12,7 @@ import {
 import { parseCoordinates, autoSyncStoreRegionAndKabupaten } from '../../utils/geoUtils';
 import { formatSmartSODate, parseSmartDate, formatDateISO, parseCurrentMonthSODate } from '../../utils/formatters';
 import { isStoreZonaHitam } from '../../utils/storeSyncUtils';
+import { normalizeKorlapName } from '../../utils/korlapUtils';
 
 interface ImportStoresModalProps {
   isOpen: boolean;
@@ -145,13 +146,14 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
         return defaultVal;
       };
 
-      const code = getVal(['kd toko', 'kd_toko', 'kodetoko', 'kode toko', 'code', 'storecode', 'kode'], `T-${Math.floor(1000 + Math.random() * 9000)}`);
+      const code = getVal(['kdt', 'kdtk', 'kd toko', 'kd_toko', 'kodetoko', 'kode toko', 'code', 'storecode', 'kode'], `T-${Math.floor(1000 + Math.random() * 9000)}`);
       const name = getVal(['nama', 'namatoko', 'nama toko', 'name', 'storename'], `Toko Ritel ${idx + 1}`);
-      const kabupaten = getVal(['kabupaten', 'kota/kabupaten', 'kab/kota', 'nama kabupaten', 'kab', 'kota', 'city'], '');
+      const kabupaten = getVal(['kabupate', 'kabupaten', 'kota/kabupaten', 'kab/kota', 'nama kabupaten', 'kab', 'kota', 'city'], '');
       const kecamatan = getVal(['kecamatan', 'nama kecamatan', 'district', 'kec'], '');
       const address = getVal(['alamat', 'address', 'lokasi'], '');
+      const coverage = getVal(['covera', 'coverage', 'dc/igr', 'dc / igr', 'distribusi'], '');
       
-      let regionInput = getVal(['wilayah', 'region', 'area', 'wilayah/area'], '');
+      let regionInput = getVal(['wilaya', 'wilayah', 'region', 'area', 'wilayah/area'], '');
       let matchedRegion: any = REGIONS.find(r => r.toLowerCase().includes(regionInput.toLowerCase()));
       if (!matchedRegion) {
         if (kabupaten.toUpperCase().includes('BADUNG') || kabupaten.toUpperCase().includes('DENPASAR') || kabupaten.toUpperCase().includes('TABANAN') || kabupaten.toUpperCase().includes('GIANYAR') || address.toUpperCase().includes('BALI')) {
@@ -171,7 +173,12 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
         storeType = 'Distribution Hub Center';
       }
 
-      const korlap = getVal(['korlap/officer', 'korlap', 'officer', 'kepalatoko', 'kepala toko', 'manager'], '');
+      const korlapRaw = getVal([
+        'korlap/officer so', 'korlap / officer so', 'korlap/officer', 'korlap / officer', 
+        'korlap', 'officer so', 'officer', 'petugas korlap', 'petugas so', 
+        'penanggung jawab', 'koordinator lapangan', 'group korlap', 'nama korlap', 'kepalatoko', 'kepala toko', 'manager'
+      ], '');
+      const korlap = normalizeKorlapName(korlapRaw) || korlapRaw;
       const managerName = korlap;
       const phone = getVal(['notelp', 'no telp', 'phone', 'telepon'], '');
       
@@ -196,41 +203,42 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
       const am = getVal(['am', 'area manager'], '');
       const asVal = getVal(['as', 'assistant manager'], '');
       
-      const saldoRaw = getVal(['saldo toko', 'saldo_toko', 'saldo'], '');
+      const saldoRaw = getVal(['do toko sept', 'saldo toko sept', 'do toko', 'saldo toko', 'saldo_toko', 'saldo'], '');
+      const kasRaw = getVal(['kas tok', 'kas toko', 'kas'], '');
       let saldoTokoNum: number | string = '';
-      if (saldoRaw) {
-        const cleanedSaldo = saldoRaw.replace(/[^0-9.-]/g, '');
-        saldoTokoNum = parseFloat(cleanedSaldo) || saldoRaw;
+      if (saldoRaw || kasRaw) {
+        const targetClean = (saldoRaw || kasRaw).replace(/[^0-9.-]/g, '');
+        saldoTokoNum = parseFloat(targetClean) || (saldoRaw || kasRaw);
       }
 
       const qm = getVal(['q/m', 'q_m', 'qm', 'type so', 'status so', 'type_so', 'type', 'tipe'], 'M');
       const typeSo = qm;
-      const tglSoMei = formatSmartSODate(getVal(['tgl so mei', 'so mei', 'mei'], ''));
-      const tglSoJuni = formatSmartSODate(getVal(['tgl so juni', 'so juni', 'juni'], ''));
-      const tglSoJuli = formatSmartSODate(getVal(['tgl so juli', 'so juli', 'juli'], ''));
+      const tglSoMei = formatSmartSODate(getVal(["so mei '", "so mei '26", 'so mei 2026', 'tgl so mei', 'so mei', 'mei'], ''));
+      const tglSoJuni = formatSmartSODate(getVal(["so juni '", "so juni '26", 'so juni 2026', 'tgl so juni', 'so juni', 'juni'], ''));
+      const tglSoJuli = formatSmartSODate(getVal(["so juli '", "so juli '26", 'so juli 2026', 'tgl so juli', 'so juli', 'juli'], ''));
 
       // 1. Direct and robust extraction of current running month (September 2026)
       const soSeptemberRaw = getVal([
-        "so september '26", 'so september 2026', 'so september', 'september \'26', 'september 2026',
+        "so september '", "so september '26", 'so september 2026', 'so september', 'september \'26', 'september 2026',
         'september', 'so sep 26', 'so sep \'26', 'so sep', 'tgl so sep', 'tgl so september', 'sep \'26', 'sep 26', 'sep'
       ], '');
       const parsedSep = parseCurrentMonthSODate(soSeptemberRaw, '09', '2026');
       let soSeptember = parsedSep.isValid ? parsedSep.displayDate : formatSmartSODate(soSeptemberRaw, '-', '09', '2026');
 
       // 2. Extractions for other months
-      const soAgustusRaw = getVal(["so agustus '26", 'so agustus 2026', 'so agustus', 'agustus', 'so ags', 'tgl so agustus'], '');
+      const soAgustusRaw = getVal(["so agustus '", "so agustus '26", 'so agustus 2026', 'so agustus', 'agustus', 'so ags', 'tgl so agustus'], '');
       const parsedAgs = parseCurrentMonthSODate(soAgustusRaw, '08', '2026');
       const soAgustus = parsedAgs.isValid ? parsedAgs.displayDate : formatSmartSODate(soAgustusRaw, '-', '08', '2026');
 
-      const soOktoberRaw = getVal(["so oktober '26", 'so oktober 2026', 'so oktober', 'oktober', 'so okt', 'tgl so oktober'], '');
+      const soOktoberRaw = getVal(["so oktober '", "so oktober '26", 'so oktober 2026', 'so oktober', 'oktober', 'so okt', 'tgl so oktober'], '');
       const parsedOkt = parseCurrentMonthSODate(soOktoberRaw, '10', '2026');
       let soOktober = parsedOkt.isValid ? parsedOkt.displayDate : formatSmartSODate(soOktoberRaw, '-', '10', '2026');
 
-      const soNovemberRaw = getVal(["so november '26", 'so november 2026', 'so november', 'november', 'so nov', 'tgl so november'], '');
+      const soNovemberRaw = getVal(["so november '", "so november '26", 'so november 2026', 'so november', 'november', 'so nov', 'tgl so november'], '');
       const parsedNov = parseCurrentMonthSODate(soNovemberRaw, '11', '2026');
       let soNovember = parsedNov.isValid ? parsedNov.displayDate : formatSmartSODate(soNovemberRaw, '-', '11', '2026');
 
-      const soDesemberRaw = getVal(["so desember '26", 'so desember 2026', 'so desember', 'desember', 'so des', 'tgl so desember'], '');
+      const soDesemberRaw = getVal(["so desember '", "so desember '26", 'so desember 2026', 'so desember', 'desember', 'so des', 'tgl so desember'], '');
       const parsedDes = parseCurrentMonthSODate(soDesemberRaw, '12', '2026');
       let soDesember = parsedDes.isValid ? parsedDes.displayDate : formatSmartSODate(soDesemberRaw, '-', '12', '2026');
 
@@ -380,6 +388,16 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
         }
       }
 
+      // Parse SO AKTIVA column strictly (Ya vs Tidak)
+      const soAktivaRaw = getVal(['so akti', 'so aktiva', 'so_aktiva', 'aktiva', 'so aktiva tetap', 'aktiva so', 'status aktiva'], '');
+      let soAktivaVal: string = 'Tidak';
+      if (soAktivaRaw) {
+        const aUpper = soAktivaRaw.toUpperCase().trim();
+        if (aUpper === 'YA' || aUpper === 'Y' || aUpper === 'TRUE' || aUpper === '1' || aUpper.includes('AKTIVA') || aUpper.includes('ADA') || aUpper.includes('YA')) {
+          soAktivaVal = 'Ya';
+        }
+      }
+
       const deterministicId = getDeterministicStoreId({ code, name });
 
       const storeObj: Store = {
@@ -396,6 +414,8 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
         am,
         as: asVal,
         saldoToko: saldoTokoNum,
+        coverage,
+        soAktiva: soAktivaVal,
         kecamatan,
         kabupaten,
         typeSo: typeSo || qm || 'M',
@@ -438,13 +458,26 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
     const rawMatrix = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1 });
     if (!rawMatrix || rawMatrix.length === 0) return [];
 
+    const isDataRow = (row: any[]): boolean => {
+      if (!Array.isArray(row) || row.length === 0) return false;
+      for (const cell of row) {
+        const s = String(cell || '').trim();
+        if (!s) continue;
+        if (s.includes('°') || s.includes('"S') || s.includes('"E') || /S\d{1,2}\s+\d{1,2}/i.test(s) || /-?[89]\.\d{3,}/.test(s) || /11[45]\.\d{3,}/.test(s)) return true;
+        if (/\d{1,2}-[A-Za-z]{3}-\d{2,4}/.test(s) || /\d{4}-\d{2}-\d{2}/.test(s) || /\d{1,2}\/\d{1,2}\/\d{2,4}/.test(s)) return true;
+        const numClean = s.replace(/[^0-9]/g, '');
+        if (numClean.length >= 6 && !isNaN(Number(numClean))) return true;
+      }
+      return false;
+    };
+
     // Find row index containing core store column keywords
     let headerRowIdx = -1;
-    const keywords = ['kdtk', 'kd toko', 'kd_toko', 'kode toko', 'nama toko', 'namatoko', 'no', 'tanggal buka', 'kategori'];
+    const keywords = ['kdt', 'kdtk', 'kd toko', 'kd_toko', 'kode toko', 'nama toko', 'namatoko', 'no', 'tanggal buka', 'kategori'];
 
     for (let i = 0; i < Math.min(rawMatrix.length, 25); i++) {
       const row = rawMatrix[i];
-      if (Array.isArray(row)) {
+      if (Array.isArray(row) && !isDataRow(row)) {
         const rowStr = row.map(cell => String(cell || '').toLowerCase()).join(' ');
         if (keywords.some(k => rowStr.includes(k))) {
           headerRowIdx = i;
@@ -460,7 +493,9 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
 
     const headerRow = rawMatrix[headerRowIdx] || [];
     const parentRow = headerRowIdx > 0 ? rawMatrix[headerRowIdx - 1] : [];
-    const subRow = rawMatrix[headerRowIdx + 1] || [];
+    const subRowCandidate = headerRowIdx + 1 < rawMatrix.length ? rawMatrix[headerRowIdx + 1] : [];
+    const isSubRowData = isDataRow(subRowCandidate);
+    const subRow = isSubRowData ? [] : subRowCandidate;
 
     const colKeys: string[] = [];
     let currentParent = '';
@@ -480,7 +515,7 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
         colName = `${parentVal} ${mainVal}`;
       }
 
-      if (subVal && subVal !== mainVal && !subVal.toLowerCase().includes('input') && !subVal.toLowerCase().includes('rumus')) {
+      if (subVal && subVal.toLowerCase() !== mainVal.toLowerCase() && !subVal.toLowerCase().includes('input') && !subVal.toLowerCase().includes('rumus')) {
         colName = `${colName} ${subVal}`;
       }
 
@@ -489,11 +524,12 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
 
     // Start parsing actual data rows after header and sub-header / filter rows
     const results: Record<string, any>[] = [];
-    let dataStartIdx = headerRowIdx + 1;
+    let dataStartIdx = isSubRowData ? (headerRowIdx + 1) : (headerRowIdx + 2);
 
     while (dataStartIdx < rawMatrix.length) {
       const checkRow = rawMatrix[dataStartIdx];
       if (Array.isArray(checkRow)) {
+        if (isDataRow(checkRow)) break;
         const rowText = checkRow.map(c => String(c || '').toLowerCase()).join(' ');
         if (rowText.includes('input') || rowText.includes('rumus') || rowText.includes('type so') || rowText.includes('status so')) {
           dataStartIdx++;

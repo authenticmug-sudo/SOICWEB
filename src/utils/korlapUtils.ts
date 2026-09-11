@@ -335,7 +335,7 @@ export function isKorlapMatch(
 
   // If searching for PUTU BISMA
   if (normTarget === 'PUTU BISMA') {
-    return candLower.includes('bisma') || candLower.includes('ariasa');
+    return candLower.includes('bisma') || candLower.includes('ariasa') || candLower.includes('putu');
   }
 
   return false;

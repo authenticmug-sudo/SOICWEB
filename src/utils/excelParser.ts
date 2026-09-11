@@ -37,32 +37,73 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
     const rawMatrix = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, defval: '' });
     if (!rawMatrix || rawMatrix.length === 0) continue;
 
+    // Helper to identify data rows and avoid false positive header matching
+    const isDataRow = (row: any[]): boolean => {
+      if (!Array.isArray(row) || row.length === 0) return false;
+      for (const cell of row) {
+        const s = String(cell || '').trim();
+        if (!s) continue;
+        if (s.includes('°') || s.includes('"S') || s.includes('"E') || /S\d{1,2}\s+\d{1,2}/i.test(s) || /-?[89]\.\d{3,}/.test(s) || /11[45]\.\d{3,}/.test(s)) return true;
+        if (/\d{1,2}-[A-Za-z]{3}-\d{2,4}/.test(s) || /\d{4}-\d{2}-\d{2}/.test(s) || /\d{1,2}\/\d{1,2}\/\d{2,4}/.test(s)) return true;
+        const numClean = s.replace(/[^0-9]/g, '');
+        if (numClean.length >= 6 && !isNaN(Number(numClean))) return true;
+      }
+      return false;
+    };
+
+    const isHeaderKeyword = (cellVal: any): boolean => {
+      const s = String(cellVal || '').trim().toLowerCase();
+      if (!s) return false;
+      return (
+        s === 'kdt' || s === 'kdtk' || s === 'kd toko' || s === 'kd_toko' || s === 'kode toko' || s === 'kode' || s === 'code' ||
+        s === 'nama' || s === 'nama toko' || s === 'namatoko' || s === 'name' || s === 'store' ||
+        s === 'koordinat' || s === 'lat' || s === 'long' || s === 'gps' || s === 'coordinate' ||
+        s === 'saldo' || s === 'kas' || s === 'do toko' || s === 'saldo toko' || s.startsWith('do toko') || s.startsWith('saldo toko') ||
+        s === 'kas tok' || s === 'kas toko' ||
+        s === 'ar' || s === 'as' || s === 'am' || s === 'jop' ||
+        s === 'wilayah' || s === 'wilaya' || s === 'region' || s === 'area' ||
+        s === 'kabupaten' || s === 'kabupate' || s === 'kota' || s === 'city' ||
+        s === 'kecamatan' || s === 'district' ||
+        s === 'coverage' || s === 'covera' || s === 'type' || s === 'tipe' || s === 'qm' || s === 'q/m' ||
+        s.includes('so mei') || s.includes('so juni') || s.includes('so juli') || s.includes('so agustus') || 
+        s.includes('so september') || s.includes('so oktober') || s.includes('so november') || s.includes('so desember') ||
+        s.includes('tgl so') || s.includes('jadwal') || s.includes('rencana so') ||
+        s.includes('frekuensi') || s.includes('keterangan') || s.includes('zona') || s.includes('aktiva') || s.includes('so akti') ||
+        s.includes('korlap') || s.includes('officer') || s.includes('petugas') ||
+        s === 'no' || s === 'no.' || s === 'nomor' || s === 'no toko' || s === 'kategori' || s === 'tanggal buka' || s === 'tgl buka'
+      );
+    };
+
     // 1. Search for header row index (scanning rows 0..30)
     let bestHeaderIdx = -1;
-    let maxKeywordMatches = 0;
-    const storeKeywords = ['kdtk', 'kd toko', 'kd_toko', 'kode toko', 'nama toko', 'namatoko', 'no', 'tanggal buka', 'tgl buka'];
+    let maxKeywordMatches = -999;
 
     for (let i = 0; i < Math.min(rawMatrix.length, 30); i++) {
       const row = rawMatrix[i];
       if (!Array.isArray(row)) continue;
       
-      const rowStr = row.map(c => String(c || '').toLowerCase()).join(' ');
       let matches = 0;
-      storeKeywords.forEach(k => {
-        if (rowStr.includes(k)) matches++;
-      });
+      let hasDataPattern = false;
+      for (const cell of row) {
+        if (isHeaderKeyword(cell)) matches += 2;
+        const cellStr = String(cell || '').trim();
+        if (cellStr.includes('°') || /\d{1,2}-[A-Za-z]{3}-\d{2,4}/.test(cellStr) || /^\d{6,}$/.test(cellStr.replace(/[^0-9]/g, ''))) {
+          hasDataPattern = true;
+          matches -= 4;
+        }
+      }
 
-      if (matches > maxKeywordMatches) {
+      if (!hasDataPattern && matches > maxKeywordMatches) {
         maxKeywordMatches = matches;
         bestHeaderIdx = i;
       }
     }
 
-    // Fallback if keywords not explicitly found: look for a row with 3+ non-empty text cells
+    // Fallback if keywords not explicitly found: look for a row with 3+ non-empty text cells that is not a data row
     if (bestHeaderIdx === -1) {
       for (let i = 0; i < Math.min(rawMatrix.length, 20); i++) {
         const row = rawMatrix[i];
-        if (Array.isArray(row) && row.filter(c => String(c).trim().length > 0).length >= 3) {
+        if (Array.isArray(row) && !isDataRow(row) && row.filter(c => String(c).trim().length > 0).length >= 3) {
           bestHeaderIdx = i;
           break;
         }
@@ -74,7 +115,11 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
     // 2. Build composite headers merging header rows around bestHeaderIdx
     const parentRow = bestHeaderIdx > 0 ? rawMatrix[bestHeaderIdx - 1] : [];
     const headerRow = rawMatrix[bestHeaderIdx] || [];
-    const subRow1 = bestHeaderIdx + 1 < rawMatrix.length ? rawMatrix[bestHeaderIdx + 1] : [];
+    const subRowCandidate = bestHeaderIdx + 1 < rawMatrix.length ? rawMatrix[bestHeaderIdx + 1] : [];
+
+    // Critical check: if subRowCandidate is already a real store data row, NEVER merge it as sub-headers!
+    const isSubRowData = isDataRow(subRowCandidate);
+    const subRow1 = isSubRowData ? [] : subRowCandidate;
 
     const colKeys: string[] = [];
     let lastParent = '';
@@ -99,7 +144,7 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
       if (pVal && hVal && pVal.toLowerCase() !== hVal.toLowerCase()) {
         merged = `${pVal} ${hVal}`;
       }
-      if (sVal && !isSubRowFormulaLabel && sVal !== hVal) {
+      if (sVal && !isSubRowFormulaLabel && sVal.toLowerCase() !== hVal.toLowerCase()) {
         merged = `${merged} ${sVal}`;
       }
 
@@ -107,10 +152,13 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
     }
 
     // 3. Find data start row index: skip rows containing input/rumus/subtotal/headers
-    let dataStartIdx = bestHeaderIdx + 1;
+    let dataStartIdx = isSubRowData ? (bestHeaderIdx + 1) : (bestHeaderIdx + 2);
     while (dataStartIdx < Math.min(rawMatrix.length, bestHeaderIdx + 6)) {
       const row = rawMatrix[dataStartIdx];
       if (Array.isArray(row)) {
+        if (isDataRow(row)) {
+          break; // It is verified data, start here!
+        }
         const rowText = row.map(cell => String(cell || '').toLowerCase()).join(' ');
         if (
           rowText.includes('input') || 
@@ -144,23 +192,49 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
     // 4. Extract Store Rows
     const storesList: Store[] = [];
 
-    // Find column index for store code & name if possible
+    // Find column index for store code & name with high precision
     let codeColIdx = -1;
     let nameColIdx = -1;
 
     colKeys.forEach((key, colIdx) => {
-      const lk = key.toLowerCase();
-      if (codeColIdx === -1 && (lk.includes('kdtk') || lk.includes('kd toko') || lk.includes('kode toko'))) {
+      const lk = key.trim().toLowerCase();
+      if (
+        codeColIdx === -1 && 
+        (lk === 'kdt' || lk === 'kdtk' || lk === 'kd toko' || lk === 'kd_toko' || 
+         lk === 'kode toko' || lk === 'kode' || lk === 'kodetoko' || lk === 'code' || 
+         lk === 'store code' || lk === 'storecode' || lk.startsWith('kdt') ||
+         lk.includes('kd toko') || lk.includes('kode toko') || lk.includes('kdtk'))
+      ) {
         codeColIdx = colIdx;
       }
-      if (nameColIdx === -1 && (lk.includes('nama toko') || lk.includes('namatoko') || lk.includes('nama'))) {
+      if (
+        nameColIdx === -1 && 
+        (lk === 'nama' || lk === 'nama toko' || lk === 'namatoko' || lk === 'name' || 
+         lk === 'store name' || lk === 'storename' || lk.includes('nama toko') || 
+         lk.includes('namatoko') || (lk.startsWith('nama') && !lk.includes('korlap') && !lk.includes('kabupaten')))
+      ) {
         nameColIdx = colIdx;
       }
     });
 
-    // Fallback if column headers didn't catch KDTK explicitly: check columns 1 and 2
-    if (codeColIdx === -1) codeColIdx = 1; // Col B
-    if (nameColIdx === -1) nameColIdx = 2; // Col C
+    // Smart fallback: inspect sample row at dataStartIdx to definitively locate code & name columns
+    if (codeColIdx === -1 || nameColIdx === -1 || codeColIdx === nameColIdx) {
+      const sampleRow = rawMatrix[dataStartIdx] || [];
+      if (Array.isArray(sampleRow)) {
+        const c0 = String(sampleRow[0] || '').trim();
+        const c1 = String(sampleRow[1] || '').trim();
+        if (/^[A-Z0-9]{3,6}$/i.test(c0) && isNaN(Number(c0))) {
+          codeColIdx = 0;
+          nameColIdx = 1;
+        } else if (/^\d{1,4}$/.test(c0) && /^[A-Z0-9]{3,6}$/i.test(c1) && isNaN(Number(c1))) {
+          codeColIdx = 1;
+          nameColIdx = 2;
+        } else {
+          if (codeColIdx === -1) codeColIdx = 0;
+          if (nameColIdx === -1 || nameColIdx === codeColIdx) nameColIdx = codeColIdx + 1;
+        }
+      }
+    }
 
     for (let r = dataStartIdx; r < rawMatrix.length; r++) {
       const row = rawMatrix[r];
@@ -221,14 +295,14 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
         return '';
       };
 
-      const kabVal = findVal(['kabupaten', 'kota', 'kab', 'city']);
-      const kecVal = findVal(['kecamatan', 'district']);
+      const kabVal = findVal(['kabupate', 'kabupaten', 'kota', 'kab', 'city', 'nama kabupaten']);
+      const kecVal = findVal(['kecamatan', 'nama kecamatan', 'district', 'kec']);
       const addressVal = findVal(['alamat', 'address', 'lokasi']);
       const amVal = findVal(['am', 'area manager']);
       const asVal = findVal(['as', 'assistant manager']);
-      const region = findVal(['wilayah', 'cabang', 'region', 'area']) || 'BALI';
-      const coverageVal = findVal(['coverage', 'dc/igr', 'dc / igr', 'distribusi']);
-      const typeSoVal = findVal(['type so', 'status so', 'type_so', 'q/m', 'qm']);
+      const region = findVal(['wilaya', 'wilayah', 'cabang', 'region', 'area']) || 'BALI';
+      const coverageVal = findVal(['covera', 'coverage', 'dc/igr', 'dc / igr', 'distribusi']);
+      const typeSoVal = findVal(['type so', 'status so', 'type_so', 'type', 'tipe', 'q/m', 'qm']);
       const korlapRaw = findVal([
         'korlap/officer so',
         'korlap / officer so',
@@ -246,11 +320,13 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
       ]);
       const korlap = normalizeKorlapName(korlapRaw) || korlapRaw;
       const jop = findVal(['jop']);
-      const saldoRaw = findVal(['saldo toko agustus', 'saldo toko', 'saldo_toko', 'saldo']);
-      let saldoTokoNum: number | string = saldoRaw;
-      if (saldoRaw) {
-        const cleaned = saldoRaw.replace(/[^0-9.-]/g, '');
-        saldoTokoNum = !isNaN(Number(cleaned)) && cleaned !== '' ? Number(cleaned) : saldoRaw;
+      const saldoRaw = findVal(['do toko sept', 'saldo toko sept', 'do toko', 'saldo toko agustus', 'saldo toko', 'saldo_toko', 'saldo']);
+      const kasRaw = findVal(['kas tok', 'kas toko', 'kas']);
+      let saldoTokoNum: number | string = saldoRaw || kasRaw;
+      if (saldoRaw || kasRaw) {
+        const targetVal = saldoRaw || kasRaw;
+        const cleaned = targetVal.replace(/[^0-9.-]/g, '');
+        saldoTokoNum = !isNaN(Number(cleaned)) && cleaned !== '' ? Number(cleaned) : targetVal;
       }
 
       // Parse coordinates if provided
@@ -323,7 +399,7 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
       const jenisTokoVal = findVal(['jenis toko', 'jenis_toko', 'tipetoko', 'tipe toko', 'storetype']);
       
       // Parse SO AKTIVA column strictly (Ya vs Tidak)
-      const soAktivaRaw = findVal(['so aktiva', 'so_aktiva', 'aktiva', 'so aktiva tetap', 'aktiva so', 'status aktiva']);
+      const soAktivaRaw = findVal(['so akti', 'so aktiva', 'so_aktiva', 'aktiva', 'so aktiva tetap', 'aktiva so', 'status aktiva']);
       let soAktivaVal: string = 'Tidak';
       if (soAktivaRaw) {
         const aUpper = soAktivaRaw.toUpperCase().trim();
@@ -339,21 +415,24 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
       const rowKeys = Object.keys(rowObj);
       const hasSpecificSeptemberCol = rowKeys.some(k => {
         const lk = k.trim().toLowerCase();
-        return lk.includes('september') || lk.includes('sep 26') || lk.includes('so sep');
+        return lk.includes('september') || lk.includes('sep 26') || lk.includes('so sep') || lk.includes("so september '");
       });
 
-      const tglSoMei = formatSmartSODate(findVal(["so mei '26", 'so mei', 'tgl so mei', 'mei']));
-      const tglSoJuni = formatSmartSODate(findVal(["so juni '26", 'so juni', 'tgl so juni', 'juni']));
-      const tglSoJuli = formatSmartSODate(findVal(["so juli '26", 'so juli', 'tgl so juli', 'juli']));
-      const soAgustusRaw = findVal(["so agustus '26", 'so agustus', 'tgl so agustus', 'agustus', 'so ags']);
+      const tglSoMei = formatSmartSODate(findVal(["so mei '", "so mei '26", 'so mei 2026', 'so mei', 'tgl so mei', 'mei']));
+      const tglSoJuni = formatSmartSODate(findVal(["so juni '", "so juni '26", 'so juni 2026', 'so juni', 'tgl so juni', 'juni']));
+      const tglSoJuli = formatSmartSODate(findVal(["so juli '", "so juli '26", 'so juli 2026', 'so juli', 'tgl so juli', 'juli']));
+      const soAgustusRaw = findVal(["so agustus '", "so agustus '26", 'so agustus 2026', 'so agustus', 'tgl so agustus', 'agustus', 'so ags']);
       const soAgustus = formatSmartSODate(soAgustusRaw);
-      const soSeptemberRaw = findVal(["so september '26", 'so september', 'tgl so september', 'september', 'so sep', 'tgl so sep', 'so sep 26', 'so september 2026']);
+      const soSeptemberRaw = findVal([
+        "so september '", "so september '26", 'so september 2026', 'so september', 'tgl so september', 
+        'september \'26', 'september 2026', 'september', 'so sep 26', 'so sep \'26', 'so sep', 'tgl so sep', 'sep \'26', 'sep 26', 'sep'
+      ]);
       let soSeptember = formatSmartSODate(soSeptemberRaw);
-      const soOktoberRaw = findVal(["so oktober '26", 'so oktober', 'tgl so oktober', 'oktober', 'so okt']);
+      const soOktoberRaw = findVal(["so oktober '", "so oktober '26", 'so oktober 2026', 'so oktober', 'tgl so oktober', 'oktober', 'so okt']);
       let soOktober = formatSmartSODate(soOktoberRaw);
-      const soNovemberRaw = findVal(["so november '26", 'so november', 'tgl so november', 'november', 'so nov']);
+      const soNovemberRaw = findVal(["so november '", "so november '26", 'so november 2026', 'so november', 'tgl so november', 'november', 'so nov']);
       let soNovember = formatSmartSODate(soNovemberRaw);
-      const soDesemberRaw = findVal(["so desember '26", 'so desember', 'tgl so desember', 'desember', 'so des']);
+      const soDesemberRaw = findVal(["so desember '", "so desember '26", 'so desember 2026', 'so desember', 'tgl so desember', 'desember', 'so des']);
       let soDesember = formatSmartSODate(soDesemberRaw);
       
       // Generic SO schedule date (e.g. from a monthly master sheet with header "TGL SO" or "JADWAL SO")

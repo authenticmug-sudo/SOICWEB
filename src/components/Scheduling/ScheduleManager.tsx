@@ -218,7 +218,27 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
         (s.officerInCharge && s.officerInCharge.toLowerCase().includes(searchQuery.toLowerCase())) ||
         (s.spvInCharge && s.spvInCharge.toLowerCase().includes(searchQuery.toLowerCase()));
       
-      const matchesRegion = selectedRegion === 'ALL' || s.region === selectedRegion;
+      let matchesRegion = true;
+      if (selectedRegion !== 'ALL') {
+        const schedReg = (s.region || '').trim().toLowerCase();
+        const targetReg = selectedRegion.trim().toLowerCase();
+        const matchingStore = stores.find(st => 
+          (st.code && s.storeCode && st.code.trim().toUpperCase() === s.storeCode.trim().toUpperCase()) || 
+          (st.id && s.storeId && st.id.trim().toUpperCase() === s.storeId.trim().toUpperCase())
+        );
+        const storeReg = (matchingStore?.region || '').trim().toLowerCase();
+        const storeKab = (matchingStore?.kabupaten || matchingStore?.city || '').trim().toLowerCase();
+        
+        matchesRegion = 
+          schedReg === targetReg ||
+          storeReg === targetReg ||
+          storeKab === targetReg ||
+          (schedReg.length > 3 && targetReg.includes(schedReg)) ||
+          (targetReg.length > 3 && schedReg.includes(targetReg)) ||
+          (storeReg.length > 3 && targetReg.includes(storeReg)) ||
+          (targetReg.length > 3 && storeReg.includes(targetReg));
+      }
+      
       const matchesStatus = selectedStatus === 'ALL' || s.status === selectedStatus;
       
       let matchesGroup = true;
@@ -231,10 +251,11 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
         );
         const storeOfficer = matchingStore?.korlap || '';
         
-        // Match if EITHER schedule officer OR master store korlap matches target Korlap!
+        // Match if EITHER schedule officer, master store korlap, or leader matches target Korlap!
         const matchSchedule = !!scheduleOfficer && scheduleOfficer !== 'PETUGAS SO' && isKorlapMatch(scheduleOfficer, selectedGroupKorlap);
         const matchStore = !!storeOfficer && isKorlapMatch(storeOfficer, selectedGroupKorlap);
-        matchesGroup = matchSchedule || matchStore;
+        const matchLeader = !!s.personilLeader && isKorlapMatch(s.personilLeader, selectedGroupKorlap);
+        matchesGroup = matchSchedule || matchStore || matchLeader;
       }
 
       // Date Filtering Logic
