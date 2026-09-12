@@ -75,6 +75,9 @@ export interface Store {
   spvApprover?: string; // Nama SPV yang menyetujui hasil SO
   smartClassification?: string; // Klasifikasi Kriteria Cerdas (Dynamic Category)
   korlap?: string; // KORLAP/OFFICER e.g. angga, pasek, odi
+  teamName?: string; // TEAM from sheet JADWAL
+  personilLeader?: string; // PERSONIL / Leader from sheet JADWAL
+  dayName?: string; // HARI (SENIN, SABTU, etc.)
   jenisToko?: string; // JENIS TOKO e.g. STANDART NEW
   jop?: string | number; // JOP
   storeType: StoreType;
@@ -482,6 +485,7 @@ export interface MasterTokoDataset {
   notes?: string;
   stores: Store[];
   rawColumns?: string[];
+  extractedSchedules?: SOSchedule[];
 }
 
 export type StandbyStatus = 'Siap Standby' | 'On-Call Aktif' | 'Terpanggil Tugas' | 'Selesai' | 'Batal / Sakit';

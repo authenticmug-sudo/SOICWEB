@@ -343,6 +343,19 @@ export function autoSyncStoreWithApprovedSchedule(
 export function extractStoreSODateForPeriod(st: Store, targetMonth: string = '09', targetYear: string = '2026'): { isoDate: string; rawVal: string } {
   if (!st) return { isoDate: '', rawVal: '' };
 
+  // Special Saturday SO in September 2026 rule:
+  // In the operational schedule (sheet JADWAL), exactly 12 stores are scheduled for Saturday, 12 September 2026.
+  const SATURDAY_STORES_SEP_2026 = new Set([
+    'TD8L', 'TEEK', 'T8TZ', 'T1X2', 'FQ18', 'FEVA', 'FOFL', 'T1FF', 'T5DA', 'FTZZ', 'F4SD', 'TECP'
+  ]);
+  const codeUpper = (st.code || '').trim().toUpperCase();
+  const isSaturdayStore = SATURDAY_STORES_SEP_2026.has(codeUpper) || 
+    (st.dayName && st.dayName.trim().toUpperCase() === 'SABTU');
+
+  if (isSaturdayStore && (targetMonth === '09' || targetMonth === 'ALL')) {
+    return { isoDate: '2026-09-12', rawVal: '12 Sep 2026' };
+  }
+
   const anySt = st as any;
   let rawDateVal = '';
 
@@ -663,11 +676,15 @@ export function syncSchedulesFromMasterStores(
         staleScheduleIdsToDelete.push(targetSched.id);
       }
 
+      const effectiveTeam = st.teamName || targetSched.teamName || 'TEAM 1';
+      const effectivePersonil = st.personilLeader || targetSched.personilLeader || '';
+      const effectiveDay = st.dayName || dayName;
+
       const updatedSched: SOSchedule = {
         ...targetSched,
         id: newId,
         scheduledDate: isoDate,
-        dayName: dayName,
+        dayName: effectiveDay,
         storeId: st.id,
         storeCode: st.code,
         storeName: st.name,
@@ -678,6 +695,10 @@ export function syncSchedulesFromMasterStores(
         typeSo: st.typeSo || st.qm || targetSched.typeSo || 'M',
         officerInCharge: canonicalOfficer,
         groupName: canonicalOfficer,
+        teamName: effectiveTeam,
+        teamCategory: effectiveTeam,
+        personilLeader: effectivePersonil,
+        assignedPersonnelNames: effectivePersonil ? [effectivePersonil] : (targetSched.assignedPersonnelNames || []),
         region: st.region || st.kabupaten || targetSched.region || 'Kota Denpasar',
         status: targetSched.status || 'Terjadwal',
         spvApprovalStatus: targetSched.spvApprovalStatus || 'Menunggu Approval SPV'
@@ -686,6 +707,11 @@ export function syncSchedulesFromMasterStores(
       processedUnapprovedSchedules.push(updatedSched);
     } else {
       // Create fresh schedule
+      const effectiveTeam = st.teamName || 'TEAM 1';
+      const effectivePersonil = st.personilLeader || '';
+      const effectiveDay = st.dayName || dayName;
+      const cleanTeamId = effectiveTeam.replace(/[^a-zA-Z0-9]/g, '-').toUpperCase();
+
       const newSchedule: SOSchedule = {
         id: `SCHED-${st.code || st.id}-${isoDate}`,
         storeId: st.id,
@@ -693,13 +719,15 @@ export function syncSchedulesFromMasterStores(
         storeName: st.name,
         scheduledDate: isoDate,
         scheduledTime: '08:00',
-        teamId: 'TEAM-01',
-        teamName: 'TEAM 1',
-        teamCategory: 'TEAM 1',
+        teamId: cleanTeamId.startsWith('TEAM') ? cleanTeamId : `TEAM-${cleanTeamId}`,
+        teamName: effectiveTeam,
+        teamCategory: effectiveTeam,
         spvInCharge: 'I GEDE PASEK SANTIKA',
         officerInCharge: canonicalOfficer,
         groupName: canonicalOfficer,
-        dayName: dayName,
+        personilLeader: effectivePersonil,
+        assignedPersonnelNames: effectivePersonil ? [effectivePersonil] : [],
+        dayName: effectiveDay,
         stockRp: storeSaldo,
         kasToko: st.kasToko || 0,
         typeSo: st.typeSo || st.qm || 'M',

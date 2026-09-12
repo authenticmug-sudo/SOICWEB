@@ -665,6 +665,55 @@ export default function App() {
       });
     }
 
+    // Specialized Saturday September 2026 handling:
+    // Ensure all 12 Saturday stores are strictly mapped to 2026-09-12 with dayName = 'SABTU'
+    const SATURDAY_STORES_SEP_2026 = new Set([
+      'TD8L', 'TEEK', 'T8TZ', 'T1X2', 'FQ18', 'FEVA', 'FOFL', 'T1FF', 'T5DA', 'FTZZ', 'F4SD', 'TECP'
+    ]);
+    updatedSchedules = updatedSchedules.map(sch => {
+      const code = (sch.storeCode || '').trim().toUpperCase();
+      if (SATURDAY_STORES_SEP_2026.has(code) || sch.dayName === 'SABTU' || sch.scheduledDate === '2026-09-05') {
+        return {
+          ...sch,
+          scheduledDate: '2026-09-12',
+          dayName: 'SABTU'
+        };
+      }
+      return sch;
+    });
+
+    // If active dataset has extractedSchedules (from sheet JADWAL), merge missing ones and rich team/personil info
+    if (activeDs?.extractedSchedules && activeDs.extractedSchedules.length > 0) {
+      const schedMap = new Map<string, SOSchedule>();
+      updatedSchedules.forEach(s => {
+        const key = `${s.storeCode || s.storeId}-${s.scheduledDate}`;
+        schedMap.set(key, s);
+      });
+
+      activeDs.extractedSchedules.forEach(ext => {
+        const key = `${ext.storeCode || ext.storeId}-${ext.scheduledDate}`;
+        if (!schedMap.has(key)) {
+          schedMap.set(key, ext);
+        } else {
+          const cur = schedMap.get(key)!;
+          schedMap.set(key, {
+            ...cur,
+            teamName: ext.teamName || cur.teamName,
+            teamCategory: ext.teamCategory || cur.teamCategory,
+            teamId: ext.teamId || cur.teamId,
+            personilLeader: ext.personilLeader || cur.personilLeader,
+            officerInCharge: ext.officerInCharge || cur.officerInCharge,
+            groupName: ext.groupName || cur.groupName,
+            dayName: ext.dayName || cur.dayName,
+            stockRp: Number(ext.stockRp) > 0 ? Number(ext.stockRp) : cur.stockRp,
+            kasToko: Number(ext.kasToko) > 0 ? Number(ext.kasToko) : cur.kasToko
+          });
+        }
+      });
+
+      updatedSchedules = Array.from(schedMap.values());
+    }
+
     if (result.staleScheduleIdsToDelete && result.staleScheduleIdsToDelete.length > 0) {
       const activeIds = new Set(updatedSchedules.map(s => s.id));
       const realStaleIds = result.staleScheduleIdsToDelete.filter(id => !activeIds.has(id));
@@ -1454,13 +1503,40 @@ export default function App() {
       setSelectedYear(detected.year);
 
       // Smart auto-synchronize schedules from Master Store SO dates with replace mode
-      const { updatedSchedules, staleScheduleIdsToDelete } = syncSchedulesFromMasterStores(
+      let { updatedSchedules, staleScheduleIdsToDelete } = syncSchedulesFromMasterStores(
         synced, 
         schedules, 
         detected.month, 
         detected.year, 
         { isReplaceMode: true, results }
       );
+
+      if (activeDs.extractedSchedules && activeDs.extractedSchedules.length > 0) {
+        const schedMap = new Map<string, SOSchedule>();
+        updatedSchedules.forEach(s => schedMap.set(`${s.storeCode || s.storeId}-${s.scheduledDate}`, s));
+        activeDs.extractedSchedules.forEach(ext => {
+          const key = `${ext.storeCode || ext.storeId}-${ext.scheduledDate}`;
+          if (!schedMap.has(key)) {
+            schedMap.set(key, ext);
+          } else {
+            const cur = schedMap.get(key)!;
+            schedMap.set(key, {
+              ...cur,
+              teamName: ext.teamName || cur.teamName,
+              teamCategory: ext.teamCategory || cur.teamCategory,
+              teamId: ext.teamId || cur.teamId,
+              personilLeader: ext.personilLeader || cur.personilLeader,
+              officerInCharge: ext.officerInCharge || cur.officerInCharge,
+              groupName: ext.groupName || cur.groupName,
+              dayName: ext.dayName || cur.dayName,
+              stockRp: Number(ext.stockRp) > 0 ? Number(ext.stockRp) : cur.stockRp,
+              kasToko: Number(ext.kasToko) > 0 ? Number(ext.kasToko) : cur.kasToko
+            });
+          }
+        });
+        updatedSchedules = Array.from(schedMap.values());
+      }
+
       purgeStaleSchedules(staleScheduleIdsToDelete);
       setSchedules(updatedSchedules);
       saveSchedules(updatedSchedules, true);
@@ -1493,13 +1569,40 @@ export default function App() {
       setSelectedYear(detected.year);
 
       // Smart auto-synchronize schedules from Master Store SO dates with replace mode
-      const { updatedSchedules, staleScheduleIdsToDelete } = syncSchedulesFromMasterStores(
+      let { updatedSchedules, staleScheduleIdsToDelete } = syncSchedulesFromMasterStores(
         synced, 
         schedules, 
         detected.month, 
         detected.year, 
         { isReplaceMode: true, results }
       );
+
+      if (target.extractedSchedules && target.extractedSchedules.length > 0) {
+        const schedMap = new Map<string, SOSchedule>();
+        updatedSchedules.forEach(s => schedMap.set(`${s.storeCode || s.storeId}-${s.scheduledDate}`, s));
+        target.extractedSchedules.forEach(ext => {
+          const key = `${ext.storeCode || ext.storeId}-${ext.scheduledDate}`;
+          if (!schedMap.has(key)) {
+            schedMap.set(key, ext);
+          } else {
+            const cur = schedMap.get(key)!;
+            schedMap.set(key, {
+              ...cur,
+              teamName: ext.teamName || cur.teamName,
+              teamCategory: ext.teamCategory || cur.teamCategory,
+              teamId: ext.teamId || cur.teamId,
+              personilLeader: ext.personilLeader || cur.personilLeader,
+              officerInCharge: ext.officerInCharge || cur.officerInCharge,
+              groupName: ext.groupName || cur.groupName,
+              dayName: ext.dayName || cur.dayName,
+              stockRp: Number(ext.stockRp) > 0 ? Number(ext.stockRp) : cur.stockRp,
+              kasToko: Number(ext.kasToko) > 0 ? Number(ext.kasToko) : cur.kasToko
+            });
+          }
+        });
+        updatedSchedules = Array.from(schedMap.values());
+      }
+
       purgeStaleSchedules(staleScheduleIdsToDelete);
       setSchedules(updatedSchedules);
       saveSchedules(updatedSchedules, true);

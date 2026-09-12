@@ -682,6 +682,29 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
             >
               Sep 2026
             </button>
+            <button
+              type="button"
+              id="btn-filter-sabtu-12-sep"
+              onClick={() => {
+                setSelectedSpecificDate('2026-09-12');
+                setSelectedYear('2026');
+                setSelectedMonth('09');
+                setSelectedDay('12');
+              }}
+              className={`px-2.5 py-2 text-xs font-bold rounded-xl border transition shrink-0 flex items-center gap-1.5 ${
+                selectedSpecificDate === '2026-09-12' || (selectedMonth === '09' && selectedDay === '12')
+                  ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
+                  : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300'
+              }`}
+              title="Filter langsung jadwal Sabtu 12 September 2026 (12 Toko)"
+            >
+              <span>📅 Sabtu 12 Sep</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                selectedSpecificDate === '2026-09-12' || (selectedMonth === '09' && selectedDay === '12')
+                  ? 'bg-amber-700 text-white'
+                  : 'bg-amber-200 text-amber-900'
+              }`}>12 Toko</span>
+            </button>
 
             {onTwoWaySync && (
               <button

@@ -137,6 +137,10 @@ export const MasterTokoManager: React.FC<MasterTokoManagerProps> = ({
       return;
     }
 
+    const currentSheetResult = parsedSheetResults.find(s => s.sheetName === selectedSheetName);
+    const extractedSchedules = currentSheetResult?.extractedSchedules || 
+      parsedSheetResults.find(s => s.extractedSchedules && s.extractedSchedules.length > 0)?.extractedSchedules;
+
     const newDataset: MasterTokoDataset = {
       id: `DATASET-${Date.now()}`,
       title: fileTitle || uploadedFile.name,
@@ -149,7 +153,8 @@ export const MasterTokoManager: React.FC<MasterTokoManagerProps> = ({
       isActiveForScheduling: setAsActive,
       notes: notes,
       stores: parsedStores,
-      rawColumns: rawColumns
+      rawColumns: rawColumns,
+      extractedSchedules: extractedSchedules
     };
 
     onUploadDataset(newDataset);

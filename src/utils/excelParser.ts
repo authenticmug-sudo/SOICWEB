@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
-import { Store } from '../types/stockOpname';
+import { Store, SOSchedule } from '../types/stockOpname';
 import { parseCoordinates, autoSyncStoreRegionAndKabupaten } from './geoUtils';
-import { formatSmartSODate, parseSmartDate, formatDateISO } from './formatters';
+import { formatSmartSODate, parseSmartDate, formatDateISO, parseCurrentMonthSODate } from './formatters';
 import { normalizeKorlapName } from './korlapUtils';
 import { getDeterministicStoreId } from '../services/storageService';
 import { isStoreZonaHitam } from './storeSyncUtils';
@@ -11,6 +11,7 @@ export interface SheetParseResult {
   stores: Store[];
   indicators: string[];
   rawHeaders: string[];
+  extractedSchedules?: SOSchedule[];
 }
 
 export interface WorkbookParseResult {
@@ -55,8 +56,9 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
       const s = String(cellVal || '').trim().toLowerCase();
       if (!s) return false;
       return (
-        s === 'kdt' || s === 'kdtk' || s === 'kd toko' || s === 'kd_toko' || s === 'kode toko' || s === 'kode' || s === 'code' ||
-        s === 'nama' || s === 'nama toko' || s === 'namatoko' || s === 'name' || s === 'store' ||
+        s === 'kdt' || s === 'kdtk' || s === 'kd toko' || s === 'kd_toko' || s === 'kode toko' || s === 'kode' || s === 'code' || s === 'idm' ||
+        s === 'nama' || s === 'nama toko' || s === 'namatoko' || s === 'name' || s === 'store' || s === 'toko' ||
+        s === 'team' || s === 'tim' || s === 'group' || s === 'grup' || s === 'personil' || s === 'leader' || s === 'hari' || s === 'day' || s === 'jml orang' || s === 'stock rp' ||
         s === 'koordinat' || s === 'lat' || s === 'long' || s === 'gps' || s === 'coordinate' ||
         s === 'saldo' || s === 'kas' || s === 'do toko' || s === 'saldo toko' || s.startsWith('do toko') || s.startsWith('saldo toko') ||
         s === 'kas tok' || s === 'kas toko' ||
@@ -202,16 +204,18 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
         codeColIdx === -1 && 
         (lk === 'kdt' || lk === 'kdtk' || lk === 'kd toko' || lk === 'kd_toko' || 
          lk === 'kode toko' || lk === 'kode' || lk === 'kodetoko' || lk === 'code' || 
-         lk === 'store code' || lk === 'storecode' || lk.startsWith('kdt') ||
-         lk.includes('kd toko') || lk.includes('kode toko') || lk.includes('kdtk'))
+         lk === 'store code' || lk === 'storecode' || lk === 'idm' || lk === 'id toko' ||
+         lk === 'kd' || lk.startsWith('kdt') ||
+         lk.includes('kd toko') || lk.includes('kode toko') || lk.includes('kdtk') || lk === 'idm')
       ) {
         codeColIdx = colIdx;
       }
       if (
         nameColIdx === -1 && 
         (lk === 'nama' || lk === 'nama toko' || lk === 'namatoko' || lk === 'name' || 
-         lk === 'store name' || lk === 'storename' || lk.includes('nama toko') || 
-         lk.includes('namatoko') || (lk.startsWith('nama') && !lk.includes('korlap') && !lk.includes('kabupaten')))
+         lk === 'store name' || lk === 'storename' || lk === 'toko' || lk === 'store' ||
+         lk.includes('nama toko') || 
+         lk.includes('namatoko') || (lk.startsWith('nama') && !lk.includes('korlap') && !lk.includes('kabupaten') && !lk.includes('personil')))
       ) {
         nameColIdx = colIdx;
       }
@@ -559,6 +563,26 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
         }
       }
 
+      const teamVal = findVal(['team', 'tim', 'regu']);
+      const groupVal = findVal(['group', 'grup']);
+      const personilVal = findVal(['personil', 'leader', 'nama personil', 'auditor']);
+      const hariVal = findVal(['hari', 'day', 'hari so']);
+
+      // 12 stores specifically scheduled for Saturday, 12 September 2026 in the operational plan
+      const SATURDAY_STORES_SEP_2026 = new Set([
+        'TD8L', 'TEEK', 'T8TZ', 'T1X2', 'FQ18', 'FEVA', 'FOFL', 'T1FF', 'T5DA', 'FTZZ', 'F4SD', 'TECP'
+      ]);
+      const isSaturday = SATURDAY_STORES_SEP_2026.has(storeCode.trim().toUpperCase()) ||
+        hariVal.toUpperCase().includes('SABTU') ||
+        activeScheduledDateIso === '2026-09-05' ||
+        soSeptember === '5 Sep 2026';
+
+      if (isSaturday) {
+        activeScheduledDateIso = '2026-09-12';
+        soSeptember = '12 Sep 2026';
+        activeTglSo = '12 Sep 2026';
+      }
+
       const storeObj: Store = {
         id: getDeterministicStoreId({ code: storeCode, name: storeName }),
         code: storeCode,
@@ -579,7 +603,7 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
         typeSo: typeSoVal || 'M',
         qm: typeSoVal || 'M',
         smartClassification: findVal(['perubahan', 'kategori', 'klasifikasi', 'turun kelas']) || '',
-        korlap: korlap,
+        korlap: korlap || (groupVal ? (normalizeKorlapName(groupVal) || groupVal) : undefined),
         keterangan: ketVal,
         zona: zonaFormatted,
         isZonaHitam: isZonaHitam,
@@ -587,6 +611,9 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
         frekuensiTidakSO: frekuensiTidakSO,
         jenisToko: jenisTokoVal || 'REGULER',
         jop: jop,
+        teamName: teamVal || undefined,
+        personilLeader: personilVal || undefined,
+        dayName: isSaturday ? 'SABTU' : (hariVal || undefined),
         tglSoMei: tglSoMei !== '-' ? tglSoMei : undefined,
         tglSoJuni: tglSoJuni !== '-' ? tglSoJuni : undefined,
         tglSoJuli: tglSoJuli !== '-' ? tglSoJuli : undefined,
@@ -618,6 +645,174 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
     });
   }
 
+  // 2. Specialized extraction of operational SO schedules from "JADWAL" sheet
+  const SATURDAY_STORES_SET = new Set([
+    'TD8L', 'TEEK', 'T8TZ', 'T1X2', 'FQ18', 'FEVA', 'FOFL', 'T1FF', 'T5DA', 'FTZZ', 'F4SD', 'TECP'
+  ]);
+
+  const jadwalSheetKey = wb.SheetNames.find(n => n.trim().toUpperCase() === 'JADWAL' || n.trim().toUpperCase().includes('JADWAL'));
+  const extractedSchedules: SOSchedule[] = [];
+  const jadwalStoreMap = new Map<string, any>();
+
+  if (jadwalSheetKey && wb.Sheets[jadwalSheetKey]) {
+    const wsJadwal = wb.Sheets[jadwalSheetKey];
+    const rows = XLSX.utils.sheet_to_json<any[]>(wsJadwal, { header: 1, defval: '' });
+
+    // Locate header row in JADWAL (typically row 3 with NO, TEAM, GROUP, PERSONIL, HARI, IDM, TOKO, etc.)
+    let jCodeIdx = 6;
+    let jNameIdx = 7;
+    let jTeamIdx = 1;
+    let jGroupIdx = 2;
+    let jPersonilIdx = 3;
+    let jDayIdx = 4;
+    let jStockIdx = 8;
+    let jTglIdx = 9;
+    let jTypeIdx = 10;
+    let jKasIdx = 11;
+    let jAktivaIdx = 12;
+    let jZonaIdx = 13;
+    let jAsIdx = 15;
+    let headerRowIdx = -1;
+
+    for (let r = 0; r < Math.min(rows.length, 10); r++) {
+      const row = rows[r];
+      if (!Array.isArray(row)) continue;
+      const joined = row.map(c => String(c || '').trim().toUpperCase()).join(' ');
+      if (joined.includes('IDM') || joined.includes('TOKO') || joined.includes('PERSONIL')) {
+        headerRowIdx = r;
+        row.forEach((cell, idx) => {
+          const u = String(cell || '').trim().toUpperCase();
+          if (u === 'IDM' || u === 'KDTK' || u === 'KD TOKO') jCodeIdx = idx;
+          else if (u === 'TOKO' || u === 'NAMA TOKO') jNameIdx = idx;
+          else if (u === 'TEAM' || u === 'TIM') jTeamIdx = idx;
+          else if (u === 'GROUP' || u === 'GRUP') jGroupIdx = idx;
+          else if (u === 'PERSONIL' || u === 'LEADER') jPersonilIdx = idx;
+          else if (u === 'HARI' || u === 'DAY') jDayIdx = idx;
+          else if (u.includes('STOCK')) jStockIdx = idx;
+          else if (u.includes('TGL')) jTglIdx = idx;
+          else if (u === 'Q/M' || u === 'TYPE' || u === 'TYPE SO') jTypeIdx = idx;
+          else if (u.includes('KAS')) jKasIdx = idx;
+          else if (u.includes('AKTIVA')) jAktivaIdx = idx;
+          else if (u.includes('ZONA')) jZonaIdx = idx;
+          else if (u === 'AS') jAsIdx = idx;
+        });
+        break;
+      }
+    }
+
+    const startDataRow = headerRowIdx >= 0 ? headerRowIdx + 1 : 4;
+    for (let r = startDataRow; r < rows.length; r++) {
+      const row = rows[r];
+      if (!Array.isArray(row) || row.length === 0) continue;
+      const code = String(row[jCodeIdx] || '').trim().toUpperCase();
+      if (!code || code === 'IDM' || code === 'TOTAL' || code === 'KDTK' || code.length < 3 || code.length > 6 || !isNaN(Number(code))) continue;
+
+      const name = String(row[jNameIdx] || '').trim();
+      const team = String(row[jTeamIdx] || '').trim();
+      const group = String(row[jGroupIdx] || '').trim();
+      const personil = String(row[jPersonilIdx] || '').trim();
+      let day = String(row[jDayIdx] || '').trim().toUpperCase();
+      const stockRaw = row[jStockIdx];
+      const tglRaw = row[jTglIdx];
+      const typeSo = String(row[jTypeIdx] || 'M').trim();
+      const kasRaw = row[jKasIdx];
+      const aktivaRaw = String(row[jAktivaIdx] || '').trim();
+      const zonaRaw = String(row[jZonaIdx] || '').trim();
+      const asRaw = String(row[jAsIdx] || '').trim();
+
+      const isSaturday = day === 'SABTU' || SATURDAY_STORES_SET.has(code) || String(tglRaw).trim() === '46270';
+      let schedDate = '2026-09-01';
+
+      if (isSaturday) {
+        schedDate = '2026-09-12';
+        day = 'SABTU';
+      } else {
+        const parsedTgl = parseCurrentMonthSODate(tglRaw, '09', '2026');
+        if (parsedTgl.isValid) {
+          schedDate = parsedTgl.isoDate;
+        } else if (day === 'SELASA') schedDate = '2026-09-01';
+        else if (day === 'RABU') schedDate = '2026-09-02';
+        else if (day === 'KAMIS') schedDate = '2026-09-03';
+        else if (day === 'JUMAT') schedDate = '2026-09-04';
+        else if (day === 'SENIN') schedDate = '2026-09-07';
+      }
+
+      const canonicalKorlap = normalizeKorlapName(group) || group || 'I GEDE PASEK SANTIKA';
+      const cleanStock = typeof stockRaw === 'number' ? stockRaw : (parseFloat(String(stockRaw || '').replace(/[^0-9.-]/g, '')) || 0);
+      const cleanKas = typeof kasRaw === 'number' ? kasRaw : (parseFloat(String(kasRaw || '').replace(/[^0-9.-]/g, '')) || 0);
+      const cleanZona = zonaRaw.toUpperCase().includes('HITAM') && !zonaRaw.toUpperCase().includes('NON') ? 'ZONA HITAM' : 'NON ZONA HITAM';
+      const cleanAktiva = aktivaRaw.toUpperCase().includes('YA') || aktivaRaw.toUpperCase().includes('AKTIVA') ? 'Ya' : 'Tidak';
+      const cleanTeam = team || 'TEAM 1';
+
+      const schedItem: SOSchedule = {
+        id: `SCHED-${code}-${schedDate}`,
+        storeId: getDeterministicStoreId({ code, name: name || `TOKO ${code}` }),
+        storeCode: code,
+        storeName: name || `TOKO ${code}`,
+        scheduledDate: schedDate,
+        scheduledTime: '08:00',
+        teamId: `TEAM-${cleanTeam.replace(/[^a-zA-Z0-9]/g, '')}`,
+        teamName: cleanTeam,
+        teamCategory: cleanTeam,
+        spvInCharge: 'I GEDE PASEK SANTIKA',
+        officerInCharge: canonicalKorlap,
+        groupName: canonicalKorlap,
+        personilLeader: personil,
+        assignedPersonnelNames: personil ? [personil] : [],
+        dayName: day,
+        stockRp: cleanStock,
+        kasToko: cleanKas,
+        typeSo: typeSo || 'M',
+        zona: cleanZona,
+        soAktiva: cleanAktiva,
+        asInitial: asRaw,
+        region: 'BALI',
+        status: 'Terjadwal',
+        targetSKUCount: 1000,
+        spvApprovalStatus: 'Menunggu Approval SPV',
+        notes: `Jadwal operasional SO dari file Excel (${day}, ${cleanTeam})`,
+        createdAt: new Date().toISOString().slice(0, 10)
+      };
+
+      extractedSchedules.push(schedItem);
+      jadwalStoreMap.set(code, schedItem);
+    }
+  }
+
+  // Cross-enrich stores in all sheets with the operational schedule details from JADWAL
+  sheetResults.forEach(res => {
+    if (res.sheetName.toUpperCase().includes('JADWAL')) {
+      res.extractedSchedules = extractedSchedules;
+    }
+    res.stores.forEach(st => {
+      const codeKey = (st.code || '').trim().toUpperCase();
+      const sched = jadwalStoreMap.get(codeKey);
+      if (sched) {
+        st.scheduledDate = sched.scheduledDate;
+        st.tglSo = formatSmartSODate(sched.scheduledDate);
+        st.soSeptember = formatSmartSODate(sched.scheduledDate);
+        st.dayName = sched.dayName;
+        st.teamName = sched.teamName;
+        st.personilLeader = sched.personilLeader;
+        st.korlap = sched.officerInCharge;
+        st.managerName = sched.officerInCharge;
+        st.typeSo = sched.typeSo;
+        st.qm = sched.typeSo;
+        st.soAktiva = sched.soAktiva;
+        st.zona = sched.zona;
+        st.isZonaHitam = sched.zona === 'ZONA HITAM';
+        if (sched.stockRp > 0) st.saldoToko = sched.stockRp;
+        if (sched.kasToko > 0) st.kasToko = sched.kasToko;
+        if (sched.asInitial) st.as = sched.asInitial;
+      } else if (SATURDAY_STORES_SET.has(codeKey)) {
+        st.scheduledDate = '2026-09-12';
+        st.tglSo = '12 Sep 2026';
+        st.soSeptember = '12 Sep 2026';
+        st.dayName = 'SABTU';
+      }
+    });
+  });
+
   // Prioritize "MASTER TOKO BALI" sheet if present!
   let masterBaliSheet = sheetResults.find(s => 
     s.sheetName.toUpperCase().includes('MASTER TOKO BALI') || 
@@ -632,6 +827,10 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
         if (!best) return current;
         return current.stores.length > best.stores.length ? current : best;
       }, null);
+
+  if (bestSheet && extractedSchedules.length > 0) {
+    bestSheet.extractedSchedules = extractedSchedules;
+  }
 
   return {
     allSheets: sheetResults,
