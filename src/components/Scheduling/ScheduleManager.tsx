@@ -46,7 +46,8 @@ import {
   getAvailableKorlapList, 
   isKorlapMatch, 
   normalizeKorlapName, 
-  resolveSchedulePersonnelDisplay 
+  resolveSchedulePersonnelDisplay,
+  resolveStoreDefaultKorlap
 } from '../../utils/korlapUtils';
 
 interface ScheduleManagerProps {
@@ -68,6 +69,8 @@ interface ScheduleManagerProps {
   onApproveSchedule?: (scheduleId: string) => void;
   onRejectSchedule?: (scheduleId: string, reason?: string) => void;
   onTwoWaySync?: () => void;
+  onResetSchedules?: () => void;
+  onResetMasterAndSchedules?: () => void;
 }
 
 export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
@@ -88,7 +91,9 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
   onConfirmScheduleFinished,
   onApproveSchedule,
   onRejectSchedule,
-  onTwoWaySync
+  onTwoWaySync,
+  onResetSchedules,
+  onResetMasterAndSchedules
 }) => {
   const [activeScheduleTab, setActiveScheduleTab] = useState<'HARI_H' | 'H_MINUS_1' | 'ALL_SEPTEMBER'>('ALL_SEPTEMBER');
   const [searchQuery, setSearchQuery] = useState('');
@@ -101,7 +106,10 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
   const [selectedYear, setSelectedYear] = useState<string>('ALL');
   const [selectedMonth, setSelectedMonth] = useState<string>('ALL');
   const [selectedDay, setSelectedDay] = useState<string>('ALL');
+  const [selectedDayOfWeek, setSelectedDayOfWeek] = useState<string>('ALL');
   const [selectedSpecificDate, setSelectedSpecificDate] = useState<string>('');
+  const [isResetConfirmModalOpen, setIsResetConfirmModalOpen] = useState<boolean>(false);
+  const [resetConfirmInput, setResetConfirmInput] = useState<string>('');
   
   const [superAdminRoleMode, setSuperAdminRoleMode] = useState<'SUPERVISOR' | 'OFFICER'>('SUPERVISOR');
   const [viewMode, setViewMode] = useState<'list' | 'officer' | 'calendar' | 'approval'>(
@@ -169,12 +177,13 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
     });
   }, []);
 
-  const isDateFilterActive = selectedYear !== 'ALL' || selectedMonth !== 'ALL' || selectedDay !== 'ALL' || Boolean(selectedSpecificDate);
+  const isDateFilterActive = selectedYear !== 'ALL' || selectedMonth !== 'ALL' || selectedDay !== 'ALL' || selectedDayOfWeek !== 'ALL' || Boolean(selectedSpecificDate);
 
   const handleResetDateFilters = () => {
     setSelectedYear('ALL');
     setSelectedMonth('ALL');
     setSelectedDay('ALL');
+    setSelectedDayOfWeek('ALL');
     setSelectedSpecificDate('');
   };
 
@@ -185,7 +194,51 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
     setSelectedYear(String(today.getFullYear()));
     setSelectedMonth(String(today.getMonth() + 1).padStart(2, '0'));
     setSelectedDay(String(today.getDate()).padStart(2, '0'));
+    setSelectedDayOfWeek(getDayNameIndo(iso));
   };
+
+  // Helper to accurately resolve Korlap for schedule based on Master Store as Primary Source of Truth
+  const getEffectiveKorlapForSchedule = React.useCallback((s: SOSchedule): string => {
+    // 1. PRIORITAS UTAMA: Kolom Korlap / Officer pada Master Toko
+    const matchingStore = stores.find(st => 
+      (st.code && s.storeCode && st.code.trim().toUpperCase() === s.storeCode.trim().toUpperCase()) || 
+      (st.id && s.storeId && st.id.trim().toUpperCase() === s.storeId.trim().toUpperCase()) ||
+      (st.name && s.storeName && st.name.trim().toLowerCase() === s.storeName.trim().toLowerCase())
+    );
+    if (matchingStore?.korlap && matchingStore.korlap !== 'Petugas SO' && matchingStore.korlap !== 'PETUGAS SO' && matchingStore.korlap !== 'Belum Ditentukan') {
+      return normalizeKorlapName(matchingStore.korlap) || matchingStore.korlap;
+    }
+
+    // 2. Fallback jika master toko belum memiliki korlap: gunakan data group/officer dari jadwal
+    if (s.groupName && s.groupName !== 'Petugas SO' && s.groupName !== 'PETUGAS SO') {
+      return normalizeKorlapName(s.groupName) || s.groupName;
+    }
+    if (s.officerInCharge && s.officerInCharge !== 'Petugas SO' && s.officerInCharge !== 'PETUGAS SO') {
+      return normalizeKorlapName(s.officerInCharge) || s.officerInCharge;
+    }
+
+    // 3. Fallback wilayah jika belum ada korlap sama sekali
+    const fallbackDefault = resolveStoreDefaultKorlap({
+      kabupaten: matchingStore?.kabupaten || matchingStore?.region || s.region,
+      region: matchingStore?.region || s.region,
+      as: matchingStore?.as || s.asInitial,
+      am: matchingStore?.am,
+      name: s.storeName,
+      address: matchingStore?.address
+    });
+    return fallbackDefault || 'Belum Ditentukan';
+  }, [stores]);
+
+  // Helper to dynamically calculate day name strictly from the schedule date
+  const getScheduleDayName = React.useCallback((s: SOSchedule): string => {
+    if (s.scheduledDate) {
+      const parsed = parseSmartDateWithContext(s.scheduledDate, '09', '2026');
+      if (parsed && !isNaN(parsed.getTime())) {
+        return getDayNameIndo(formatDateISO(parsed));
+      }
+    }
+    return s.dayName || '-';
+  }, []);
 
   // Pending approval schedule groups
   const pendingSelesai = schedules.filter(s => s.status === 'Selesai' && (s.spvApprovalStatus === 'Menunggu Approval SPV' || !s.spvApprovalStatus));
@@ -243,57 +296,44 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
       
       let matchesGroup = true;
       if (selectedGroupKorlap !== 'ALL') {
-        const scheduleOfficer = s.groupName || s.officerInCharge || '';
-        const matchingStore = stores.find(st => 
-          (st.code && s.storeCode && st.code.trim().toUpperCase() === s.storeCode.trim().toUpperCase()) || 
-          (st.id && s.storeId && st.id.trim().toUpperCase() === s.storeId.trim().toUpperCase()) ||
-          (st.name && s.storeName && st.name.trim().toLowerCase() === s.storeName.trim().toLowerCase())
-        );
-        const storeOfficer = matchingStore?.korlap || '';
-        
-        // Match if EITHER schedule officer, master store korlap, or leader matches target Korlap!
-        const matchSchedule = !!scheduleOfficer && scheduleOfficer !== 'PETUGAS SO' && isKorlapMatch(scheduleOfficer, selectedGroupKorlap);
-        const matchStore = !!storeOfficer && isKorlapMatch(storeOfficer, selectedGroupKorlap);
-        const matchLeader = !!s.personilLeader && isKorlapMatch(s.personilLeader, selectedGroupKorlap);
-        matchesGroup = matchSchedule || matchStore || matchLeader;
+        const effKorlap = getEffectiveKorlapForSchedule(s);
+        matchesGroup = !!effKorlap && effKorlap !== 'Belum Ditentukan' && isKorlapMatch(effKorlap, selectedGroupKorlap);
       }
 
       // Date Filtering Logic
       let matchesDate = true;
+      const parsed = parseSmartDateWithContext(s.scheduledDate, '09', '2026');
+      const iso = (parsed && !isNaN(parsed.getTime())) ? formatDateISO(parsed) : s.scheduledDate;
+
       if (selectedSpecificDate) {
-        const parsed = parseSmartDateWithContext(s.scheduledDate, '09', '2026');
-        if (parsed && !isNaN(parsed.getTime())) {
-          const iso = formatDateISO(parsed);
-          matchesDate = iso === selectedSpecificDate || s.scheduledDate === selectedSpecificDate;
-        } else {
-          matchesDate = s.scheduledDate.includes(selectedSpecificDate);
-        }
+        matchesDate = (iso === selectedSpecificDate);
       } else if (selectedYear !== 'ALL' || selectedMonth !== 'ALL' || selectedDay !== 'ALL') {
-        const targetMonthCtx = (selectedMonth !== 'ALL') ? selectedMonth : '09';
-        const targetYearCtx = (selectedYear !== 'ALL') ? selectedYear : '2026';
-        const parsed = parseSmartDateWithContext(s.scheduledDate, targetMonthCtx, targetYearCtx);
         if (parsed && !isNaN(parsed.getTime())) {
           const y = String(parsed.getFullYear());
           const m = String(parsed.getMonth() + 1).padStart(2, '0');
           const d = String(parsed.getDate()).padStart(2, '0');
 
           const matchesYear = selectedYear === 'ALL' || y === selectedYear;
-          const matchesMonth = selectedMonth === 'ALL' || m === selectedMonth;
+          // In September 2026 scheduling context, if day is selected but month is ALL, default to September '09'
+          const effectiveMonthFilter = (selectedMonth === 'ALL' && selectedDay !== 'ALL') ? '09' : selectedMonth;
+          const matchesMonth = effectiveMonthFilter === 'ALL' || m === effectiveMonthFilter;
           const matchesDay = selectedDay === 'ALL' || d === selectedDay;
 
           matchesDate = matchesYear && matchesMonth && matchesDay;
         } else {
-          let ok = true;
-          if (selectedYear !== 'ALL' && !s.scheduledDate.includes(selectedYear)) ok = false;
-          if (selectedMonth !== 'ALL' && !s.scheduledDate.includes(`-${selectedMonth}-`) && !s.scheduledDate.includes(`/${selectedMonth}/`)) ok = false;
-          if (selectedDay !== 'ALL' && !s.scheduledDate.includes(selectedDay)) ok = false;
-          matchesDate = ok;
+          matchesDate = false;
         }
       }
 
-      return matchesSearch && matchesRegion && matchesStatus && matchesGroup && matchesDate;
+      let matchesDayOfWeek = true;
+      if (selectedDayOfWeek !== 'ALL') {
+        const scheduleDay = getScheduleDayName(s);
+        matchesDayOfWeek = scheduleDay.trim().toUpperCase() === selectedDayOfWeek.trim().toUpperCase();
+      }
+
+      return matchesSearch && matchesRegion && matchesStatus && matchesGroup && matchesDate && matchesDayOfWeek;
     });
-  }, [schedules, searchQuery, selectedRegion, selectedStatus, selectedGroupKorlap, selectedYear, selectedMonth, selectedDay, selectedSpecificDate, stores]);
+  }, [schedules, searchQuery, selectedRegion, selectedStatus, selectedGroupKorlap, selectedYear, selectedMonth, selectedDay, selectedDayOfWeek, selectedSpecificDate, stores, getEffectiveKorlapForSchedule, getScheduleDayName]);
 
   // Dashboard Stats Calculations
   const dashboardStats = useMemo(() => {
@@ -355,9 +395,9 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
     const data = filteredSchedules.map((s, idx) => ({
       'NO': idx + 1,
       'TEAM': s.teamCategory || s.teamName || 'TEAM 1',
-      'GROUP': s.groupName || s.officerInCharge || 'I WAYAN ANGGA RISTA',
+      'GROUP': getEffectiveKorlapForSchedule(s),
       'PERSONIL': s.personilLeader || (s.assignedPersonnelNames && s.assignedPersonnelNames[0]) || '',
-      'HARI': s.dayName || getDayNameIndo(s.scheduledDate),
+      'HARI': getScheduleDayName(s),
       'KODE TOKO': s.storeCode,
       'NAMA TOKO': s.storeName,
       'STOCK RP': s.stockRp || 0,
@@ -706,6 +746,27 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
               }`}>12 Toko</span>
             </button>
 
+            {/* Quick Filter: Senin 14 Sep */}
+            <button
+              type="button"
+              id="btn-filter-senin-14-sep"
+              onClick={() => {
+                setSelectedSpecificDate('2026-09-14');
+                setSelectedYear('2026');
+                setSelectedMonth('09');
+                setSelectedDay('14');
+                setSelectedDayOfWeek('SENIN');
+              }}
+              className={`px-2.5 py-2 text-xs font-bold rounded-xl border transition shrink-0 flex items-center gap-1.5 ${
+                selectedSpecificDate === '2026-09-14' || (selectedMonth === '09' && selectedDay === '14')
+                  ? 'bg-blue-600 text-white border-blue-700 shadow-xs'
+                  : 'bg-blue-50 hover:bg-blue-100 text-blue-900 border-blue-300'
+              }`}
+              title="Filter langsung jadwal Senin 14 September 2026"
+            >
+              <span>📅 Senin 14 Sep</span>
+            </button>
+
             {onTwoWaySync && (
               <button
                 type="button"
@@ -891,6 +952,22 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                   ))}
                 </select>
 
+                <select
+                  value={selectedDayOfWeek}
+                  onChange={(e) => setSelectedDayOfWeek(e.target.value)}
+                  className="bg-slate-50 border border-slate-300 hover:border-slate-400 text-xs font-bold rounded-xl px-2.5 py-1.5 text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer transition"
+                  title="Filter spesifik hari kerja (Senin - Minggu)"
+                >
+                  <option value="ALL">Semua Hari</option>
+                  <option value="SENIN">Senin</option>
+                  <option value="SELASA">Selasa</option>
+                  <option value="RABU">Rabu</option>
+                  <option value="KAMIS">Kamis</option>
+                  <option value="JUMAT">Jumat</option>
+                  <option value="SABTU">Sabtu</option>
+                  <option value="MINGGU">Minggu</option>
+                </select>
+
                 <input
                   type="date"
                   value={selectedSpecificDate}
@@ -902,6 +979,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                       setSelectedYear(y || 'ALL');
                       setSelectedMonth(m || 'ALL');
                       setSelectedDay(d || 'ALL');
+                      setSelectedDayOfWeek(getDayNameIndo(val));
                     }
                   }}
                   className="bg-slate-50 border border-slate-300 hover:border-slate-400 text-xs font-semibold rounded-xl px-2.5 py-1.5 text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer transition"
@@ -978,6 +1056,19 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                 <Download className="w-4 h-4 text-slate-500 shrink-0" />
                 <span>Export CSV</span>
               </button>
+
+              {onResetSchedules && (
+                <button
+                  type="button"
+                  id="btn-reset-penjadwalan-clean"
+                  onClick={() => setIsResetConfirmModalOpen(true)}
+                  className="w-full sm:w-auto px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-2xs"
+                  title="Reset bersih penjadwalan SO tanpa menghapus personil, alat, atau seragam"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                  <span>Reset Penjadwalan SO</span>
+                </button>
+              )}
             </div>
 
           </div>
@@ -1270,14 +1361,14 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                         <div className="font-bold text-slate-800 flex items-center gap-1 mt-0.5">
                           <CalendarDays className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                           <span>{s.scheduledDate || '-'}</span>
-                          <span className="text-[10px] text-slate-500">({s.dayName || getDayNameIndo(s.scheduledDate)})</span>
+                          <span className="text-[10px] text-slate-500">({getScheduleDayName(s)})</span>
                         </div>
                       </div>
 
                       <div>
                         <div className="text-[10px] text-slate-400 font-medium">Group Korlap & Tim</div>
                         <div className="font-bold text-indigo-950 mt-0.5 truncate">
-                          {s.groupName || s.officerInCharge || 'I WAYAN ANGGA RISTA'}
+                          {getEffectiveKorlapForSchedule(s)}
                         </div>
                         <div className="text-[10px] text-slate-500 truncate">
                           Leader: {personilLeaderText}
@@ -1427,7 +1518,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                           </td>
 
                           <td className="py-3 px-3 font-bold text-slate-900 whitespace-nowrap">
-                            {s.groupName || s.officerInCharge || 'I WAYAN ANGGA RISTA'}
+                            {getEffectiveKorlapForSchedule(s)}
                           </td>
 
                           <td className="py-3 px-3 text-slate-800">
@@ -1439,7 +1530,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
 
                           <td className="py-3 px-3 font-bold text-slate-700 whitespace-nowrap">
                             <span className="px-2 py-0.5 rounded bg-slate-100 text-[11px]">
-                              {s.dayName || getDayNameIndo(s.scheduledDate) || 'SELASA'}
+                              {getScheduleDayName(s)}
                             </span>
                           </td>
 
@@ -1894,6 +1985,79 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                   </div>
                 );
               })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal for Selective Schedule Reset */}
+      {isResetConfirmModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 text-rose-600 mb-3">
+              <div className="p-3 bg-rose-100 rounded-xl">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900">Reset Bersih Penjadwalan SO</h3>
+                <p className="text-xs text-slate-500">Master toko & jadwal dibersihkan, data personil aman</p>
+              </div>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 my-4 text-xs text-amber-800 space-y-1.5">
+              <p className="font-bold">🛡️ Data yang DIJAMIN AMAN & TIDAK DIHAPUS:</p>
+              <ul className="list-disc list-inside space-y-0.5 text-[11px] text-amber-900">
+                <li>Data Personil Tim & Auditor</li>
+                <li>Inventaris Peralatan SO</li>
+                <li>Data WDCP & Alokasi Seragam</li>
+              </ul>
+              <p className="pt-1 text-[11px] text-slate-600">
+                Tindakan ini hanya akan membersihkan jadwal SO dan data master toko agar Anda dapat mengimpor atau mengatur jadwal ulang dengan bersih tanpa duplikasi.
+              </p>
+            </div>
+
+            <p className="text-xs text-slate-600 mb-2">
+              Ketik kata <span className="font-mono font-bold text-rose-600">RESET</span> untuk konfirmasi:
+            </p>
+            <input
+              type="text"
+              value={resetConfirmInput}
+              onChange={(e) => setResetConfirmInput(e.target.value.toUpperCase())}
+              placeholder="Ketik RESET"
+              className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-rose-500 mb-4"
+            />
+
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsResetConfirmModalOpen(false);
+                  setResetConfirmInput('');
+                }}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={resetConfirmInput !== 'RESET'}
+                onClick={() => {
+                  if (onResetSchedules) {
+                    onResetSchedules();
+                  }
+                  setIsResetConfirmModalOpen(false);
+                  setResetConfirmInput('');
+                  setToastMessage('✅ Data penjadwalan SO berhasil direset bersih! Data personil, alat, dan seragam tetap terjaga.');
+                }}
+                className={`px-4 py-2 text-xs font-bold rounded-xl text-white transition flex items-center gap-1.5 ${
+                  resetConfirmInput === 'RESET'
+                    ? 'bg-rose-600 hover:bg-rose-700 shadow-md cursor-pointer'
+                    : 'bg-rose-300 cursor-not-allowed'
+                }`}
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Konfirmasi Reset</span>
+              </button>
             </div>
           </div>
         </div>

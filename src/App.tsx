@@ -51,7 +51,9 @@ import {
   normalizeSingleActiveDataset,
   isStoreEquipment,
   isCorruptedEquipmentRecord,
-  resetMasterStoresCleanly
+  resetMasterStoresCleanly,
+  resetMasterAndSchedulesCleanly,
+  resetSchedulesOnlyCleanly
 } from './services/storageService';
 import { ensureStoreCoordinates, autoSyncStoreRegionAndKabupaten } from './utils/geoUtils';
 import { formatSmartSODate, detectSmartMonthAndYear } from './utils/formatters';
@@ -1269,27 +1271,23 @@ export default function App() {
     }
   };
 
-  const handleResetMasterStores = async () => {
-    // 1. Wipe master stores and datasets completely across localStorage, Firestore, and Cloudinary
-    await resetMasterStoresCleanly();
+  const handleResetMasterStores = async (options?: { preserveSchedules?: boolean }) => {
+    // 1. Wipe master stores, datasets and schedules cleanly like total reset,
+    // while STRICTLY preserving personnel, equipment/WDCP, repair logs, uniforms, and on-call records!
+    await resetMasterAndSchedulesCleanly({
+      resetStores: true,
+      resetSchedules: options?.preserveSchedules ? false : true
+    });
     setStores([]);
     setDatasets([]);
-
-    // 2. Clean up unapproved schedules and purge their IDs to prevent ghost restoration
-    const unapprovedSchedIds = schedules
-      .filter(s => s.spvApprovalStatus !== 'Disetujui' && !results.some(r => r.approvalStatus === 'Disetujui' && (r.storeCode === s.storeCode || r.storeId === s.storeId)))
-      .map(s => s.id);
-    
-    if (unapprovedSchedIds.length > 0) {
-      purgeStaleSchedules(unapprovedSchedIds);
+    if (!options?.preserveSchedules) {
+      setSchedules([]);
     }
+  };
 
-    const approvedOnlySchedules = schedules.filter(s => 
-      s.spvApprovalStatus === 'Disetujui' || 
-      results.some(r => r.approvalStatus === 'Disetujui' && (r.storeCode === s.storeCode || r.storeId === s.storeId))
-    );
-    setSchedules(approvedOnlySchedules);
-    await saveSchedules(approvedOnlySchedules, true);
+  const handleResetSchedulesOnly = async () => {
+    await resetSchedulesOnlyCleanly();
+    setSchedules([]);
   };
 
   // Handlers for Personnel
@@ -1829,6 +1827,8 @@ export default function App() {
               onApproveSchedule={handleApproveSchedule}
               onRejectSchedule={handleRejectSchedule}
               onTwoWaySync={handleTwoWaySync}
+              onResetSchedules={() => handleResetSchedulesOnly()}
+              onResetMasterAndSchedules={() => handleResetMasterStores({ preserveSchedules: false })}
             />
           )}
 

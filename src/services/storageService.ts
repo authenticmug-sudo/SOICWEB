@@ -606,7 +606,10 @@ function mergeAndSyncFirestoreWithLocal<T extends { id: string }>(
   const storesResetTime = (storageKey === STORAGE_KEYS.STORES || storageKey === STORAGE_KEYS.MASTER_TOKO_DATASETS)
     ? Number(localStorage.getItem('spv_stores_reset_timestamp') || '0')
     : 0;
-  const effectiveResetTime = Math.max(systemResetTime, storesResetTime);
+  const schedulesResetTime = (storageKey === STORAGE_KEYS.SCHEDULES)
+    ? Number(localStorage.getItem('spv_schedules_reset_timestamp') || '0')
+    : 0;
+  const effectiveResetTime = Math.max(systemResetTime, storesResetTime, schedulesResetTime);
   const isHardCleared = localStorage.getItem(STORAGE_KEYS.CLEARED_SAMPLE_FLAG) === 'true';
 
   let localItems: T[] = [];
@@ -1243,6 +1246,110 @@ export async function resetMasterStoresCleanly(): Promise<void> {
   uploadRawJsonToCloudinary([], 'Master_Toko_Datasets', 'SO Sistem IC BALI/Master Toko', true).catch(() => {});
 }
 
+/**
+ * Cleanly and completely wipes Master Toko, Datasets, and Penjadwalan SO from:
+ * LocalStorage, Firestore (batch deletes), and Cloudinary backups,
+ * while locking resurrection timestamps.
+ * 
+ * STRICTLY PRESERVES:
+ * - personnel (Data Tim SO & Personil)
+ * - equipment (Pendataan Alat & WDCP)
+ * - repairLogs (Service & Riwayat Alat)
+ * - uniformRecords (Tracking Seragam SDM)
+ * - onCallRecords (Personil On-Call)
+ * - teams (Struktur Tim SO)
+ */
+export async function resetMasterAndSchedulesCleanly(options?: {
+  resetStores?: boolean;
+  resetSchedules?: boolean;
+}): Promise<void> {
+  const shouldResetStores = options?.resetStores ?? true;
+  const shouldResetSchedules = options?.resetSchedules ?? true;
+  const resetTimestamp = Date.now();
+
+  // 1. Record reset timestamps to prevent resurrection by stale sync
+  if (shouldResetStores) {
+    localStorage.setItem('spv_stores_reset_timestamp', String(resetTimestamp));
+    localStorage.setItem(STORAGE_KEYS.STORES, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.MASTER_TOKO_DATASETS, JSON.stringify([]));
+    clearAllDeletedIds(STORAGE_KEYS.STORES);
+    if (syncedItemsHash['stores']) syncedItemsHash['stores'].clear();
+    if (syncedItemsHash['master_toko_datasets']) syncedItemsHash['master_toko_datasets'].clear();
+    notifyDataChanged(STORAGE_KEYS.STORES, []);
+    notifyDataChanged(STORAGE_KEYS.MASTER_TOKO_DATASETS, []);
+  }
+
+  if (shouldResetSchedules) {
+    localStorage.setItem('spv_schedules_reset_timestamp', String(resetTimestamp));
+    localStorage.setItem(STORAGE_KEYS.SCHEDULES, JSON.stringify([]));
+    clearAllDeletedIds(STORAGE_KEYS.SCHEDULES);
+    if (syncedItemsHash['schedules']) syncedItemsHash['schedules'].clear();
+    notifyDataChanged(STORAGE_KEYS.SCHEDULES, []);
+  }
+
+  localStorage.setItem(STORAGE_KEYS.CLEARED_SAMPLE_FLAG, 'true');
+
+  // 2. Clear Firestore collections thoroughly
+  if (!isFirestoreQuotaExceeded) {
+    const colsToWipe: string[] = [];
+    if (shouldResetStores) {
+      colsToWipe.push('stores', 'master_toko_datasets');
+    }
+    if (shouldResetSchedules) {
+      colsToWipe.push('schedules');
+    }
+
+    for (const colName of colsToWipe) {
+      try {
+        const snap = await getDocs(collection(db, colName));
+        if (snap && !snap.empty) {
+          const docs = snap.docs;
+          for (let i = 0; i < docs.length; i += 250) {
+            const batch = writeBatch(db);
+            docs.slice(i, i + 250).forEach(d => batch.delete(doc(db, colName, d.id)));
+            await batch.commit();
+          }
+        }
+        await setDoc(doc(db, '_metadata_manifests', colName), {
+          count: 0,
+          updatedAt: new Date().toISOString(),
+          hash: 'empty'
+        }, { merge: true });
+      } catch (e) {
+        handleFirestoreError(e);
+      }
+    }
+  }
+
+  // 3. Clear Cloudinary backups
+  const cloudinaryItems: { cat: string; path: string }[] = [];
+  if (shouldResetStores) {
+    cloudinaryItems.push(
+      { cat: 'Master_Stores', path: 'SO Sistem IC BALI/Master Toko' },
+      { cat: 'Master_Toko_Datasets', path: 'SO Sistem IC BALI/Master Toko' }
+    );
+  }
+  if (shouldResetSchedules) {
+    cloudinaryItems.push(
+      { cat: 'Master_Schedules', path: 'SO Sistem IC BALI/Schedules' }
+    );
+  }
+
+  await Promise.all(
+    cloudinaryItems.map(item =>
+      uploadRawJsonToCloudinary([], item.cat, item.path, true).catch(() => {})
+    )
+  );
+}
+
+/**
+ * Cleanly wipes ONLY Penjadwalan SO, preserving all Master Stores,
+ * Personnel, Equipment, Uniforms, On-call, and Teams.
+ */
+export async function resetSchedulesOnlyCleanly(): Promise<void> {
+  return resetMasterAndSchedulesCleanly({ resetStores: false, resetSchedules: true });
+}
+
 export function getStoredSchedules(): SOSchedule[] {
   const isSampleCleared = localStorage.getItem(STORAGE_KEYS.CLEARED_SAMPLE_FLAG) === 'true';
   const local = localStorage.getItem(STORAGE_KEYS.SCHEDULES);
@@ -1816,7 +1923,10 @@ export async function syncCollectionFromCloudinary<T extends { id: string }>(
     const storesResetTime = (storageKey === STORAGE_KEYS.STORES || storageKey === STORAGE_KEYS.MASTER_TOKO_DATASETS)
       ? Number(localStorage.getItem('spv_stores_reset_timestamp') || '0')
       : 0;
-    const effectiveResetTime = Math.max(systemResetTime, storesResetTime);
+    const schedulesResetTime = (storageKey === STORAGE_KEYS.SCHEDULES)
+      ? Number(localStorage.getItem('spv_schedules_reset_timestamp') || '0')
+      : 0;
+    const effectiveResetTime = Math.max(systemResetTime, storesResetTime, schedulesResetTime);
     const isHardCleared = localStorage.getItem(STORAGE_KEYS.CLEARED_SAMPLE_FLAG) === 'true';
 
     deletedIds = getDeletedIdsSet(storageKey);

@@ -403,3 +403,47 @@ export function resolveSchedulePersonnelDisplay(
     assignedCount: 0
   };
 }
+
+/**
+ * Intelligent Regional Korlap resolver for Bali stores when Korlap column is blank or unassigned
+ * Maps stores strictly according to operational areas:
+ * - Tabanan & Jembrana -> ODI TRI ANGGARA
+ * - Bangli, Gianyar, Karangasem, Klungkung -> ANGGA ARDIYANSYAH
+ * - Buleleng / Singaraja -> PUTU BISMA
+ * - Badung -> ABDUL RAHMAN / I WAYAN ANGGA RISTA
+ * - Denpasar -> I GEDE PASEK SANTIKA / PUTU BISMA / I WAYAN ANGGA RISTA
+ */
+export function resolveStoreDefaultKorlap(storeOrInfo?: {
+  kabupaten?: string;
+  region?: string;
+  as?: string;
+  am?: string;
+  name?: string;
+  address?: string;
+} | null): string | undefined {
+  if (!storeOrInfo) return undefined;
+  const kab = String(storeOrInfo.kabupaten || storeOrInfo.region || '').trim().toUpperCase();
+  const as = String(storeOrInfo.as || '').trim().toUpperCase();
+  const name = String(storeOrInfo.name || '').trim().toUpperCase();
+  const address = String(storeOrInfo.address || '').trim().toUpperCase();
+
+  if (kab.includes('TABANAN') || kab.includes('JEMBRANA') || as.includes('TABANAN') || as.includes('JEMBRANA') || address.includes('TABANAN') || address.includes('NEGARA') || name.includes('TABANAN')) {
+    return 'ODI TRI ANGGARA';
+  }
+  if (kab.includes('BANGLI') || kab.includes('GIANYAR') || kab.includes('KARANGASEM') || kab.includes('KLUNGKUNG') ||
+      as.includes('BANGLI') || as.includes('GIANYAR') || as.includes('KARANGASEM') || as.includes('KLUNGKUNG') ||
+      address.includes('BANGLI') || address.includes('GIANYAR') || address.includes('UBUD') || address.includes('AMLAPURA') || address.includes('SEMARAPURA') ||
+      name.includes('BANGLI') || name.includes('GIANYAR')) {
+    return 'ANGGA ARDIYANSYAH';
+  }
+  if (kab.includes('BULELENG') || as.includes('BULELENG') || address.includes('SINGARAJA') || address.includes('BULELENG') || name.includes('SINGARAJA') || name.includes('BULELENG')) {
+    return 'PUTU BISMA';
+  }
+  if (kab.includes('BADUNG') || as.includes('BADUNG') || address.includes('KUTA') || address.includes('JIMBARAN') || address.includes('CANGGU') || address.includes('MENGWI') || name.includes('BADUNG')) {
+    return 'ABDUL RAHMAN';
+  }
+  if (kab.includes('DENPASAR') || as.includes('DENPASAR') || address.includes('DENPASAR') || address.includes('SANUR') || name.includes('DPS') || name.includes('DENPASAR')) {
+    return 'I GEDE PASEK SANTIKA';
+  }
+  return undefined;
+}

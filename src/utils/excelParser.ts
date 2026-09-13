@@ -2,7 +2,7 @@ import * as XLSX from 'xlsx';
 import { Store, SOSchedule } from '../types/stockOpname';
 import { parseCoordinates, autoSyncStoreRegionAndKabupaten } from './geoUtils';
 import { formatSmartSODate, parseSmartDate, formatDateISO, parseCurrentMonthSODate } from './formatters';
-import { normalizeKorlapName } from './korlapUtils';
+import { normalizeKorlapName, resolveStoreDefaultKorlap } from './korlapUtils';
 import { getDeterministicStoreId } from '../services/storageService';
 import { isStoreZonaHitam } from './storeSyncUtils';
 
@@ -30,6 +30,49 @@ export interface WorkbookParseResult {
  */
 export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
   const sheetResults: SheetParseResult[] = [];
+
+  // Build global store-to-korlap mapping across all sheets (e.g. sheet ALL TOKO (2) or JADWAL)
+  const globalStoreKorlapMap = new Map<string, string>();
+  for (const sName of wb.SheetNames) {
+    const ws = wb.Sheets[sName];
+    if (!ws) continue;
+    const matrix = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, defval: '' });
+    if (!matrix || matrix.length < 2) continue;
+
+    let codeCol = -1;
+    let korlapCol = -1;
+
+    for (let r = 0; r < Math.min(matrix.length, 10); r++) {
+      const row = matrix[r];
+      if (!Array.isArray(row)) continue;
+      row.forEach((cell, idx) => {
+        const u = String(cell || '').trim().toUpperCase();
+        if (['KDTK', 'KD TOKO', 'KODE TOKO', 'IDM', 'KDT'].includes(u)) codeCol = idx;
+        if (['KORLAP', 'OFFICER', 'GROUP', 'GRUP', 'KORLAP/OFFICER', 'KORLAP / OFFICER'].includes(u)) korlapCol = idx;
+      });
+      if (codeCol >= 0 && korlapCol >= 0) break;
+    }
+
+    if (sName.toUpperCase().includes('ALL TOKO') && codeCol === -1) {
+      codeCol = 1;
+      korlapCol = 11;
+    }
+
+    if (codeCol >= 0 && korlapCol >= 0) {
+      for (let r = 0; r < matrix.length; r++) {
+        const row = matrix[r];
+        if (!Array.isArray(row)) continue;
+        const code = String(row[codeCol] || '').trim().toUpperCase();
+        const rawK = String(row[korlapCol] || '').trim();
+        if (code && code.length >= 3 && code.length <= 6 && rawK && !['KORLAP', 'OFFICER', 'LEADER', 'GROUP', 'GRUP'].includes(rawK.toUpperCase())) {
+          const canonical = normalizeKorlapName(rawK) || rawK;
+          if (canonical && !globalStoreKorlapMap.has(code)) {
+            globalStoreKorlapMap.set(code, canonical);
+          }
+        }
+      }
+    }
+  }
 
   for (const sheetName of wb.SheetNames) {
     const ws = wb.Sheets[sheetName];
@@ -447,25 +490,28 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
       ]);
       const genericScheduleDate = formatSmartSODate(genericScheduleRaw);
 
-      // Determine active scheduled date and smart month mapping
+      // Determine active scheduled date: MUST strictly come from current schedule period (generic or September SO),
+      // NEVER fall back to historical past months like August (soAgustusRaw) or July!
       let activeScheduledDateIso: string | undefined = undefined;
       let activeTglSo: string | undefined = undefined;
 
-      const rawForParsing = genericScheduleRaw || soSeptemberRaw || soAgustusRaw || soOktoberRaw;
+      const rawForParsing = genericScheduleRaw || soSeptemberRaw;
       if (rawForParsing) {
         const parsed = parseSmartDate(rawForParsing);
         if (parsed) {
           const m = String(parsed.getMonth() + 1).padStart(2, '0');
           const d = String(parsed.getDate()).padStart(2, '0');
           const y = String(parsed.getFullYear());
-          activeScheduledDateIso = `${y}-${m}-${d}`;
-          activeTglSo = formatSmartSODate(rawForParsing);
+          // Only assign active scheduled date if it belongs to current schedule period (September / 09 or explicit generic)
+          if (m === '09' || genericScheduleRaw) {
+            activeScheduledDateIso = `${y}-${m}-${d}`;
+            activeTglSo = formatSmartSODate(rawForParsing);
+          }
 
           if (m === '09' && (!soSeptember || soSeptember === '-')) soSeptember = activeTglSo;
-          else if (m === '08' && (!soAgustus || soAgustus === '-')) { /* keep august */ }
-          else if (m === '10' && (!soOktober || soOktober === '-')) soOktober = activeTglSo;
-          else if (m === '11' && (!soNovember || soNovember === '-')) soNovember = activeTglSo;
-          else if (m === '12' && (!soDesember || soDesember === '-')) soDesember = activeTglSo;
+          else if (m === '10' && (!soOktober || soOktober === '-')) soOktober = formatSmartSODate(rawForParsing);
+          else if (m === '11' && (!soNovember || soNovember === '-')) soNovember = formatSmartSODate(rawForParsing);
+          else if (m === '12' && (!soDesember || soDesember === '-')) soDesember = formatSmartSODate(rawForParsing);
         } else if (!hasSpecificSeptemberCol && (!soSeptember || soSeptember === '-') && genericScheduleDate && genericScheduleDate !== '-') {
           soSeptember = genericScheduleDate;
           activeTglSo = genericScheduleDate;
@@ -603,7 +649,7 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
         typeSo: typeSoVal || 'M',
         qm: typeSoVal || 'M',
         smartClassification: findVal(['perubahan', 'kategori', 'klasifikasi', 'turun kelas']) || '',
-        korlap: korlap || (groupVal ? (normalizeKorlapName(groupVal) || groupVal) : undefined),
+        korlap: korlap || (groupVal ? (normalizeKorlapName(groupVal) || groupVal) : undefined) || globalStoreKorlapMap.get(storeCode) || resolveStoreDefaultKorlap({ kabupaten: kabVal, region: region, as: asVal, am: amVal, name: storeName, address: addressVal }),
         keterangan: ketVal,
         zona: zonaFormatted,
         isZonaHitam: isZonaHitam,
@@ -737,7 +783,7 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
         else if (day === 'SENIN') schedDate = '2026-09-07';
       }
 
-      const canonicalKorlap = normalizeKorlapName(group) || group || 'I GEDE PASEK SANTIKA';
+      const canonicalKorlap = normalizeKorlapName(group) || group || globalStoreKorlapMap.get(code) || resolveStoreDefaultKorlap({ name }) || 'Belum Ditentukan';
       const cleanStock = typeof stockRaw === 'number' ? stockRaw : (parseFloat(String(stockRaw || '').replace(/[^0-9.-]/g, '')) || 0);
       const cleanKas = typeof kasRaw === 'number' ? kasRaw : (parseFloat(String(kasRaw || '').replace(/[^0-9.-]/g, '')) || 0);
       const cleanZona = zonaRaw.toUpperCase().includes('HITAM') && !zonaRaw.toUpperCase().includes('NON') ? 'ZONA HITAM' : 'NON ZONA HITAM';

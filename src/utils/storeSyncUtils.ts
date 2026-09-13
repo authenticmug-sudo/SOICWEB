@@ -1,6 +1,6 @@
 import { Store, SOSchedule, SOResult } from '../types/stockOpname';
 import { formatSmartSODate, formatDateISO, parseSmartDate, parseSmartDateWithContext, parseCurrentMonthSODate, detectSmartMonthAndYear } from './formatters';
-import { normalizeKorlapName } from './korlapUtils';
+import { normalizeKorlapName, resolveStoreDefaultKorlap } from './korlapUtils';
 import { generateInitialStores, generateInitialSchedules } from '../data/initialData';
 
 /**
@@ -434,7 +434,7 @@ export function extractStoreSODateForPeriod(st: Store, targetMonth: string = '09
       const parsedSched = parseCurrentMonthSODate(st.scheduledDate, resolvedMonth !== 'ALL' ? resolvedMonth : '09', effectiveYear);
       if (parsedSched.isValid) {
         const m = parsedSched.isoDate.split('-')[1];
-        if (targetMonth === 'ALL' || m === targetMonth || !getMonthVal(targetMonth)) {
+        if (targetMonth === 'ALL' || m === targetMonth) {
           rawDateVal = st.scheduledDate;
           resolvedMonth = m;
         }
@@ -444,7 +444,7 @@ export function extractStoreSODateForPeriod(st: Store, targetMonth: string = '09
       const parsedTgl = parseCurrentMonthSODate(st.tglSo, resolvedMonth !== 'ALL' ? resolvedMonth : '09', effectiveYear);
       if (parsedTgl.isValid) {
         const m = parsedTgl.isoDate.split('-')[1];
-        if (targetMonth === 'ALL' || m === targetMonth || !getMonthVal(targetMonth)) {
+        if (targetMonth === 'ALL' || m === targetMonth) {
           rawDateVal = st.tglSo;
           resolvedMonth = m;
         }
@@ -465,10 +465,23 @@ export function extractStoreSODateForPeriod(st: Store, targetMonth: string = '09
     return { isoDate: '', rawVal: '' };
   }
 
+  // Helper to ensure returned date matches targetMonth if specified
+  const validateAndReturn = (iso: string, raw: string) => {
+    if (!iso) return { isoDate: '', rawVal: raw };
+    if (targetMonth !== 'ALL') {
+      const parts = iso.split('-');
+      if (parts.length >= 2 && parts[1] !== targetMonth) {
+        // Date belongs to another month (e.g. August when target is September)
+        return { isoDate: '', rawVal: raw };
+      }
+    }
+    return { isoDate: iso, rawVal: raw };
+  };
+
   // 1. Primary parser: parseCurrentMonthSODate handles day numbers ("12"), Excel serials (46274), text ("12 Sep 2026"), slash, and dashes
   const parsedCurrent = parseCurrentMonthSODate(rawDateVal, resolvedMonth !== 'ALL' ? resolvedMonth : '09', effectiveYear);
   if (parsedCurrent.isValid && parsedCurrent.isoDate) {
-    return { isoDate: parsedCurrent.isoDate, rawVal: String(rawDateVal) };
+    return validateAndReturn(parsedCurrent.isoDate, String(rawDateVal));
   }
 
   // 2. Check if rawDateVal is a single day number (1-31) or "Tgl 8"
@@ -478,7 +491,7 @@ export function extractStoreSODateForPeriod(st: Store, targetMonth: string = '09
     if (d >= 1 && d <= 31) {
       const safeMonth = (resolvedMonth && resolvedMonth !== 'ALL') ? resolvedMonth : '09';
       const iso = `${effectiveYear}-${safeMonth}-${String(d).padStart(2, '0')}`;
-      return { isoDate: iso, rawVal: String(rawDateVal) };
+      return validateAndReturn(iso, String(rawDateVal));
     }
   }
 
@@ -490,7 +503,7 @@ export function extractStoreSODateForPeriod(st: Store, targetMonth: string = '09
       const y = String(excelDate.getFullYear());
       const m = String(excelDate.getMonth() + 1).padStart(2, '0');
       const d = String(excelDate.getDate()).padStart(2, '0');
-      return { isoDate: `${y}-${m}-${d}`, rawVal: String(rawDateVal) };
+      return validateAndReturn(`${y}-${m}-${d}`, String(rawDateVal));
     }
   }
 
@@ -500,12 +513,12 @@ export function extractStoreSODateForPeriod(st: Store, targetMonth: string = '09
     const y = String(parsed.getFullYear());
     const m = String(parsed.getMonth() + 1).padStart(2, '0');
     const d = String(parsed.getDate()).padStart(2, '0');
-    return { isoDate: `${y}-${m}-${d}`, rawVal: String(rawDateVal) };
+    return validateAndReturn(`${y}-${m}-${d}`, String(rawDateVal));
   }
 
   const directIso = formatDateISO(rawDateVal);
   if (directIso && directIso.length >= 10 && !directIso.startsWith('1970')) {
-    return { isoDate: directIso, rawVal: String(rawDateVal) };
+    return validateAndReturn(directIso, String(rawDateVal));
   }
 
   return { isoDate: '', rawVal: String(rawDateVal) };
@@ -646,9 +659,17 @@ export function syncSchedulesFromMasterStores(
       }
     }
 
+    const resolvedDefaultKorlap = resolveStoreDefaultKorlap({
+      kabupaten: st.kabupaten || st.region,
+      region: st.region || st.kabupaten,
+      as: st.as,
+      am: st.am,
+      name: st.name,
+      address: st.address
+    });
     const canonicalOfficer = st.korlap && st.korlap !== 'Petugas SO' 
       ? (normalizeKorlapName(st.korlap) || st.korlap) 
-      : 'I GEDE PASEK SANTIKA';
+      : (resolvedDefaultKorlap || 'Belum Ditentukan');
 
     const isHitam = isStoreZonaHitam(st);
     const storeZona = isHitam ? 'ZONA HITAM' : 'NON ZONA HITAM';
