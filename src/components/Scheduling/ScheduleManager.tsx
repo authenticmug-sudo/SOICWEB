@@ -185,6 +185,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
     setSelectedDay('ALL');
     setSelectedDayOfWeek('ALL');
     setSelectedSpecificDate('');
+    setActiveScheduleTab('ALL_SEPTEMBER');
   };
 
   const handleSetToday = () => {
@@ -445,8 +446,21 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
       setSelectedSpecificDate(tomorrowStr);
     } else {
       setSelectedSpecificDate('');
+      setSelectedYear('2026');
+      setSelectedMonth('09');
+      setSelectedDay('ALL');
+      setSelectedDayOfWeek('ALL');
     }
   };
+
+  // Total stores for selected Korlap throughout entire month of September
+  const korlapTotalMonthCount = useMemo(() => {
+    if (selectedGroupKorlap === 'ALL') return schedules.length;
+    return schedules.filter(s => {
+      const effectiveKorlap = getEffectiveKorlapForSchedule(s);
+      return !!effectiveKorlap && isKorlapMatch(effectiveKorlap, selectedGroupKorlap);
+    }).length;
+  }, [schedules, selectedGroupKorlap, getEffectiveKorlapForSchedule]);
 
   return (
     <div className="space-y-4">
@@ -644,6 +658,36 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
           selectedKorlap={selectedGroupKorlap}
           onSelectKorlap={(korlapName) => {
             setSelectedGroupKorlap(korlapName);
+            if (korlapName !== 'ALL') {
+              // Check how many stores exist for this Korlap on current filter
+              const countOnCurrentFilter = schedules.filter(s => {
+                const effectiveKorlap = getEffectiveKorlapForSchedule(s);
+                if (!isKorlapMatch(effectiveKorlap, korlapName)) return false;
+                if (selectedSpecificDate) {
+                  const normDate = formatDateISO(s.scheduledDate);
+                  return normDate === selectedSpecificDate || s.scheduledDate === selectedSpecificDate;
+                }
+                if (activeScheduleTab === 'HARI_H') {
+                  const normDate = formatDateISO(s.scheduledDate);
+                  return normDate === todayStr || s.scheduledDate === todayStr;
+                }
+                if (activeScheduleTab === 'H_MINUS_1') {
+                  const normDate = formatDateISO(s.scheduledDate);
+                  return normDate === tomorrowStr || s.scheduledDate === tomorrowStr;
+                }
+                return true;
+              }).length;
+
+              // If 0 stores on the currently filtered single day, auto-switch to ALL_SEPTEMBER so stores appear immediately!
+              if (countOnCurrentFilter === 0) {
+                setActiveScheduleTab('ALL_SEPTEMBER');
+                setSelectedSpecificDate('');
+                setSelectedYear('2026');
+                setSelectedMonth('09');
+                setSelectedDay('ALL');
+                setSelectedDayOfWeek('ALL');
+              }
+            }
           }}
         />
       </div>
@@ -717,10 +761,12 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                 setSelectedYear('2026');
                 setSelectedMonth('09');
                 setSelectedDay('ALL');
+                setSelectedDayOfWeek('ALL');
+                setActiveScheduleTab('ALL_SEPTEMBER');
               }}
               className="px-2.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold rounded-xl border border-purple-200 transition shrink-0"
             >
-              Sep 2026
+              Sep 2026 ({schedules.length})
             </button>
             <button
               type="button"
@@ -730,6 +776,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                 setSelectedYear('2026');
                 setSelectedMonth('09');
                 setSelectedDay('12');
+                setActiveScheduleTab('ALL_SEPTEMBER');
               }}
               className={`px-2.5 py-2 text-xs font-bold rounded-xl border transition shrink-0 flex items-center gap-1.5 ${
                 selectedSpecificDate === '2026-09-12' || (selectedMonth === '09' && selectedDay === '12')
@@ -756,6 +803,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                 setSelectedMonth('09');
                 setSelectedDay('14');
                 setSelectedDayOfWeek('SENIN');
+                setActiveScheduleTab('H_MINUS_1');
               }}
               className={`px-2.5 py-2 text-xs font-bold rounded-xl border transition shrink-0 flex items-center gap-1.5 ${
                 selectedSpecificDate === '2026-09-14' || (selectedMonth === '09' && selectedDay === '14')
@@ -765,6 +813,9 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
               title="Filter langsung jadwal Senin 14 September 2026"
             >
               <span>📅 Senin 14 Sep</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                tomorrowCount > 0 ? 'bg-blue-500 text-white' : 'bg-slate-200 text-slate-700'
+              }`}>{tomorrowCount} Toko</span>
             </button>
 
             {onTwoWaySync && (
@@ -1139,15 +1190,17 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
       {/* 5. MAIN CONTENT VIEW (DAFTAR TOKO) */}
       {viewMode === 'officer' ? (
         <KorlapDashboard
-          schedules={filteredSchedules}
+          schedules={schedules}
           stores={stores}
           personnel={personnel}
           results={results}
           hideTopBanner={true}
           activeTab={activeScheduleTab}
-          onTabChange={setActiveScheduleTab}
+          onTabChange={handleSelectScheduleTab}
           selectedOfficer={selectedGroupKorlap}
           onSelectOfficer={setSelectedGroupKorlap}
+          selectedDateSpecific={selectedSpecificDate || 'ALL'}
+          onSelectDateSpecific={setSelectedSpecificDate}
           searchQueryProp={searchQuery}
           onOpenAssignPersonnel={onAssignPersonnel || (() => {})}
           onOpenGagalPindahModal={onOpenGagalPindahModal || (() => {})}
@@ -1615,24 +1668,51 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                   ) : (
                     <tr>
                       <td colSpan={15} className="py-12 text-center">
-                        <div className="max-w-sm mx-auto space-y-2">
-                          <CalendarIcon className="w-8 h-8 text-slate-300 mx-auto" />
-                          <p className="text-slate-700 font-bold text-xs">Tidak ditemukan jadwal SO yang sesuai filter</p>
-                          <p className="text-[11px] text-slate-400">
-                            {schedules.length > 0 
-                              ? `Ada ${schedules.length} jadwal toko terhubung di database. Coba reset filter tanggal atau pencarian.` 
-                              : 'Belum ada jadwal yang diunggah atau disinkronkan.'}
-                          </p>
-                          {schedules.length > 0 && (
+                        <div className="max-w-md mx-auto space-y-3">
+                          <div className="w-12 h-12 mx-auto rounded-full bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600">
+                            <CalendarIcon className="w-6 h-6 stroke-1.5" />
+                          </div>
+                          <div>
+                            <p className="text-slate-800 font-bold text-sm">
+                              Tidak ditemukan jadwal SO yang sesuai filter
+                              {selectedGroupKorlap !== 'ALL' ? ` untuk Korlap ${selectedGroupKorlap}` : ''}
+                              {selectedSpecificDate ? ` pada ${formatDateIndo(selectedSpecificDate)}` : ''}
+                            </p>
+                            <p className="text-xs text-slate-500 mt-1">
+                              {selectedGroupKorlap !== 'ALL' && korlapTotalMonthCount > 0 ? (
+                                <span>
+                                  Korlap <strong>{selectedGroupKorlap}</strong> memiliki total <strong>{korlapTotalMonthCount} toko</strong> di bulan September 2026 (dijadwalkan pada tanggal lain).
+                                </span>
+                              ) : (
+                                `Ada ${schedules.length} jadwal toko terhubung di database. Coba reset filter tanggal atau pencarian.`
+                              )}
+                            </p>
+                          </div>
+                          <div className="flex items-center justify-center gap-2 flex-wrap pt-1">
+                            {selectedGroupKorlap !== 'ALL' && korlapTotalMonthCount > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedSpecificDate('');
+                                  setActiveScheduleTab('ALL_SEPTEMBER');
+                                  setSelectedDay('ALL');
+                                  setSelectedDayOfWeek('ALL');
+                                }}
+                                className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition shadow-xs cursor-pointer active:scale-98"
+                              >
+                                <CalendarDays className="w-4 h-4" />
+                                <span>Tampilkan Semua {korlapTotalMonthCount} Toko Korlap {selectedGroupKorlap}</span>
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={handleResetAllFilters}
-                              className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition shadow-2xs"
+                              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition shadow-2xs cursor-pointer"
                             >
                               <RotateCcw className="w-3.5 h-3.5" />
-                              <span>Tampilkan Semua ({schedules.length} Toko)</span>
+                              <span>Reset Semua Filter ({schedules.length} Toko)</span>
                             </button>
-                          )}
+                          </div>
                         </div>
                       </td>
                     </tr>
@@ -1736,24 +1816,51 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                   ) : (
                     <tr>
                       <td colSpan={6} className="py-12 text-center">
-                        <div className="max-w-sm mx-auto space-y-2">
-                          <CalendarIcon className="w-8 h-8 text-slate-300 mx-auto" />
-                          <p className="text-slate-700 font-bold text-xs">Tidak ditemukan jadwal SO yang sesuai filter</p>
-                          <p className="text-[11px] text-slate-400">
-                            {schedules.length > 0 
-                              ? `Ada ${schedules.length} jadwal toko terhubung di database. Coba reset filter tanggal atau pencarian.` 
-                              : 'Belum ada jadwal yang diunggah atau disinkronkan.'}
-                          </p>
-                          {schedules.length > 0 && (
+                        <div className="max-w-md mx-auto space-y-3">
+                          <div className="w-12 h-12 mx-auto rounded-full bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600">
+                            <CalendarIcon className="w-6 h-6 stroke-1.5" />
+                          </div>
+                          <div>
+                            <p className="text-slate-800 font-bold text-sm">
+                              Tidak ditemukan jadwal SO yang sesuai filter
+                              {selectedGroupKorlap !== 'ALL' ? ` untuk Korlap ${selectedGroupKorlap}` : ''}
+                              {selectedSpecificDate ? ` pada ${formatDateIndo(selectedSpecificDate)}` : ''}
+                            </p>
+                            <p className="text-xs text-slate-500 mt-1">
+                              {selectedGroupKorlap !== 'ALL' && korlapTotalMonthCount > 0 ? (
+                                <span>
+                                  Korlap <strong>{selectedGroupKorlap}</strong> memiliki total <strong>{korlapTotalMonthCount} toko</strong> di bulan September 2026 (dijadwalkan pada tanggal lain).
+                                </span>
+                              ) : (
+                                `Ada ${schedules.length} jadwal toko terhubung di database. Coba reset filter tanggal atau pencarian.`
+                              )}
+                            </p>
+                          </div>
+                          <div className="flex items-center justify-center gap-2 flex-wrap pt-1">
+                            {selectedGroupKorlap !== 'ALL' && korlapTotalMonthCount > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedSpecificDate('');
+                                  setActiveScheduleTab('ALL_SEPTEMBER');
+                                  setSelectedDay('ALL');
+                                  setSelectedDayOfWeek('ALL');
+                                }}
+                                className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition shadow-xs cursor-pointer active:scale-98"
+                              >
+                                <CalendarDays className="w-4 h-4" />
+                                <span>Tampilkan Semua {korlapTotalMonthCount} Toko Korlap {selectedGroupKorlap}</span>
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={handleResetAllFilters}
-                              className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition shadow-2xs"
+                              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition shadow-2xs cursor-pointer"
                             >
                               <RotateCcw className="w-3.5 h-3.5" />
-                              <span>Tampilkan Semua ({schedules.length} Toko)</span>
+                              <span>Reset Semua Filter ({schedules.length} Toko)</span>
                             </button>
-                          )}
+                          </div>
                         </div>
                       </td>
                     </tr>

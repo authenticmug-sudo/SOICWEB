@@ -51,6 +51,8 @@ interface KorlapDashboardProps {
   hideTopBanner?: boolean;
   selectedOfficer?: string;
   onSelectOfficer?: (officer: string) => void;
+  selectedDateSpecific?: string;
+  onSelectDateSpecific?: (date: string) => void;
   searchQueryProp?: string;
   onOpenAssignPersonnel: (schedule: SOSchedule) => void;
   onOpenGagalPindahModal: (schedule: SOSchedule) => void;
@@ -68,6 +70,8 @@ export const KorlapDashboard: React.FC<KorlapDashboardProps> = ({
   hideTopBanner = false,
   selectedOfficer: selectedOfficerProp,
   onSelectOfficer,
+  selectedDateSpecific: selectedDateSpecificProp,
+  onSelectDateSpecific,
   searchQueryProp,
   onOpenAssignPersonnel,
   onOpenGagalPindahModal,
@@ -97,7 +101,12 @@ export const KorlapDashboard: React.FC<KorlapDashboardProps> = ({
   const searchQuery = searchQueryProp !== undefined ? searchQueryProp : internalSearchQuery;
   const setSearchQuery = setInternalSearchQuery;
 
-  const [selectedDateSpecific, setSelectedDateSpecific] = useState<string>('ALL');
+  const [internalSelectedDateSpecific, setInternalSelectedDateSpecific] = useState<string>('ALL');
+  const selectedDateSpecific = selectedDateSpecificProp !== undefined ? selectedDateSpecificProp : internalSelectedDateSpecific;
+  const setSelectedDateSpecific = (d: string) => {
+    setInternalSelectedDateSpecific(d);
+    if (onSelectDateSpecific) onSelectDateSpecific(d);
+  };
   const [viewLayout, setViewLayout] = useState<'cards' | 'table'>('cards');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'BELUM_SO' | 'SELESAI' | 'KENDALA'>('ALL');
 
@@ -137,35 +146,33 @@ export const KorlapDashboard: React.FC<KorlapDashboardProps> = ({
   // Filtered schedules for Korlap
   const filteredSchedules = useMemo(() => {
     return schedules.filter(s => {
-      // 1. Filter by Officer / Group using strict Korlap matching
+      // 1. Filter by Officer / Group using strict Korlap matching (Prioritize Master Store Korlap)
       if (selectedOfficer !== 'ALL') {
-        const scheduleOfficer = s.officerInCharge || s.groupName || '';
         const store = getStoreDetail(s);
-        const storeOfficer = store?.korlap || '';
-        let matches = false;
-        if (scheduleOfficer && scheduleOfficer.trim() !== '' && scheduleOfficer !== 'PETUGAS SO') {
-          matches = isKorlapMatch(scheduleOfficer, selectedOfficer);
-        } else if (storeOfficer) {
-          matches = isKorlapMatch(storeOfficer, selectedOfficer);
+        const storeOfficer = (store?.korlap && store.korlap !== 'Petugas SO' && store.korlap !== 'PETUGAS SO') ? store.korlap : '';
+        const scheduleOfficer = s.officerInCharge || s.groupName || '';
+        const effectiveOfficer = storeOfficer || (scheduleOfficer !== 'Petugas SO' && scheduleOfficer !== 'PETUGAS SO' ? scheduleOfficer : '');
+
+        if (!effectiveOfficer || !isKorlapMatch(effectiveOfficer, selectedOfficer)) {
+          return false;
         }
-        if (!matches) return false;
       }
 
       // 2. Filter by Tab mode
       const normDate = formatDateISO(s.scheduledDate);
       if (activeTab === 'H_MINUS_1') {
-        if (selectedDateSpecific !== 'ALL') {
-          return normDate === selectedDateSpecific;
+        if (selectedDateSpecific && selectedDateSpecific !== 'ALL') {
+          return normDate === selectedDateSpecific || s.scheduledDate === selectedDateSpecific;
         }
-        return normDate === targetDateForView || normDate === tomorrowStr;
+        return normDate === targetDateForView || normDate === tomorrowStr || s.scheduledDate === tomorrowStr;
       } else if (activeTab === 'HARI_H') {
-        if (selectedDateSpecific !== 'ALL') {
-          return normDate === selectedDateSpecific;
+        if (selectedDateSpecific && selectedDateSpecific !== 'ALL') {
+          return normDate === selectedDateSpecific || s.scheduledDate === selectedDateSpecific;
         }
-        return normDate === todayStr;
+        return normDate === todayStr || s.scheduledDate === todayStr;
       } else {
-        if (selectedDateSpecific !== 'ALL') {
-          return normDate === selectedDateSpecific;
+        if (selectedDateSpecific && selectedDateSpecific !== 'ALL') {
+          return normDate === selectedDateSpecific || s.scheduledDate === selectedDateSpecific;
         }
         return true;
       }
@@ -197,6 +204,18 @@ export const KorlapDashboard: React.FC<KorlapDashboardProps> = ({
       );
     });
   }, [schedules, selectedOfficer, activeTab, targetDateForView, tomorrowStr, todayStr, selectedDateSpecific, statusFilter, searchQuery, stores]);
+
+  // Total stores for selected Korlap throughout entire month
+  const korlapTotalStores = useMemo(() => {
+    if (selectedOfficer === 'ALL') return schedules.length;
+    return schedules.filter(s => {
+      const store = getStoreDetail(s);
+      const storeOfficer = (store?.korlap && store.korlap !== 'Petugas SO' && store.korlap !== 'PETUGAS SO') ? store.korlap : '';
+      const scheduleOfficer = s.officerInCharge || s.groupName || '';
+      const effectiveOfficer = storeOfficer || (scheduleOfficer !== 'Petugas SO' && scheduleOfficer !== 'PETUGAS SO' ? scheduleOfficer : '');
+      return !!effectiveOfficer && isKorlapMatch(effectiveOfficer, selectedOfficer);
+    }).length;
+  }, [schedules, stores, selectedOfficer]);
 
   // Metrics
   const totalTargetStores = filteredSchedules.length;
@@ -521,14 +540,55 @@ export const KorlapDashboard: React.FC<KorlapDashboardProps> = ({
 
       {/* Main Content Area */}
       {filteredSchedules.length === 0 ? (
-        <div className="bg-white rounded-2xl p-10 text-center border border-slate-200 shadow-xs space-y-2">
-          <Calendar className="w-10 h-10 mx-auto text-slate-300 stroke-1" />
-          <h4 className="text-sm font-bold text-slate-800">Tidak ada jadwal SO yang sesuai</h4>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto">
-            {activeTab === 'HARI_H' 
-              ? 'Tidak ada jadwal yang terdaftar untuk hari ini pada group korlap yang dipilih. Silakan cek tab Jadwal H-1 atau Rencana September.'
-              : 'Coba ubah filter Korlap atau kata kunci pencarian.'}
-          </p>
+        <div className="bg-white rounded-2xl p-8 sm:p-10 text-center border border-slate-200 shadow-xs space-y-3">
+          <div className="w-12 h-12 mx-auto rounded-full bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600">
+            <Calendar className="w-6 h-6 stroke-1.5" />
+          </div>
+          <div>
+            <h4 className="text-sm sm:text-base font-black text-slate-800">
+              Tidak ada jadwal SO yang sesuai
+              {selectedOfficer !== 'ALL' ? ` untuk Korlap ${selectedOfficer}` : ''}
+              {selectedDateSpecific && selectedDateSpecific !== 'ALL' ? ` pada ${formatDateIndo(selectedDateSpecific)}` : ''}
+            </h4>
+            <p className="text-xs text-slate-500 max-w-md mx-auto mt-1 leading-relaxed">
+              {selectedOfficer !== 'ALL' && korlapTotalStores > 0 ? (
+                <span>
+                  Korlap <strong>{selectedOfficer}</strong> memiliki total <strong>{korlapTotalStores} toko</strong> di bulan September 2026. Toko tersebut dijadwalkan di tanggal lain. Klik tombol di bawah untuk menampilkan seluruhnya.
+                </span>
+              ) : activeTab === 'HARI_H' ? (
+                'Tidak ada jadwal yang terdaftar untuk hari ini pada group korlap yang dipilih. Silakan cek tab Jadwal H-1 atau Semua Jadwal September.'
+              ) : (
+                'Coba ubah filter Korlap atau klik Semua Jadwal September.'
+              )}
+            </p>
+          </div>
+
+          <div className="pt-2 flex flex-wrap items-center justify-center gap-2">
+            {selectedOfficer !== 'ALL' && korlapTotalStores > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('ALL_SEPTEMBER');
+                  setSelectedDateSpecific('ALL');
+                }}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer active:scale-98"
+              >
+                <Calendar className="w-4 h-4" />
+                <span>Lihat Semua {korlapTotalStores} Toko Korlap {selectedOfficer}</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('ALL_SEPTEMBER');
+                setSelectedDateSpecific('ALL');
+                setSelectedOfficer('ALL');
+              }}
+              className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer"
+            >
+              Reset Semua Filter (Tampilkan Semua {schedules.length} Toko)
+            </button>
+          </div>
         </div>
       ) : viewLayout === 'cards' ? (
         
