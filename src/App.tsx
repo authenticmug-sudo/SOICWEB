@@ -410,27 +410,32 @@ export default function App() {
       if (synced.datasets && Array.isArray(synced.datasets)) setDatasets(synced.datasets);
     };
 
-    // Smart Hybrid background sync: Prioritize Cloudinary Master JSON distribution & Firestore fallback
+    // Smart Hybrid background sync: Prioritize Firestore Database as Authoritative Truth
     const runFullCloudSync = async () => {
       // 1. First sync Cloudinary settings from Firestore so any device receives cloud credentials
       await syncCloudinaryConfigFromFirestore().catch(() => {});
 
-      // 2. Reconcile any pending Excel backup records in Firestore
+      // 2. Sync from Firestore first (authoritative database across all devices)
+      try {
+        const fsSynced = await syncAllDataFromFirestore();
+        if (fsSynced && Object.keys(fsSynced).length > 0) {
+          handleApplyCloudinarySynced(fsSynced);
+        }
+      } catch (err) {
+        console.warn('Firestore initial sync notice:', err);
+      }
+
+      // 3. Reconcile any pending Excel backup records in Firestore
       reconcilePendingExcelBackups().catch(() => {});
 
-      // 3. Sync from Cloudinary CDN & Firestore
+      // 4. Secondary fallback sync from Cloudinary CDN
       syncAllDataFromCloudinary()
-        .then(handleApplyCloudinarySynced)
-        .catch(err => console.warn('Cloudinary background sync notice:', err))
-        .finally(() => {
-          syncAllDataFromFirestore()
-            .then(fsSynced => {
-              if (fsSynced && Object.keys(fsSynced).length > 0) {
-                handleApplyCloudinarySynced(fsSynced);
-              }
-            })
-            .catch(() => {});
-        });
+        .then(cdnSynced => {
+          if (cdnSynced && Object.keys(cdnSynced).length > 0) {
+            handleApplyCloudinarySynced(cdnSynced);
+          }
+        })
+        .catch(err => console.warn('Cloudinary background sync notice:', err));
     };
 
     // Run on initial load
@@ -443,6 +448,11 @@ export default function App() {
           const syncedStores = s.map(st => autoSyncStoreRegionAndKabupaten(st));
           setStores(syncedStores);
           setSchedules(prev => syncScheduleRegionsWithStores(prev, syncedStores));
+        }
+      },
+      onDatasets: (ds) => {
+        if (ds && Array.isArray(ds) && ds.length > 0) {
+          setDatasets(ds);
         }
       },
       onSchedules: (sch) => {
@@ -727,7 +737,7 @@ export default function App() {
     setStores(updatedStores);
     setSchedules(updatedSchedules);
     saveStores(updatedStores);
-    saveSchedules(updatedSchedules);
+    saveSchedules(updatedSchedules, true);
   };
 
   const handleCreateSchedule = (newSched: Omit<SOSchedule, 'id' | 'createdAt'>) => {

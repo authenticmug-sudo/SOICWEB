@@ -48,7 +48,7 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
       row.forEach((cell, idx) => {
         const u = String(cell || '').trim().toUpperCase();
         if (['KDTK', 'KD TOKO', 'KODE TOKO', 'IDM', 'KDT'].includes(u)) codeCol = idx;
-        if (['KORLAP', 'OFFICER', 'GROUP', 'GRUP', 'KORLAP/OFFICER', 'KORLAP / OFFICER'].includes(u)) korlapCol = idx;
+        if (['KORLAP', 'OFFICER', 'GROUP', 'GRUP', 'KORLAP/OFFICER', 'KORLAP / OFFICER', 'KORLAP/OFFICER SO', 'KORLAP / OFFICER SO', 'OFFICER SO'].includes(u)) korlapCol = idx;
       });
       if (codeCol >= 0 && korlapCol >= 0) break;
     }

@@ -623,10 +623,11 @@ export function syncSchedulesFromMasterStores(
     const existingUnapprovedList = (codeKey ? unapprovedMap.get(codeKey) : undefined) || 
                                   (idKey ? unapprovedMap.get(idKey) : undefined) || [];
 
-    // If store already has a genuinely approved schedule, preserve it
+    // If store already has a genuinely approved schedule in this active period, preserve it
     const hasApprovedSchedule = approvedSchedules.some(s => 
-      (codeKey && s.storeCode?.trim().toUpperCase() === codeKey) || 
-      (idKey && s.storeId?.trim().toUpperCase() === idKey)
+      ((codeKey && s.storeCode?.trim().toUpperCase() === codeKey) || 
+       (idKey && s.storeId?.trim().toUpperCase() === idKey)) &&
+      (targetMonth === 'ALL' || (s.scheduledDate && s.scheduledDate.split('-')[1] === targetMonth))
     );
 
     if (hasApprovedSchedule) {
@@ -667,8 +668,18 @@ export function syncSchedulesFromMasterStores(
       name: st.name,
       address: st.address
     });
-    const canonicalOfficer = st.korlap && st.korlap !== 'Petugas SO' 
-      ? (normalizeKorlapName(st.korlap) || st.korlap) 
+    
+    // Extract Korlap strictly from Master Toko columns (KORLAP/OFFICER SO, korlap, managerName)
+    const rawKorlap = st.korlap || 
+      (st as any)['KORLAP/OFFICER SO'] || 
+      (st as any)['KORLAP / OFFICER SO'] || 
+      (st as any)['KORLAP'] || 
+      (st as any)['OFFICER SO'] || 
+      (st as any)['OFFICER'] || 
+      st.managerName;
+
+    const canonicalOfficer = (rawKorlap && rawKorlap !== 'Petugas SO' && String(rawKorlap).trim() !== '')
+      ? (normalizeKorlapName(String(rawKorlap).trim()) || String(rawKorlap).trim()) 
       : (resolvedDefaultKorlap || 'Belum Ditentukan');
 
     const isHitam = isStoreZonaHitam(st);

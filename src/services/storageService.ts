@@ -624,26 +624,13 @@ function mergeAndSyncFirestoreWithLocal<T extends { id: string }>(
   let deletedIds = getDeletedIdsSet(storageKey);
   const mergedMap = new Map<string, T>();
 
-  // 2. Add Firestore items unless marked deleted locally or before hard reset
+  // 2. Add Firestore items (Firestore is authoritative single source of truth)
   for (const item of dedupedFsItems) {
     if (item && item.id) {
-      const itemTime = (item as any).updatedAt ? new Date((item as any).updatedAt).getTime() : ((item as any).createdAt ? new Date((item as any).createdAt).getTime() : 0);
-      if (isHardCleared && localItems.length === 0 && effectiveResetTime > 0 && itemTime > 0 && itemTime <= effectiveResetTime) {
-        // Pre-reset artifact; clean it from Firestore
-        if (!isFirestoreQuotaExceeded) {
-          deleteDoc(doc(db, collectionName, item.id)).catch(() => {});
-        }
-        continue;
-      }
-
       const isDatasetMarkedDeleted = collectionName === 'master_toko_datasets' && isMasterDatasetDeleted(item as any);
-      if (!deletedIds.has(item.id) && !isDatasetMarkedDeleted) {
+      if (!isDatasetMarkedDeleted) {
         mergedMap.set(item.id, item);
         cacheMap.set(item.id, JSON.stringify(item));
-      } else if (!isFirestoreQuotaExceeded) {
-        // Doc was deleted locally; ensure it is removed from Firestore and cache
-        deleteDoc(doc(db, collectionName, item.id)).catch(() => {});
-        cacheMap.delete(item.id);
       }
     }
   }
@@ -1694,10 +1681,13 @@ export async function fetchCollectionFromFirestore<T extends { id: string }>(
       if (manifestDoc.exists()) {
         const mData = manifestDoc.data();
         if (mData && mData.hash && mData.hash === localHash && localItems.length > 0) {
-          // Local cache is already 100% in-sync with Firestore!
-          // Saved entire collection scan (0 extra document reads!)
-          collectionVersionHash[collectionName] = mData.hash;
-          return localItems;
+          if (mData.count !== undefined && mData.count !== localItems.length) {
+            // Local count differs from Firestore manifest count; force fetch
+          } else {
+            // Local cache is already 100% in-sync with Firestore!
+            collectionVersionHash[collectionName] = mData.hash;
+            return localItems;
+          }
         }
       }
     } catch (manifestErr) {
@@ -1713,6 +1703,16 @@ export async function fetchCollectionFromFirestore<T extends { id: string }>(
       }
     });
     if (items.length > 0) {
+      if (collectionName === 'stores') {
+        const { deduplicated } = deduplicateEntityList('stores', items);
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(deduplicated));
+          notifyDataChanged(storageKey, deduplicated);
+        } catch {}
+        const newHash = calculateListHash(deduplicated);
+        collectionVersionHash[collectionName] = newHash;
+        return deduplicated as any;
+      }
       const merged = mergeAndSyncFirestoreWithLocal(storageKey, collectionName, items);
       const newHash = calculateListHash(merged);
       collectionVersionHash[collectionName] = newHash;
@@ -2162,6 +2162,7 @@ export function subscribeFirestoreData(callbacks: {
   onEquipment?: (equipment: SOEquipment[]) => void;
   onRepairLogs?: (logs: EquipmentRepairLog[]) => void;
   onUniforms?: (uniforms: UniformRecord[]) => void;
+  onDatasets?: (datasets: MasterTokoDataset[]) => void;
 }) {
   if (isFirestoreQuotaExceeded) {
     return () => {};
@@ -2178,7 +2179,44 @@ export function subscribeFirestoreData(callbacks: {
     }
   };
 
-  // 1. Listen to lightweight Manifest collection (only 1 read per modification event across all clients!)
+  // 1. Direct listener for Master Stores so ALL connected devices have identical store counts in real time
+  if (callbacks.onStores) {
+    const unsub = onSnapshot(collection(db, 'stores'), (snapshot) => {
+      const items: Store[] = [];
+      snapshot.forEach(doc => {
+        if (doc.id !== '_manifest') items.push(doc.data() as Store);
+      });
+      if (items.length > 0) {
+        const { deduplicated } = deduplicateEntityList('stores', items);
+        try {
+          localStorage.setItem(STORAGE_KEYS.STORES, JSON.stringify(deduplicated));
+          notifyDataChanged(STORAGE_KEYS.STORES, deduplicated);
+        } catch {}
+        callbacks.onStores!(deduplicated);
+      }
+    }, (err) => handleListenerError(err, 'stores'));
+    unsubscribes.push(unsub);
+  }
+
+  // 2. Direct listener for Master Toko Datasets
+  if (callbacks.onDatasets) {
+    const unsub = onSnapshot(collection(db, 'master_toko_datasets'), (snapshot) => {
+      const items: MasterTokoDataset[] = [];
+      snapshot.forEach(doc => {
+        if (doc.id !== '_manifest') items.push(doc.data() as MasterTokoDataset);
+      });
+      if (items.length > 0) {
+        try {
+          localStorage.setItem(STORAGE_KEYS.MASTER_TOKO_DATASETS, JSON.stringify(items));
+          notifyDataChanged(STORAGE_KEYS.MASTER_TOKO_DATASETS, items);
+        } catch {}
+        callbacks.onDatasets!(items);
+      }
+    }, (err) => handleListenerError(err, 'master_toko_datasets'));
+    unsubscribes.push(unsub);
+  }
+
+  // 3. Listen to lightweight Manifest collection for auxiliary collections (teams, personnel, etc.)
   try {
     const unsubManifest = onSnapshot(collection(db, '_metadata_manifests'), (snapshot) => {
       snapshot.docChanges().forEach((change) => {
@@ -2231,7 +2269,7 @@ export function subscribeFirestoreData(callbacks: {
     handleListenerError(err, 'manifest_setup');
   }
 
-  // 2. Direct listeners for dynamic transaction collections (schedules & results) where live typing/updates happen
+  // 4. Direct listeners for dynamic transaction collections (schedules & results) where live typing/updates happen
   if (callbacks.onSchedules) {
     const unsub = onSnapshot(collection(db, 'schedules'), (snapshot) => {
       const items: SOSchedule[] = [];
