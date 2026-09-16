@@ -28,6 +28,13 @@ import { ToastNotification } from '../Common/ToastNotification';
 import { parseSmartWorkbook, SheetParseResult } from '../../utils/excelParser';
 import { isStoreZonaHitam } from '../../utils/storeSyncUtils';
 import { trackDeletedMasterDataset } from '../../services/storageService';
+import { SpreadsheetSyncModal } from './SpreadsheetSyncModal';
+import { 
+  getLocalSpreadsheetConfig, 
+  syncMasterStoresFromSpreadsheet, 
+  GoogleSpreadsheetConfig, 
+  SpreadsheetSyncResult 
+} from '../../services/googleSpreadsheetService';
 
 interface MasterTokoManagerProps {
   datasets: MasterTokoDataset[];
@@ -70,6 +77,48 @@ export const MasterTokoManager: React.FC<MasterTokoManagerProps> = ({
   // Preview modal filter state
   const [previewSearch, setPreviewSearch] = useState('');
   const [previewTypeSoFilter, setPreviewTypeSoFilter] = useState('ALL');
+
+  // Google Spreadsheet Sync states
+  const [isSpreadsheetModalOpen, setIsSpreadsheetModalOpen] = useState(false);
+  const [spreadsheetConfig, setSpreadsheetConfig] = useState<GoogleSpreadsheetConfig>(() => getLocalSpreadsheetConfig());
+  const [isQuickSyncing, setIsQuickSyncing] = useState(false);
+
+  const handleQuickSyncSpreadsheet = async () => {
+    if (!spreadsheetConfig.url) {
+      setIsSpreadsheetModalOpen(true);
+      return;
+    }
+
+    setIsQuickSyncing(true);
+    try {
+      const res = await syncMasterStoresFromSpreadsheet(spreadsheetConfig.url, {
+        preferredSheetName: spreadsheetConfig.sheetName || 'MASTER TOKO BALI'
+      });
+
+      if (res.success) {
+        setSpreadsheetConfig(getLocalSpreadsheetConfig());
+        setToastMessage({
+          type: 'success',
+          title: 'Sinkron Spreadsheet Berhasil',
+          message: `Berhasil menarik ${res.storesCount} toko dan ${res.schedulesCount} jadwal SO dari sheet '${res.sheetName}'!`
+        });
+      } else {
+        setToastMessage({
+          type: 'error',
+          title: 'Gagal Sinkron Spreadsheet',
+          message: res.error || res.message || 'Terjadi kesalahan saat menyinkronkan data.'
+        });
+      }
+    } catch (err: any) {
+      setToastMessage({
+        type: 'error',
+        title: 'Error Sinkron',
+        message: err?.message || 'Gagal menghubungi Google Spreadsheet.'
+      });
+    } finally {
+      setIsQuickSyncing(false);
+    }
+  };
 
   const handleSelectSheet = (sheetName: string) => {
     setSelectedSheetName(sheetName);
@@ -208,6 +257,13 @@ export const MasterTokoManager: React.FC<MasterTokoManagerProps> = ({
 
           <div className="flex flex-wrap items-center gap-3 shrink-0">
             <button
+              onClick={() => setIsSpreadsheetModalOpen(true)}
+              className="px-5 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold rounded-2xl text-xs sm:text-sm shadow-lg shadow-emerald-950/50 transition-all flex items-center gap-2 active:scale-95 border border-emerald-400/40 cursor-pointer"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
+              <span>Sinkron Google Spreadsheet</span>
+            </button>
+            <button
               onClick={() => setIsUploadModalOpen(true)}
               className="px-5 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold rounded-2xl text-xs sm:text-sm shadow-lg shadow-indigo-900/40 transition-all flex items-center gap-2 active:scale-95 border border-indigo-400/30 cursor-pointer"
             >
@@ -216,6 +272,48 @@ export const MasterTokoManager: React.FC<MasterTokoManagerProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Google Spreadsheet Quick Status Banner */}
+        {spreadsheetConfig.url && (
+          <div className="mt-4 p-3.5 bg-emerald-950/70 border border-emerald-500/40 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs relative z-10 backdrop-blur-sm">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center shrink-0 border border-emerald-400/30">
+                <FileSpreadsheet className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="font-extrabold text-white text-xs">
+                    Terhubung ke Google Spreadsheet
+                  </p>
+                  <span className="text-[10px] bg-emerald-500/30 text-emerald-300 font-bold px-2 py-0.5 rounded-full border border-emerald-400/30">
+                    Sheet: {spreadsheetConfig.sheetName || 'MASTER TOKO BALI'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-emerald-200/80 mt-0.5">
+                  {spreadsheetConfig.lastSyncedAt 
+                    ? `Terakhir disinkron: ${new Date(spreadsheetConfig.lastSyncedAt).toLocaleString('id-ID')} • ${spreadsheetConfig.lastSyncCount || 0} Toko • ${spreadsheetConfig.lastSyncSchedulesCount || 0} Jadwal SO`
+                    : 'Siap ditarik secara real-time kapan pun ada perubahan jadwal'}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <button
+                onClick={handleQuickSyncSpreadsheet}
+                disabled={isQuickSyncing}
+                className="flex-1 sm:flex-initial px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-black rounded-xl text-xs flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer disabled:opacity-50 shadow-sm"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isQuickSyncing ? 'animate-spin' : ''}`} />
+                <span>{isQuickSyncing ? 'Menyinkronkan...' : 'Tarik Update Sekarang'}</span>
+              </button>
+              <button
+                onClick={() => setIsSpreadsheetModalOpen(true)}
+                className="px-3 py-2 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl text-xs transition cursor-pointer"
+              >
+                Pengaturan
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Dynamic Key Metric Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-5 border-t border-indigo-900/60">
@@ -797,6 +895,21 @@ export const MasterTokoManager: React.FC<MasterTokoManagerProps> = ({
           { label: 'Periode', value: datasetToDelete.periodOrQuarter || '-' }
         ] : []}
         confirmText="Ya, Hapus File Master"
+      />
+
+      {/* GOOGLE SPREADSHEET SYNC MODAL */}
+      <SpreadsheetSyncModal
+        isOpen={isSpreadsheetModalOpen}
+        onClose={() => setIsSpreadsheetModalOpen(false)}
+        onSyncComplete={(res) => {
+          setSpreadsheetConfig(getLocalSpreadsheetConfig());
+          setToastMessage({
+            type: 'success',
+            title: 'Sinkronisasi Spreadsheet Selesai',
+            message: `Data ${res.storesCount} toko dan ${res.schedulesCount} jadwal SO dari Google Spreadsheet berhasil diperbarui!`
+          });
+        }}
+        existingStores={parsedStores}
       />
 
       {/* TOAST FEEDBACK */}

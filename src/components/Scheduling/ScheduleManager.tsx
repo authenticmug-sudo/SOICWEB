@@ -42,6 +42,7 @@ import { KorlapDashboard } from './KorlapDashboard';
 import { KorlapAvatarBar } from './KorlapAvatarBar';
 import { ConfirmDeleteModal } from '../Common/ConfirmDeleteModal';
 import { ToastNotification } from '../Common/ToastNotification';
+import { SpreadsheetSyncModal } from '../Stores/SpreadsheetSyncModal';
 import { 
   getAvailableKorlapList, 
   isKorlapMatch, 
@@ -96,6 +97,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
   onResetMasterAndSchedules
 }) => {
   const [activeScheduleTab, setActiveScheduleTab] = useState<'HARI_H' | 'H_MINUS_1' | 'ALL_SEPTEMBER'>('ALL_SEPTEMBER');
+  const [isSpreadsheetModalOpen, setIsSpreadsheetModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRegion, setSelectedRegion] = useState<string>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
@@ -556,8 +558,16 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
           {/* Quick Actions */}
           <div className="flex items-center gap-2 shrink-0">
             <button
+              onClick={() => setIsSpreadsheetModalOpen(true)}
+              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white text-xs font-bold transition border border-emerald-400/40 flex items-center gap-1.5 shadow-sm cursor-pointer"
+              title="Sinkronkan pembaruan jadwal dari Google Spreadsheet Master Toko"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
+              <span>Sinkron Spreadsheet</span>
+            </button>
+            <button
               onClick={handleExportSchedules}
-              className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 active:scale-98 text-white text-xs font-bold transition border border-white/10 flex items-center gap-1.5 shadow-xs"
+              className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 active:scale-98 text-white text-xs font-bold transition border border-white/10 flex items-center gap-1.5 shadow-xs cursor-pointer"
             >
               <Download className="w-4 h-4 text-emerald-400" />
               <span>Export CSV Hari-H</span>
@@ -2169,6 +2179,17 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
           </div>
         </div>
       )}
+
+      {/* SPREADSHEET SYNC MODAL */}
+      <SpreadsheetSyncModal
+        isOpen={isSpreadsheetModalOpen}
+        onClose={() => setIsSpreadsheetModalOpen(false)}
+        onSyncComplete={(res) => {
+          setToastMessage(`Jadwal SO berhasil disinkronkan dari Google Spreadsheet! ${res.storesCount} toko dan ${res.schedulesCount} jadwal ter-update.`);
+        }}
+        existingStores={stores}
+        existingSchedules={schedules}
+      />
 
       {/* Confirmation Modal for Schedule Deletion */}
       <ConfirmDeleteModal

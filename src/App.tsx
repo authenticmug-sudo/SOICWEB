@@ -124,6 +124,7 @@ import { SettingsManager } from './components/Settings/SettingsManager';
 import { BaliClusterMap } from './components/Map/BaliClusterMap';
 
 import { syncCloudinaryConfigFromFirestore } from './services/cloudinaryService';
+import { syncSpreadsheetConfigFromFirestore, syncMasterStoresFromSpreadsheet } from './services/googleSpreadsheetService';
 
 export default function App() {
   const [stores, setStores] = useState<Store[]>([]);
@@ -428,7 +429,18 @@ export default function App() {
       // 3. Reconcile any pending Excel backup records in Firestore
       reconcilePendingExcelBackups().catch(() => {});
 
-      // 4. Secondary fallback sync from Cloudinary CDN
+      // 4. Sync Google Spreadsheet configuration and trigger auto-sync if configured
+      syncSpreadsheetConfigFromFirestore()
+        .then(gsheetConfig => {
+          if (gsheetConfig?.autoSyncOnLoad && gsheetConfig.url) {
+            syncMasterStoresFromSpreadsheet(gsheetConfig.url, {
+              preferredSheetName: gsheetConfig.sheetName || 'MASTER TOKO BALI'
+            }).catch(err => console.warn('Background auto spreadsheet sync notice:', err));
+          }
+        })
+        .catch(() => {});
+
+      // 5. Secondary fallback sync from Cloudinary CDN
       syncAllDataFromCloudinary()
         .then(cdnSynced => {
           if (cdnSynced && Object.keys(cdnSynced).length > 0) {
