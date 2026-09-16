@@ -12,12 +12,15 @@ import {
   Sparkles, 
   Calendar, 
   Database,
-  ArrowRight
+  ArrowRight,
+  PowerOff,
+  Unlink
 } from 'lucide-react';
 import { 
   extractSpreadsheetInfo, 
   getLocalSpreadsheetConfig, 
   saveSpreadsheetConfig, 
+  deactivateSpreadsheetSync,
   syncMasterStoresFromSpreadsheet,
   SpreadsheetSyncResult 
 } from '../../services/googleSpreadsheetService';
@@ -43,11 +46,14 @@ export const SpreadsheetSyncModal: React.FC<SpreadsheetSyncModalProps> = ({
   const [targetMonth, setTargetMonth] = useState('09');
   const [targetYear, setTargetYear] = useState('2026');
   const [autoSyncOnLoad, setAutoSyncOnLoad] = useState(false);
+  const [isCurrentlyActive, setIsCurrentlyActive] = useState(false);
   
   const [isLoading, setIsLoading] = useState(false);
+  const [isDeactivating, setIsDeactivating] = useState(false);
   const [syncStep, setSyncStep] = useState<string>('');
   const [lastResult, setLastResult] = useState<SpreadsheetSyncResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successNotice, setSuccessNotice] = useState<string | null>(null);
 
   // Load existing config on open
   useEffect(() => {
@@ -56,8 +62,10 @@ export const SpreadsheetSyncModal: React.FC<SpreadsheetSyncModalProps> = ({
       if (config.url) setUrl(config.url);
       if (config.sheetName) setSheetName(config.sheetName);
       setAutoSyncOnLoad(Boolean(config.autoSyncOnLoad));
+      setIsCurrentlyActive(Boolean(config.url && config.isActive !== false));
       setErrorMessage(config.lastError || null);
       setLastResult(null);
+      setSuccessNotice(null);
       setSyncStep('');
     }
   }, [isOpen]);
@@ -77,6 +85,28 @@ export const SpreadsheetSyncModal: React.FC<SpreadsheetSyncModalProps> = ({
     }
   };
 
+  const handleDeactivate = async () => {
+    if (!window.confirm('Apakah Anda yakin ingin menonaktifkan sinkronisasi Google Spreadsheet? Anda dapat mengaktifkannya kembali kapan saja.')) {
+      return;
+    }
+
+    setIsDeactivating(true);
+    setErrorMessage(null);
+    setLastResult(null);
+
+    try {
+      await deactivateSpreadsheetSync();
+      setUrl('');
+      setIsCurrentlyActive(false);
+      setAutoSyncOnLoad(false);
+      setSuccessNotice('Sinkronisasi Google Spreadsheet telah berhasil dinonaktifkan. Data toko & jadwal yang sudah tersimpan tetap aman.');
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Gagal menonaktifkan sinkronisasi.');
+    } finally {
+      setIsDeactivating(false);
+    }
+  };
+
   const handleSaveAndSync = async () => {
     if (!urlInfo.valid) {
       setErrorMessage('Harap masukkan Link atau ID Google Spreadsheet yang valid.');
@@ -85,6 +115,7 @@ export const SpreadsheetSyncModal: React.FC<SpreadsheetSyncModalProps> = ({
 
     setIsLoading(true);
     setErrorMessage(null);
+    setSuccessNotice(null);
     setLastResult(null);
     setSyncStep('Menghubungkan ke Google Spreadsheet...');
 
@@ -94,8 +125,10 @@ export const SpreadsheetSyncModal: React.FC<SpreadsheetSyncModalProps> = ({
         url: url.trim(),
         spreadsheetId: urlInfo.spreadsheetId,
         sheetName: sheetName.trim() || 'MASTER TOKO BALI',
-        autoSyncOnLoad
+        autoSyncOnLoad,
+        isActive: true
       });
+      setIsCurrentlyActive(true);
 
       setSyncStep(`Membaca susunan sheet '${sheetName}' & mengekstrak data toko...`);
 
@@ -110,6 +143,7 @@ export const SpreadsheetSyncModal: React.FC<SpreadsheetSyncModalProps> = ({
       if (result.success) {
         setSyncStep('Menyimpan ke Cloud Firestore & menyinkronkan semua device...');
         setLastResult(result);
+        setIsCurrentlyActive(true);
         if (onSyncComplete) {
           onSyncComplete(result);
         }
@@ -139,10 +173,17 @@ export const SpreadsheetSyncModal: React.FC<SpreadsheetSyncModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-black tracking-tight">Sinkron Google Spreadsheet</h2>
-                <span className="bg-emerald-500/30 text-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-400/30 flex items-center gap-1">
-                  <Sparkles className="w-3 h-3" />
-                  Real-time Sync
-                </span>
+                {isCurrentlyActive ? (
+                  <span className="bg-emerald-500/30 text-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-400/30 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                    Aktif
+                  </span>
+                ) : (
+                  <span className="bg-slate-700/60 text-slate-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-slate-600 flex items-center gap-1">
+                    <PowerOff className="w-3 h-3 text-slate-400" />
+                    Nonaktif
+                  </span>
+                )}
               </div>
               <p className="text-xs text-slate-300 mt-0.5 leading-relaxed">
                 Tautkan Google Spreadsheet Master Toko Bali agar jadwal & status toko langsung ter-update otomatis di semua perangkat.
@@ -160,6 +201,21 @@ export const SpreadsheetSyncModal: React.FC<SpreadsheetSyncModalProps> = ({
 
         {/* Body */}
         <div className="p-6 space-y-5 text-slate-700">
+          {/* Deactivation / Generic Success Alert */}
+          {successNotice && (
+            <div className="p-4 bg-teal-50 border border-teal-200 rounded-2xl flex items-start gap-3 animate-fadeIn">
+              <CheckCircle2 className="w-5 h-5 text-teal-600 shrink-0 mt-0.5" />
+              <div className="text-xs space-y-1">
+                <p className="font-extrabold text-teal-900">
+                  Pengaturan Diperbarui
+                </p>
+                <p className="text-teal-800 leading-relaxed">
+                  {successNotice}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Status / Success Alert */}
           {lastResult && lastResult.success && (
             <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-start gap-3 animate-fadeIn">
@@ -345,11 +401,23 @@ export const SpreadsheetSyncModal: React.FC<SpreadsheetSyncModalProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-2.5 w-full sm:w-auto">
+          <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
+            {isCurrentlyActive && (
+              <button
+                type="button"
+                onClick={handleDeactivate}
+                disabled={isLoading || isDeactivating}
+                className="flex-1 sm:flex-initial px-4 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                title="Putuskan sambungan dan nonaktifkan sinkronisasi otomatis"
+              >
+                <PowerOff className="w-3.5 h-3.5 text-rose-600" />
+                <span>{isDeactivating ? 'Menonaktifkan...' : 'Nonaktifkan Sinkron'}</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={onClose}
-              disabled={isLoading}
+              disabled={isLoading || isDeactivating}
               className="flex-1 sm:flex-initial px-4 py-2.5 border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer"
             >
               Tutup
@@ -357,9 +425,9 @@ export const SpreadsheetSyncModal: React.FC<SpreadsheetSyncModalProps> = ({
             <button
               type="button"
               onClick={handleSaveAndSync}
-              disabled={isLoading || !url.trim()}
+              disabled={isLoading || isDeactivating || !url.trim()}
               className={`flex-1 sm:flex-initial px-6 py-2.5 text-white text-xs font-black rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer ${
-                isLoading || !url.trim()
+                isLoading || isDeactivating || !url.trim()
                   ? 'bg-slate-300 cursor-not-allowed shadow-none'
                   : 'bg-emerald-600 hover:bg-emerald-500 active:scale-95 shadow-emerald-700/30'
               }`}

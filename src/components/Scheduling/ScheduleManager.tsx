@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Calendar as CalendarIcon, 
   Plus, 
@@ -31,7 +31,8 @@ import {
   CheckSquare,
   AlertTriangle,
   Flame,
-  ArrowUpDown
+  ArrowUpDown,
+  PowerOff
 } from 'lucide-react';
 import { SOSchedule, Store, SOTeam, RegionArea, UserRole, AuditorPersonnel, SOResult } from '../../types/stockOpname';
 import { REGIONS } from '../../data/initialData';
@@ -43,6 +44,11 @@ import { KorlapAvatarBar } from './KorlapAvatarBar';
 import { ConfirmDeleteModal } from '../Common/ConfirmDeleteModal';
 import { ToastNotification } from '../Common/ToastNotification';
 import { SpreadsheetSyncModal } from '../Stores/SpreadsheetSyncModal';
+import { 
+  getLocalSpreadsheetConfig, 
+  deactivateSpreadsheetSync,
+  GoogleSpreadsheetConfig 
+} from '../../services/googleSpreadsheetService';
 import { 
   getAvailableKorlapList, 
   isKorlapMatch, 
@@ -98,6 +104,38 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
 }) => {
   const [activeScheduleTab, setActiveScheduleTab] = useState<'HARI_H' | 'H_MINUS_1' | 'ALL_SEPTEMBER'>('ALL_SEPTEMBER');
   const [isSpreadsheetModalOpen, setIsSpreadsheetModalOpen] = useState(false);
+  const [spreadsheetConfig, setSpreadsheetConfig] = useState<GoogleSpreadsheetConfig>(() => getLocalSpreadsheetConfig());
+  const [isDeactivatingSpreadsheet, setIsDeactivatingSpreadsheet] = useState(false);
+
+  // Keep spreadsheet config in sync
+  useEffect(() => {
+    const handleConfigEvent = (e: any) => {
+      if (e.detail) {
+        setSpreadsheetConfig(e.detail);
+      } else {
+        setSpreadsheetConfig(getLocalSpreadsheetConfig());
+      }
+    };
+    window.addEventListener('spreadsheet_config_updated', handleConfigEvent);
+    return () => window.removeEventListener('spreadsheet_config_updated', handleConfigEvent);
+  }, []);
+
+  const handleDeactivateSpreadsheet = async () => {
+    if (!window.confirm('Apakah Anda yakin ingin menonaktifkan sinkronisasi Google Spreadsheet?')) {
+      return;
+    }
+    setIsDeactivatingSpreadsheet(true);
+    try {
+      const updated = await deactivateSpreadsheetSync();
+      setSpreadsheetConfig(updated);
+      setToastMessage('Sinkronisasi Google Spreadsheet telah dinonaktifkan.');
+    } catch (err: any) {
+      setToastMessage('Gagal menonaktifkan sinkronisasi: ' + (err?.message || 'Error'));
+    } finally {
+      setIsDeactivatingSpreadsheet(false);
+    }
+  };
+
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRegion, setSelectedRegion] = useState<string>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
@@ -556,7 +594,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
           </div>
 
           {/* Quick Actions */}
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             <button
               onClick={() => setIsSpreadsheetModalOpen(true)}
               className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white text-xs font-bold transition border border-emerald-400/40 flex items-center gap-1.5 shadow-sm cursor-pointer"
@@ -564,7 +602,21 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
             >
               <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
               <span>Sinkron Spreadsheet</span>
+              {spreadsheetConfig.url && spreadsheetConfig.isActive !== false && (
+                <span className="w-2 h-2 rounded-full bg-emerald-300 animate-pulse ml-0.5" title="Sinkron aktif" />
+              )}
             </button>
+            {spreadsheetConfig.url && spreadsheetConfig.isActive !== false && (
+              <button
+                onClick={handleDeactivateSpreadsheet}
+                disabled={isDeactivatingSpreadsheet}
+                className="px-3 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                title="Nonaktifkan sinkronisasi Google Spreadsheet"
+              >
+                <PowerOff className="w-3.5 h-3.5 text-rose-400" />
+                <span>{isDeactivatingSpreadsheet ? 'Menonaktifkan...' : 'Nonaktifkan Sinkron'}</span>
+              </button>
+            )}
             <button
               onClick={handleExportSchedules}
               className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 active:scale-98 text-white text-xs font-bold transition border border-white/10 flex items-center gap-1.5 shadow-xs cursor-pointer"

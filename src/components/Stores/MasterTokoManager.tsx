@@ -19,7 +19,8 @@ import {
   Store as StoreIcon,
   RefreshCw,
   SlidersHorizontal,
-  Info
+  Info,
+  PowerOff
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Store, MasterTokoDataset } from '../../types/stockOpname';
@@ -32,6 +33,7 @@ import { SpreadsheetSyncModal } from './SpreadsheetSyncModal';
 import { 
   getLocalSpreadsheetConfig, 
   syncMasterStoresFromSpreadsheet, 
+  deactivateSpreadsheetSync,
   GoogleSpreadsheetConfig, 
   SpreadsheetSyncResult 
 } from '../../services/googleSpreadsheetService';
@@ -82,6 +84,45 @@ export const MasterTokoManager: React.FC<MasterTokoManagerProps> = ({
   const [isSpreadsheetModalOpen, setIsSpreadsheetModalOpen] = useState(false);
   const [spreadsheetConfig, setSpreadsheetConfig] = useState<GoogleSpreadsheetConfig>(() => getLocalSpreadsheetConfig());
   const [isQuickSyncing, setIsQuickSyncing] = useState(false);
+  const [isDeactivatingSpreadsheet, setIsDeactivatingSpreadsheet] = useState(false);
+
+  // Keep spreadsheet config in sync with background or modal updates
+  React.useEffect(() => {
+    const handleConfigEvent = (e: any) => {
+      if (e.detail) {
+        setSpreadsheetConfig(e.detail);
+      } else {
+        setSpreadsheetConfig(getLocalSpreadsheetConfig());
+      }
+    };
+    window.addEventListener('spreadsheet_config_updated', handleConfigEvent);
+    return () => window.removeEventListener('spreadsheet_config_updated', handleConfigEvent);
+  }, []);
+
+  const handleDeactivateSpreadsheet = async () => {
+    if (!window.confirm('Apakah Anda yakin ingin menonaktifkan sinkronisasi Google Spreadsheet? Aplikasi tidak akan lagi menarik data otomatis dari spreadsheet ini.')) {
+      return;
+    }
+
+    setIsDeactivatingSpreadsheet(true);
+    try {
+      const updated = await deactivateSpreadsheetSync();
+      setSpreadsheetConfig(updated);
+      setToastMessage({
+        type: 'success',
+        title: 'Sinkronisasi Dinonaktifkan',
+        message: 'Koneksi Google Spreadsheet telah dinonaktifkan. Data toko & jadwal yang ada tetap tersimpan.'
+      });
+    } catch (err: any) {
+      setToastMessage({
+        type: 'error',
+        title: 'Gagal Menonaktifkan',
+        message: err?.message || 'Terjadi kesalahan saat menonaktifkan sinkronisasi.'
+      });
+    } finally {
+      setIsDeactivatingSpreadsheet(false);
+    }
+  };
 
   const handleQuickSyncSpreadsheet = async () => {
     if (!spreadsheetConfig.url) {
@@ -274,7 +315,7 @@ export const MasterTokoManager: React.FC<MasterTokoManagerProps> = ({
         </div>
 
         {/* Google Spreadsheet Quick Status Banner */}
-        {spreadsheetConfig.url && (
+        {spreadsheetConfig.url && spreadsheetConfig.isActive !== false && (
           <div className="mt-4 p-3.5 bg-emerald-950/70 border border-emerald-500/40 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs relative z-10 backdrop-blur-sm">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center shrink-0 border border-emerald-400/30">
@@ -296,10 +337,10 @@ export const MasterTokoManager: React.FC<MasterTokoManagerProps> = ({
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
               <button
                 onClick={handleQuickSyncSpreadsheet}
-                disabled={isQuickSyncing}
+                disabled={isQuickSyncing || isDeactivatingSpreadsheet}
                 className="flex-1 sm:flex-initial px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-black rounded-xl text-xs flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer disabled:opacity-50 shadow-sm"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isQuickSyncing ? 'animate-spin' : ''}`} />
@@ -307,9 +348,19 @@ export const MasterTokoManager: React.FC<MasterTokoManagerProps> = ({
               </button>
               <button
                 onClick={() => setIsSpreadsheetModalOpen(true)}
+                disabled={isQuickSyncing || isDeactivatingSpreadsheet}
                 className="px-3 py-2 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl text-xs transition cursor-pointer"
               >
                 Pengaturan
+              </button>
+              <button
+                onClick={handleDeactivateSpreadsheet}
+                disabled={isQuickSyncing || isDeactivatingSpreadsheet}
+                className="px-3 py-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 hover:border-rose-400/50 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                title="Nonaktifkan sinkronisasi Google Spreadsheet"
+              >
+                <PowerOff className="w-3.5 h-3.5" />
+                <span>{isDeactivatingSpreadsheet ? 'Menonaktifkan...' : 'Nonaktifkan Sinkron'}</span>
               </button>
             </div>
           </div>
