@@ -57,7 +57,7 @@ function handleFirestoreError(err: any): boolean {
   return false;
 }
 
-function cleanForFirestore<T>(obj: T): any {
+export function cleanForFirestore<T>(obj: T): any {
   if (obj === null || obj === undefined) return null;
   if (typeof obj !== 'object') return obj;
   if (Array.isArray(obj)) return obj.map(cleanForFirestore);

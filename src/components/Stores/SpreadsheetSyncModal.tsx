@@ -63,7 +63,11 @@ export const SpreadsheetSyncModal: React.FC<SpreadsheetSyncModalProps> = ({
       if (config.sheetName) setSheetName(config.sheetName);
       setAutoSyncOnLoad(Boolean(config.autoSyncOnLoad));
       setIsCurrentlyActive(Boolean(config.url && config.isActive !== false));
-      setErrorMessage(config.lastError || null);
+      // Auto-sanitize legacy undefined Firestore validation message if it exists
+      const cleanErr = config.lastError && !config.lastError.includes('Unsupported field value: undefined') && !config.lastError.includes('setDoc()')
+        ? config.lastError
+        : null;
+      setErrorMessage(cleanErr);
       setLastResult(null);
       setSuccessNotice(null);
       setSyncStep('');
@@ -79,6 +83,7 @@ export const SpreadsheetSyncModal: React.FC<SpreadsheetSyncModalProps> = ({
       const text = await navigator.clipboard.readText();
       if (text) {
         setUrl(text.trim());
+        setErrorMessage(null);
       }
     } catch {
       // Fallback
@@ -236,16 +241,26 @@ export const SpreadsheetSyncModal: React.FC<SpreadsheetSyncModalProps> = ({
 
           {/* Error Alert */}
           {errorMessage && (
-            <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-3 animate-fadeIn">
-              <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-              <div className="text-xs space-y-1">
-                <p className="font-extrabold text-rose-900">
-                  Kendala Sinkronisasi
-                </p>
-                <p className="text-rose-800 whitespace-pre-line leading-relaxed">
-                  {errorMessage}
-                </p>
+            <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-start justify-between gap-3 animate-fadeIn">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                <div className="text-xs space-y-1">
+                  <p className="font-extrabold text-rose-900">
+                    Kendala Sinkronisasi
+                  </p>
+                  <p className="text-rose-800 whitespace-pre-line leading-relaxed">
+                    {errorMessage}
+                  </p>
+                </div>
               </div>
+              <button
+                type="button"
+                onClick={() => setErrorMessage(null)}
+                className="text-rose-400 hover:text-rose-700 p-1 rounded-lg hover:bg-rose-100 transition cursor-pointer"
+                title="Tutup pesan kendala"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
           )}
 

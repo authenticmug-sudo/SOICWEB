@@ -14,7 +14,8 @@ import {
   notifyDataChanged,
   untrackDeletedIdsForItems,
   untrackDeletedMasterDataset,
-  normalizeSingleActiveDataset
+  normalizeSingleActiveDataset,
+  cleanForFirestore
 } from './storageService';
 
 export interface GoogleSpreadsheetConfig {
@@ -77,6 +78,14 @@ export function extractSpreadsheetInfo(rawInput: string): {
 /**
  * Retrieves Google Spreadsheet config from local storage or Firestore
  */
+function sanitizeLastError(err?: string): string {
+  if (!err) return '';
+  if (err.includes('Unsupported field value: undefined') || err.includes('setDoc() called with invalid data')) {
+    return '';
+  }
+  return err;
+}
+
 export function getLocalSpreadsheetConfig(): GoogleSpreadsheetConfig {
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -88,11 +97,11 @@ export function getLocalSpreadsheetConfig(): GoogleSpreadsheetConfig {
         sheetName: parsed.sheetName || 'MASTER TOKO BALI',
         autoSyncOnLoad: Boolean(parsed.autoSyncOnLoad),
         isActive: parsed.isActive !== undefined ? Boolean(parsed.isActive) : Boolean(parsed.url && parsed.spreadsheetId),
-        lastSyncedAt: parsed.lastSyncedAt,
-        lastSyncCount: parsed.lastSyncCount,
-        lastSyncSchedulesCount: parsed.lastSyncSchedulesCount,
-        lastSyncStatus: parsed.lastSyncStatus,
-        lastError: parsed.lastError
+        lastSyncedAt: parsed.lastSyncedAt || undefined,
+        lastSyncCount: typeof parsed.lastSyncCount === 'number' ? parsed.lastSyncCount : undefined,
+        lastSyncSchedulesCount: typeof parsed.lastSyncSchedulesCount === 'number' ? parsed.lastSyncSchedulesCount : undefined,
+        lastSyncStatus: parsed.lastSyncStatus || undefined,
+        lastError: sanitizeLastError(parsed.lastError)
       };
     }
   } catch (err) {
@@ -104,7 +113,8 @@ export function getLocalSpreadsheetConfig(): GoogleSpreadsheetConfig {
     spreadsheetId: '',
     sheetName: 'MASTER TOKO BALI',
     autoSyncOnLoad: false,
-    isActive: false
+    isActive: false,
+    lastError: ''
   };
 }
 
@@ -129,6 +139,7 @@ export async function syncSpreadsheetConfigFromFirestore(): Promise<GoogleSpread
         sheetName: data.sheetName || local.sheetName || 'MASTER TOKO BALI',
         autoSyncOnLoad: data.autoSyncOnLoad ?? local.autoSyncOnLoad ?? false,
         isActive: isActiveValue,
+        lastError: sanitizeLastError(data.lastError)
       };
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(merged));
       if (typeof window !== 'undefined') {
@@ -151,7 +162,8 @@ export async function saveSpreadsheetConfig(config: Partial<GoogleSpreadsheetCon
     ...current,
     ...config,
     sheetName: config.sheetName || current.sheetName || 'MASTER TOKO BALI',
-    isActive: config.isActive !== undefined ? config.isActive : (config.url ? true : current.isActive)
+    isActive: config.isActive !== undefined ? config.isActive : (config.url ? true : current.isActive),
+    lastError: sanitizeLastError(config.lastError !== undefined ? config.lastError : current.lastError)
   };
 
   localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updated));
@@ -160,13 +172,18 @@ export async function saveSpreadsheetConfig(config: Partial<GoogleSpreadsheetCon
     window.dispatchEvent(new CustomEvent('spreadsheet_config_updated', { detail: updated }));
   }
 
-  // Non-blocking Firestore update in background
-  setDoc(doc(db, 'settings', 'spreadsheet_config'), {
-    ...updated,
-    updatedAt: new Date().toISOString()
-  }, { merge: true }).catch(err => {
-    console.warn('Save spreadsheet config to Firestore notice:', err);
-  });
+  // Non-blocking Firestore update in background with cleanForFirestore
+  try {
+    const firestorePayload = cleanForFirestore({
+      ...updated,
+      updatedAt: new Date().toISOString()
+    });
+    setDoc(doc(db, 'settings', 'spreadsheet_config'), firestorePayload, { merge: true }).catch(err => {
+      console.warn('Save spreadsheet config to Firestore notice:', err);
+    });
+  } catch (err) {
+    console.warn('Save spreadsheet config to Firestore error:', err);
+  }
 
   return updated;
 }
@@ -184,7 +201,7 @@ export async function deactivateSpreadsheetSync(): Promise<GoogleSpreadsheetConf
     autoSyncOnLoad: false,
     isActive: false,
     lastSyncStatus: 'Sinkronisasi telah dinonaktifkan',
-    lastError: undefined
+    lastError: ''
   };
 
   localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(deactivated));
@@ -193,12 +210,17 @@ export async function deactivateSpreadsheetSync(): Promise<GoogleSpreadsheetConf
     window.dispatchEvent(new CustomEvent('spreadsheet_config_updated', { detail: deactivated }));
   }
 
-  setDoc(doc(db, 'settings', 'spreadsheet_config'), {
-    ...deactivated,
-    updatedAt: new Date().toISOString()
-  }, { merge: true }).catch(err => {
-    console.warn('Deactivate spreadsheet config in Firestore notice:', err);
-  });
+  try {
+    const firestorePayload = cleanForFirestore({
+      ...deactivated,
+      updatedAt: new Date().toISOString()
+    });
+    setDoc(doc(db, 'settings', 'spreadsheet_config'), firestorePayload, { merge: true }).catch(err => {
+      console.warn('Deactivate spreadsheet config in Firestore notice:', err);
+    });
+  } catch (err) {
+    console.warn('Deactivate spreadsheet config in Firestore error:', err);
+  }
 
   return deactivated;
 }
@@ -548,7 +570,7 @@ export async function syncMasterStoresFromSpreadsheet(
       lastSyncCount: parsedStores.length,
       lastSyncSchedulesCount: updatedSchedules.length,
       lastSyncStatus: statusMsg,
-      lastError: undefined
+      lastError: ''
     };
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newConfig));
     if (typeof window !== 'undefined') {
