@@ -369,10 +369,13 @@ export default function App() {
     const loadedEquipment = getStoredEquipment();
     const loadedRepairLogs = getStoredRepairLogs();
     const loadedDatasets = getStoredMasterTokoDatasets();
-    const syncedDatasets = loadedDatasets.map(ds => ({
+    const syncedDatasets = normalizeSingleActiveDataset(loadedDatasets.map(ds => ({
       ...ds,
       stores: ds.stores.map(s => autoSyncStoreRegionAndKabupaten(s))
-    }));
+    })));
+    if (syncedDatasets.length !== loadedDatasets.length) {
+      saveMasterTokoDatasets(syncedDatasets, true);
+    }
 
     setStores(preservedApprovedStores);
     setSchedules(syncedSchedules);
@@ -408,7 +411,9 @@ export default function App() {
       if (synced.results && Array.isArray(synced.results)) setResults(synced.results);
       if (synced.teams && Array.isArray(synced.teams)) setTeams(synced.teams);
       if (synced.repairLogs && Array.isArray(synced.repairLogs)) setRepairLogs(synced.repairLogs);
-      if (synced.datasets && Array.isArray(synced.datasets)) setDatasets(synced.datasets);
+      if (synced.datasets && Array.isArray(synced.datasets)) {
+        setDatasets(normalizeSingleActiveDataset(synced.datasets));
+      }
     };
 
     // Smart Hybrid background sync: Prioritize Firestore Database as Authoritative Truth

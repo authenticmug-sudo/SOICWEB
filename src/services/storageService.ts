@@ -155,6 +155,16 @@ export function trackDeletedMasterDataset(dataset: Partial<MasterTokoDataset>) {
 
 export function isMasterDatasetDeleted(dataset: Partial<MasterTokoDataset>): boolean {
   if (!dataset || !dataset.id) return false;
+  // Google Spreadsheet dataset should NEVER be blocked by tombstone if it is active or configured
+  if (dataset.id === 'gsheet_master_dataset_bali' || dataset.id.startsWith('gsheet_')) {
+    try {
+      const configRaw = localStorage.getItem('spv_spreadsheet_config');
+      if (configRaw) {
+        const conf = JSON.parse(configRaw);
+        if (conf?.isActive && conf?.url) return false;
+      }
+    } catch {}
+  }
   try {
     const key = 'spv_deleted_master_datasets';
     const raw = localStorage.getItem(key);
@@ -181,7 +191,15 @@ export function untrackDeletedMasterDataset(dataset: Partial<MasterTokoDataset>)
     if (dataset.filename) toRemove.add(dataset.filename.trim().toLowerCase());
     if (dataset.title) toRemove.add(dataset.title.trim().toLowerCase());
 
-    list = list.filter(item => !toRemove.has(item));
+    const isGSheet = (dataset.id && dataset.id.startsWith('gsheet')) ||
+                     (dataset.filename && dataset.filename.toLowerCase().includes('google sheet')) ||
+                     (dataset.title && dataset.title.toLowerCase().includes('google spreadsheet'));
+    if (isGSheet) {
+      toRemove.add('gsheet_master_dataset_bali');
+      list = list.filter(item => !item.startsWith('gsheet_') && !toRemove.has(item));
+    } else {
+      list = list.filter(item => !toRemove.has(item));
+    }
     localStorage.setItem(key, JSON.stringify(list));
   } catch {}
 }
@@ -368,6 +386,12 @@ export function getDeterministicResultId(item: Partial<SOResult>): string {
 }
 
 export function getDeterministicMasterDatasetId(item: Partial<MasterTokoDataset>): string {
+  const isGSheet = (item.id && item.id.startsWith('gsheet')) ||
+                   (item.filename && item.filename.toLowerCase().includes('google sheet')) ||
+                   (item.title && item.title.toLowerCase().includes('google spreadsheet'));
+  if (isGSheet) {
+    return 'gsheet_master_dataset_bali';
+  }
   const fn = (item.filename || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
   if (fn) return `ds_fn_${fn}`.slice(0, 45);
   const tt = (item.title || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
@@ -458,6 +482,12 @@ export function deduplicateEntityList<T extends { id: string }>(
       return `id_${it.id}`;
     }
     if (collectionName === 'master_toko_datasets') {
+      const isGSheet = (it.id && it.id.startsWith('gsheet')) ||
+                       (it.filename && it.filename.toLowerCase().includes('google sheet')) ||
+                       (it.title && it.title.toLowerCase().includes('google spreadsheet'));
+      if (isGSheet) {
+        return 'master_dataset_gsheet_bali';
+      }
       const fn = (it.filename || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
       const tt = (it.title || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
       if (fn) return `ds_fn_${fn}`;
@@ -519,6 +549,14 @@ export function deduplicateEntityList<T extends { id: string }>(
           if (scoreB !== scoreA) return scoreB - scoreA;
           const tA = a.uploadDate ? new Date(a.uploadDate).getTime() : (a.updatedAt ? new Date(a.updatedAt).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : 0));
           const tB = b.uploadDate ? new Date(b.uploadDate).getTime() : (b.updatedAt ? new Date(b.updatedAt).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0));
+          return tB - tA;
+        });
+      } else if (collectionName === 'master_toko_datasets') {
+        group.sort((a: any, b: any) => {
+          if (a.isActiveForScheduling && !b.isActiveForScheduling) return -1;
+          if (!a.isActiveForScheduling && b.isActiveForScheduling) return 1;
+          const tA = a.uploadDate ? new Date(a.uploadDate).getTime() : (a.updatedAt ? new Date(a.updatedAt).getTime() : 0);
+          const tB = b.uploadDate ? new Date(b.uploadDate).getTime() : (b.updatedAt ? new Date(b.updatedAt).getTime() : 0);
           return tB - tA;
         });
       } else {
@@ -660,9 +698,21 @@ function mergeAndSyncFirestoreWithLocal<T extends { id: string }>(
   }
 
   // Final deduplication on merged list to guarantee zero duplicate keys
-  let { deduplicated: finalMergedList } = deduplicateEntityList(collectionName, Array.from(mergedMap.values()));
+  let { deduplicated: finalMergedList, staleDocIdsToDelete: finalStaleDocIds } = deduplicateEntityList(collectionName, Array.from(mergedMap.values()));
   if (collectionName === 'master_toko_datasets') {
     finalMergedList = normalizeSingleActiveDataset(finalMergedList as any) as any;
+  }
+
+  // Purge any stale duplicate docs from Firestore asynchronously
+  if (finalStaleDocIds.length > 0 && !isFirestoreQuotaExceeded) {
+    (async () => {
+      for (const delId of finalStaleDocIds) {
+        try {
+          await deleteDoc(doc(db, collectionName, delId));
+          cacheMap.delete(delId);
+        } catch {}
+      }
+    })().catch(() => {});
   }
 
   // Save merged list to localStorage
@@ -1422,14 +1472,59 @@ export async function saveResults(results: SOResult[], isReplaceMode = false): P
 export function normalizeSingleActiveDataset(datasets: MasterTokoDataset[]): MasterTokoDataset[] {
   if (!datasets || !Array.isArray(datasets) || datasets.length === 0) return [];
   
-  // Find which dataset should be active:
-  // 1. First one with isActiveForScheduling === true, or if none, index 0
-  let activeIndex = datasets.findIndex(d => d.isActiveForScheduling === true);
-  if (activeIndex === -1 && datasets.length > 0) {
+  // 1. Separate Google Sheet datasets vs uploaded Excel files
+  const gsheetDatasets: MasterTokoDataset[] = [];
+  const otherDatasets: MasterTokoDataset[] = [];
+
+  for (const d of datasets) {
+    if (!d || !d.id) continue;
+    const isGSheet = d.id === 'gsheet_master_dataset_bali' ||
+                     d.id.startsWith('gsheet') || 
+                     (d.filename && d.filename.toLowerCase().includes('google sheet')) || 
+                     (d.title && d.title.toLowerCase().includes('google spreadsheet'));
+    if (isGSheet) {
+      gsheetDatasets.push(d);
+    } else {
+      otherDatasets.push(d);
+    }
+  }
+
+  // Deduplicate Google Sheet datasets: strictly keep ONLY ONE newest active GSheet dataset!
+  let singleGsheet: MasterTokoDataset | null = null;
+  if (gsheetDatasets.length > 0) {
+    gsheetDatasets.sort((a, b) => {
+      if (a.isActiveForScheduling && !b.isActiveForScheduling) return -1;
+      if (!a.isActiveForScheduling && b.isActiveForScheduling) return 1;
+      const tA = a.uploadDate ? new Date(a.uploadDate).getTime() : 0;
+      const tB = b.uploadDate ? new Date(b.uploadDate).getTime() : 0;
+      return tB - tA;
+    });
+    singleGsheet = {
+      ...gsheetDatasets[0],
+      id: 'gsheet_master_dataset_bali'
+    };
+  }
+
+  // Deduplicate other datasets by deterministic key (filename or title)
+  const seenKeys = new Set<string>();
+  const dedupedOthers: MasterTokoDataset[] = [];
+  for (const od of otherDatasets) {
+    const key = (od.filename || od.title || od.id).trim().toLowerCase();
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      dedupedOthers.push(od);
+    }
+  }
+
+  const combined = singleGsheet ? [singleGsheet, ...dedupedOthers] : dedupedOthers;
+
+  // 2. Ensure EXACTLY ONE dataset has isActiveForScheduling: true
+  let activeIndex = combined.findIndex(d => d.isActiveForScheduling === true);
+  if (activeIndex === -1 && combined.length > 0) {
     activeIndex = 0;
   }
   
-  return datasets.map((d, idx) => ({
+  return combined.map((d, idx) => ({
     ...d,
     isActiveForScheduling: idx === activeIndex
   }));
@@ -1640,18 +1735,15 @@ export function getStoredMasterTokoDatasets(): MasterTokoDataset[] {
   return [];
 }
 
-export async function saveMasterTokoDatasets(datasets: MasterTokoDataset[], isReplaceMode = false): Promise<void> {
+export async function saveMasterTokoDatasets(datasets: MasterTokoDataset[], isReplaceMode = true): Promise<void> {
   const normalized = normalizeSingleActiveDataset(datasets);
   untrackDeletedIdsForItems(STORAGE_KEYS.MASTER_TOKO_DATASETS, normalized.map(d => d.id));
   localStorage.setItem(STORAGE_KEYS.MASTER_TOKO_DATASETS, JSON.stringify(normalized));
   notifyDataChanged(STORAGE_KEYS.MASTER_TOKO_DATASETS, normalized);
   uploadRawJsonToCloudinary(normalized, 'Master_Toko_Datasets', 'SO Sistem IC BALI/Master Toko').catch(() => {});
   if (!isFirestoreQuotaExceeded) {
-    if (isReplaceMode) {
-      replaceFirestoreCollection('master_toko_datasets', normalized).catch(() => {});
-    } else {
-      syncFirestoreCollection('master_toko_datasets', normalized).catch(() => {});
-    }
+    // Master datasets must always clean up stale documents (like old duplicate gsheet_dataset_*) from Firestore
+    replaceFirestoreCollection('master_toko_datasets', normalized).catch(() => {});
   }
 }
 

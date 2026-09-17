@@ -11,7 +11,9 @@ import {
   getStoredMasterTokoDatasets, 
   STORAGE_KEYS,
   notifyDataChanged,
-  untrackDeletedIdsForItems
+  untrackDeletedIdsForItems,
+  untrackDeletedMasterDataset,
+  normalizeSingleActiveDataset
 } from './storageService';
 
 export interface GoogleSpreadsheetConfig {
@@ -482,10 +484,10 @@ export async function syncMasterStoresFromSpreadsheet(
     localStorage.setItem(STORAGE_KEYS.SCHEDULES, JSON.stringify(updatedSchedules));
     notifyDataChanged(STORAGE_KEYS.SCHEDULES, updatedSchedules);
 
-    // 5. Register into Master Toko Datasets history
-    const datasetId = `gsheet_dataset_${Date.now()}`;
+    // 5. Register into Master Toko Datasets history (Strictly Single Canonical GSheet Dataset)
+    const CANONICAL_GSHEET_DATASET_ID = 'gsheet_master_dataset_bali';
     const newDataset: MasterTokoDataset = {
-      id: datasetId,
+      id: CANONICAL_GSHEET_DATASET_ID,
       title: `Google Spreadsheet (${activeSheet.sheetName})`,
       filename: `Google Sheet [${spreadsheetId.slice(0, 8)}...]`,
       uploadDate: new Date().toISOString(),
@@ -497,9 +499,17 @@ export async function syncMasterStoresFromSpreadsheet(
       stores: parsedStores
     };
 
+    untrackDeletedMasterDataset(newDataset);
     const currentDatasets = getStoredMasterTokoDatasets();
-    const updatedDatasets = currentDatasets.map(d => ({ ...d, isActiveForScheduling: false }));
-    updatedDatasets.unshift(newDataset);
+    // Filter out any previous or duplicate Google Sheet datasets so only ONE canonical card ever exists
+    const otherDatasets = currentDatasets.filter(d => 
+      d.id !== CANONICAL_GSHEET_DATASET_ID && 
+      !d.id.startsWith('gsheet') &&
+      !d.filename?.toLowerCase().includes('google sheet') &&
+      !d.title?.toLowerCase().includes('google spreadsheet')
+    ).map(d => ({ ...d, isActiveForScheduling: false }));
+
+    const updatedDatasets = normalizeSingleActiveDataset([newDataset, ...otherDatasets]);
     
     localStorage.setItem(STORAGE_KEYS.MASTER_TOKO_DATASETS, JSON.stringify(updatedDatasets));
     notifyDataChanged(STORAGE_KEYS.MASTER_TOKO_DATASETS, updatedDatasets);

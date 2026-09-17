@@ -28,7 +28,7 @@ import { ConfirmDeleteModal } from '../Common/ConfirmDeleteModal';
 import { ToastNotification } from '../Common/ToastNotification';
 import { parseSmartWorkbook, SheetParseResult } from '../../utils/excelParser';
 import { isStoreZonaHitam } from '../../utils/storeSyncUtils';
-import { trackDeletedMasterDataset } from '../../services/storageService';
+import { trackDeletedMasterDataset, normalizeSingleActiveDataset } from '../../services/storageService';
 import { SpreadsheetSyncModal } from './SpreadsheetSyncModal';
 import { 
   getLocalSpreadsheetConfig, 
@@ -263,8 +263,30 @@ export const MasterTokoManager: React.FC<MasterTokoManagerProps> = ({
     });
   };
 
+  // Normalize datasets so there is never duplicate Google Sheet datasets or multiple active badges
+  const displayDatasets = React.useMemo(() => {
+    const norm = normalizeSingleActiveDataset(datasets);
+    // If datasets is empty but we have activeStoresCount > 0 and spreadsheetConfig is active,
+    // synthesize the fallback canonical dataset so the UI never appears blank ("hilang semua")
+    if (norm.length === 0 && activeStoresCount > 0 && spreadsheetConfig.isActive) {
+      return [{
+        id: 'gsheet_master_dataset_bali',
+        title: `Google Spreadsheet (${spreadsheetConfig.sheetName || 'MASTER TOKO BALI'})`,
+        filename: `Google Sheet [${(spreadsheetConfig.spreadsheetId || 'MASTER').slice(0, 8)}...]`,
+        uploadDate: spreadsheetConfig.lastSyncedAt || new Date().toISOString(),
+        storesCount: activeStoresCount,
+        isActiveForScheduling: true,
+        periodOrQuarter: 'September 2026',
+        indicatorList: ['Type SO', 'KORLAP/OFFICER SO', 'NKL'],
+        notes: `Tersambung langsung dengan Google Spreadsheet (${spreadsheetConfig.sheetName || 'MASTER TOKO BALI'}).`,
+        stores: []
+      }];
+    }
+    return norm;
+  }, [datasets, activeStoresCount, spreadsheetConfig]);
+
   // Filtering dataset list
-  const filteredDatasets = datasets.filter(ds => {
+  const filteredDatasets = displayDatasets.filter(ds => {
     const matchesSearch = 
       ds.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       ds.filename.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -373,7 +395,7 @@ export const MasterTokoManager: React.FC<MasterTokoManagerProps> = ({
               <Database className="w-3.5 h-3.5 text-indigo-400" />
               <span>Total File Master</span>
             </div>
-            <p className="text-xl font-black text-white mt-1">{datasets.length} Dataset</p>
+            <p className="text-xl font-black text-white mt-1">{displayDatasets.length} Dataset</p>
             <p className="text-[10px] text-slate-400 mt-0.5">Disimpan di Storage</p>
           </div>
 
@@ -392,7 +414,7 @@ export const MasterTokoManager: React.FC<MasterTokoManagerProps> = ({
               <span>Indikator Terdeteksi</span>
             </div>
             <p className="text-xl font-black text-purple-300 mt-1">
-              {Array.from(new Set(datasets.flatMap(d => d.indicatorList))).length || 4} Jenis
+              {Array.from(new Set(displayDatasets.flatMap(d => d.indicatorList))).length || 4} Jenis
             </p>
             <p className="text-[10px] text-slate-400 mt-0.5">Type SO, NKL, Toko Fresh</p>
           </div>
@@ -403,7 +425,7 @@ export const MasterTokoManager: React.FC<MasterTokoManagerProps> = ({
               <span>Periode Acuan</span>
             </div>
             <p className="text-xl font-black text-amber-300 mt-1">
-              {datasets.find(d => d.isActiveForScheduling)?.periodOrQuarter || 'Kuartal III 2026'}
+              {displayDatasets.find(d => d.isActiveForScheduling)?.periodOrQuarter || 'Kuartal III 2026'}
             </p>
             <p className="text-[10px] text-slate-400 mt-0.5">Master Aktif Penjadwalan</p>
           </div>
