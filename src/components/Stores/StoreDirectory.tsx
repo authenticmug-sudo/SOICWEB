@@ -234,55 +234,82 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
     localStorage.setItem('spv_visible_columns_store_v2', JSON.stringify(visibleColumns));
   }, [visibleColumns]);
 
-  // Unique list of Korlap for filtering
-  const korlapList = Array.from(
-    new Set(stores.map(s => getEffectiveKorlap(s)).filter(Boolean))
-  ).sort();
-
-  // Unique list of Regions/Kabupaten for filtering derived from master data
-  const availableRegions = Array.from(
-    new Set(stores.map(s => s.region || s.kabupaten || s.city).filter(Boolean))
-  ).sort();
-
-  const filteredStores = stores.filter(s => {
-    const searchLower = searchQuery.toLowerCase();
-    const effKorlap = getEffectiveKorlap(s);
-    const matchesSearch = 
-      s.code.toLowerCase().includes(searchLower) ||
-      s.name.toLowerCase().includes(searchLower) ||
-      (s.city || '').toLowerCase().includes(searchLower) ||
-      (s.kabupaten || '').toLowerCase().includes(searchLower) ||
-      (s.kecamatan || '').toLowerCase().includes(searchLower) ||
-      (s.coverage || '').toLowerCase().includes(searchLower) ||
-      effKorlap.toLowerCase().includes(searchLower) ||
-      (s.am || '').toLowerCase().includes(searchLower) ||
-      (s.as || '').toLowerCase().includes(searchLower);
-
-    const matchesRegion = selectedRegion === 'ALL' || s.region === selectedRegion || s.kabupaten === selectedRegion;
-    
-    let matchesQm = true;
-    if (selectedQm === 'M_Q3') {
-      const t = (s.typeSo || s.qm || '').toUpperCase();
-      const hasSep = Boolean(s.soSeptember && s.soSeptember !== '-' && s.soSeptember !== '0' && s.soSeptember !== '0-Jan-00' && s.soSeptember.toLowerCase() !== 'belum so');
-      matchesQm = t === 'M' || t === 'Q3' || t.startsWith('M') || t.startsWith('Q3') || hasSep;
-    } else if (selectedQm === 'SEP_FILLED') {
-      matchesQm = Boolean(s.soSeptember && s.soSeptember !== '-' && s.soSeptember !== '0' && s.soSeptember !== '0-Jan-00' && s.soSeptember.toLowerCase() !== 'belum so');
-    } else if (selectedQm !== 'ALL') {
-      const t = (s.typeSo || s.qm || '').toUpperCase();
-      matchesQm = t.includes(selectedQm.toUpperCase());
+  // 1. Memoized precomputed SO Approval status map for O(1) instant lookups
+  // Eliminates 700,000 nested iterations across results/schedules on every keystroke
+  const storeApprovalMap = React.useMemo(() => {
+    const map = new Map<string, 'Sudah Approve' | 'Belum SO' | 'Belum Terapprove'>();
+    for (const s of stores) {
+      map.set(s.id || s.code, getStoreSOApprovalStatus(s, schedules, results));
     }
+    return map;
+  }, [stores, schedules, results]);
 
-    const matchesKorlap = selectedKorlap === 'ALL' || effKorlap === selectedKorlap;
+  // 2. Unique list of Korlap for filtering (memoized)
+  const korlapList = React.useMemo(() => {
+    return Array.from(
+      new Set(stores.map(s => getEffectiveKorlap(s)).filter(Boolean))
+    ).sort();
+  }, [stores]);
 
-    const isBlackZone = isStoreZonaHitam(s);
-    const matchesZona = selectedZona === 'ALL' || 
-      (selectedZona === 'HITAM' ? isBlackZone : !isBlackZone);
+  // 3. Unique list of Regions/Kabupaten for filtering derived from master data (memoized)
+  const availableRegions = React.useMemo(() => {
+    return Array.from(
+      new Set(stores.map(s => s.region || s.kabupaten || s.city).filter(Boolean))
+    ).sort();
+  }, [stores]);
 
-    const storeStatusApprove = getStoreSOApprovalStatus(s, schedules, results);
-    const matchesStatusApprove = selectedStatusApprove === 'ALL' || storeStatusApprove === selectedStatusApprove;
+  // 4. Filtered stores list (memoized)
+  const filteredStores = React.useMemo(() => {
+    const searchLower = searchQuery.toLowerCase().trim();
+    return stores.filter(s => {
+      const effKorlap = getEffectiveKorlap(s);
+      if (searchLower) {
+        const matchesSearch = 
+          s.code.toLowerCase().includes(searchLower) ||
+          s.name.toLowerCase().includes(searchLower) ||
+          (s.city || '').toLowerCase().includes(searchLower) ||
+          (s.kabupaten || '').toLowerCase().includes(searchLower) ||
+          (s.kecamatan || '').toLowerCase().includes(searchLower) ||
+          (s.coverage || '').toLowerCase().includes(searchLower) ||
+          effKorlap.toLowerCase().includes(searchLower) ||
+          (s.am || '').toLowerCase().includes(searchLower) ||
+          (s.as || '').toLowerCase().includes(searchLower);
+        if (!matchesSearch) return false;
+      }
 
-    return matchesSearch && matchesRegion && matchesQm && matchesKorlap && matchesZona && matchesStatusApprove;
-  });
+      if (selectedRegion !== 'ALL' && s.region !== selectedRegion && s.kabupaten !== selectedRegion) {
+        return false;
+      }
+      
+      if (selectedQm === 'M_Q3') {
+        const t = (s.typeSo || s.qm || '').toUpperCase();
+        const hasSep = Boolean(s.soSeptember && s.soSeptember !== '-' && s.soSeptember !== '0' && s.soSeptember !== '0-Jan-00' && s.soSeptember.toLowerCase() !== 'belum so');
+        if (!(t === 'M' || t === 'Q3' || t.startsWith('M') || t.startsWith('Q3') || hasSep)) return false;
+      } else if (selectedQm === 'SEP_FILLED') {
+        const hasSep = Boolean(s.soSeptember && s.soSeptember !== '-' && s.soSeptember !== '0' && s.soSeptember !== '0-Jan-00' && s.soSeptember.toLowerCase() !== 'belum so');
+        if (!hasSep) return false;
+      } else if (selectedQm !== 'ALL') {
+        const t = (s.typeSo || s.qm || '').toUpperCase();
+        if (!t.includes(selectedQm.toUpperCase())) return false;
+      }
+
+      if (selectedKorlap !== 'ALL' && effKorlap !== selectedKorlap) {
+        return false;
+      }
+
+      const isBlackZone = isStoreZonaHitam(s);
+      if (selectedZona !== 'ALL' && (selectedZona === 'HITAM' ? !isBlackZone : isBlackZone)) {
+        return false;
+      }
+
+      if (selectedStatusApprove !== 'ALL') {
+        const storeStatusApprove = storeApprovalMap.get(s.id || s.code) || 'Belum SO';
+        if (storeStatusApprove !== selectedStatusApprove) return false;
+      }
+
+      return true;
+    });
+  }, [stores, searchQuery, selectedRegion, selectedQm, selectedKorlap, selectedZona, selectedStatusApprove, storeApprovalMap]);
 
   const totalPages = Math.ceil(filteredStores.length / pageSize) || 1;
   const paginatedStores = filteredStores.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -756,7 +783,7 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
                       {isColVisible('statusApproveSO') && (
                         <td className="py-2.5 px-3 text-center">
                           {(() => {
-                            const status = getStoreSOApprovalStatus(s, schedules, results);
+                            const status = storeApprovalMap.get(s.id || s.code) || 'Belum SO';
                             if (status === 'Sudah Approve') {
                               return (
                                 <span className="px-2.5 py-1 rounded-md bg-emerald-100 border border-emerald-300 text-emerald-900 font-bold text-[10px] inline-flex items-center gap-1 shadow-2xs">

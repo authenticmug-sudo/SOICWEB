@@ -371,7 +371,7 @@ export default function App() {
     const loadedDatasets = getStoredMasterTokoDatasets();
     const syncedDatasets = normalizeSingleActiveDataset(loadedDatasets.map(ds => ({
       ...ds,
-      stores: ds.stores.map(s => autoSyncStoreRegionAndKabupaten(s))
+      stores: (ds.stores || []).map(s => autoSyncStoreRegionAndKabupaten(s))
     })));
     if (syncedDatasets.length !== loadedDatasets.length) {
       saveMasterTokoDatasets(syncedDatasets, true);
@@ -434,13 +434,19 @@ export default function App() {
       // 3. Reconcile any pending Excel backup records in Firestore
       reconcilePendingExcelBackups().catch(() => {});
 
-      // 4. Sync Google Spreadsheet configuration and trigger auto-sync if configured and active
+      // 4. Sync Google Spreadsheet configuration and trigger auto-sync only when needed
       syncSpreadsheetConfigFromFirestore()
         .then(gsheetConfig => {
           if (gsheetConfig?.autoSyncOnLoad && gsheetConfig.url && gsheetConfig.isActive !== false) {
-            syncMasterStoresFromSpreadsheet(gsheetConfig.url, {
-              preferredSheetName: gsheetConfig.sheetName || 'MASTER TOKO BALI'
-            }).catch(err => console.warn('Background auto spreadsheet sync notice:', err));
+            const lastSyncTime = gsheetConfig.lastSyncedAt ? new Date(gsheetConfig.lastSyncedAt).getTime() : 0;
+            const fifteenMinutesAgo = Date.now() - 15 * 60 * 1000;
+            const storesEmpty = !storesRef.current || storesRef.current.length === 0;
+
+            if (storesEmpty || lastSyncTime < fifteenMinutesAgo) {
+              syncMasterStoresFromSpreadsheet(gsheetConfig.url, {
+                preferredSheetName: gsheetConfig.sheetName || 'MASTER TOKO BALI'
+              }).catch(err => console.warn('Background auto spreadsheet sync notice:', err));
+            }
           }
         })
         .catch(() => {});
@@ -494,13 +500,19 @@ export default function App() {
       }
     });
 
-    // Periodic sync every 12s across devices via Cloudinary Master JSON
+    // Periodic cloud reconciliation every 120s (2 minutes) to prevent background network congestion
     const syncInterval = setInterval(() => {
       runFullCloudSync();
-    }, 12000);
+    }, 120000);
 
+    let lastFocusSync = 0;
     const handleWindowFocus = () => {
-      runFullCloudSync();
+      const now = Date.now();
+      // Throttle window focus sync to at most once every 60 seconds
+      if (now - lastFocusSync > 60000) {
+        lastFocusSync = now;
+        runFullCloudSync();
+      }
     };
     window.addEventListener('focus', handleWindowFocus);
 
@@ -533,7 +545,7 @@ export default function App() {
           const { deduplicated } = deduplicateEntityList('master_toko_datasets', nonDeleted);
           const syncedDatasets = deduplicated.map(ds => ({
             ...ds,
-            stores: ds.stores.map(s => autoSyncStoreRegionAndKabupaten(s))
+            stores: (ds.stores || []).map(s => autoSyncStoreRegionAndKabupaten(s))
           }));
           setDatasets(normalizeSingleActiveDataset(syncedDatasets));
         }

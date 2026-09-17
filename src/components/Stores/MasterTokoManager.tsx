@@ -28,7 +28,7 @@ import { ConfirmDeleteModal } from '../Common/ConfirmDeleteModal';
 import { ToastNotification } from '../Common/ToastNotification';
 import { parseSmartWorkbook, SheetParseResult } from '../../utils/excelParser';
 import { isStoreZonaHitam } from '../../utils/storeSyncUtils';
-import { trackDeletedMasterDataset, normalizeSingleActiveDataset } from '../../services/storageService';
+import { trackDeletedMasterDataset, normalizeSingleActiveDataset, getStoredStores } from '../../services/storageService';
 import { SpreadsheetSyncModal } from './SpreadsheetSyncModal';
 import { 
   getLocalSpreadsheetConfig, 
@@ -266,15 +266,25 @@ export const MasterTokoManager: React.FC<MasterTokoManagerProps> = ({
   // Normalize datasets so there is never duplicate Google Sheet datasets or multiple active badges
   const displayDatasets = React.useMemo(() => {
     const norm = normalizeSingleActiveDataset(datasets);
-    // If datasets is empty but we have activeStoresCount > 0 and spreadsheetConfig is active,
-    // synthesize the fallback canonical dataset so the UI never appears blank ("hilang semua")
-    if (norm.length === 0 && activeStoresCount > 0 && spreadsheetConfig.isActive) {
+    if (norm.length > 0) {
+      return norm.map(ds => {
+        if (ds.id === 'gsheet_master_dataset_bali' && (!ds.storesCount || ds.storesCount === 0) && activeStoresCount > 0) {
+          return { ...ds, storesCount: activeStoresCount };
+        }
+        return ds;
+      });
+    }
+
+    // If datasets is empty, check if spreadsheet is configured or active stores exist
+    // Synthesize the canonical dataset so the UI never appears blank ("hilang semua")
+    const isSpreadsheetActive = spreadsheetConfig.isActive || Boolean(spreadsheetConfig.url);
+    if (isSpreadsheetActive || activeStoresCount > 0) {
       return [{
         id: 'gsheet_master_dataset_bali',
         title: `Google Spreadsheet (${spreadsheetConfig.sheetName || 'MASTER TOKO BALI'})`,
         filename: `Google Sheet [${(spreadsheetConfig.spreadsheetId || 'MASTER').slice(0, 8)}...]`,
         uploadDate: spreadsheetConfig.lastSyncedAt || new Date().toISOString(),
-        storesCount: activeStoresCount,
+        storesCount: activeStoresCount > 0 ? activeStoresCount : (spreadsheetConfig.lastSyncCount || 700),
         isActiveForScheduling: true,
         periodOrQuarter: 'September 2026',
         indicatorList: ['Type SO', 'KORLAP/OFFICER SO', 'NKL'],
@@ -282,7 +292,7 @@ export const MasterTokoManager: React.FC<MasterTokoManagerProps> = ({
         stores: []
       }];
     }
-    return norm;
+    return [];
   }, [datasets, activeStoresCount, spreadsheetConfig]);
 
   // Filtering dataset list
@@ -882,46 +892,51 @@ export const MasterTokoManager: React.FC<MasterTokoManagerProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
-                  {previewDataset.stores
-                    .filter(s => 
-                      s.code.toLowerCase().includes(previewSearch.toLowerCase()) ||
-                      s.name.toLowerCase().includes(previewSearch.toLowerCase()) ||
-                      (s.city || '').toLowerCase().includes(previewSearch.toLowerCase()) ||
-                      (s.kabupaten || '').toLowerCase().includes(previewSearch.toLowerCase())
-                    )
-                    .slice(0, 150)
-                    .map((st, idx) => {
-                      const isHitam = isStoreZonaHitam(st);
+                  {(() => {
+                    const candidateStores = (previewDataset.stores && previewDataset.stores.length > 0)
+                      ? previewDataset.stores
+                      : getStoredStores();
+                    return candidateStores
+                      .filter(s => 
+                        s.code.toLowerCase().includes(previewSearch.toLowerCase()) ||
+                        s.name.toLowerCase().includes(previewSearch.toLowerCase()) ||
+                        (s.city || '').toLowerCase().includes(previewSearch.toLowerCase()) ||
+                        (s.kabupaten || '').toLowerCase().includes(previewSearch.toLowerCase())
+                      )
+                      .slice(0, 150)
+                      .map((st, idx) => {
+                        const isHitam = isStoreZonaHitam(st);
 
-                      const formattedSaldo = typeof st.saldoToko === 'number' 
-                        ? `Rp ${st.saldoToko.toLocaleString('id-ID')}` 
-                        : (st.saldoToko ? `Rp ${st.saldoToko}` : '-');
+                        const formattedSaldo = typeof st.saldoToko === 'number' 
+                          ? `Rp ${st.saldoToko.toLocaleString('id-ID')}` 
+                          : (st.saldoToko ? `Rp ${st.saldoToko}` : '-');
 
-                      return (
-                        <tr key={st.id || idx} className={`hover:bg-slate-50/80 transition ${isHitam ? 'bg-rose-50/30' : ''}`}>
-                          <td className="p-3 text-slate-400 font-mono">{idx + 1}</td>
-                          <td className="p-3 font-mono font-bold text-amber-900">{st.code}</td>
-                          <td className="p-3 font-extrabold text-slate-900">{st.name}</td>
-                          <td className="p-3 text-slate-700 font-semibold">{st.kabupaten || st.city || '-'}</td>
-                          <td className="p-3">
-                            <span className="px-2 py-0.5 bg-slate-100 text-slate-800 font-black rounded border border-slate-300 text-[10px]">
-                              {st.qm || st.typeSo || 'Q'}
-                            </span>
-                          </td>
-                          <td className="p-3">
-                            <span className={`px-2 py-0.5 rounded font-extrabold text-[10px] border ${
-                              isHitam 
-                                ? 'bg-rose-100 border-rose-300 text-rose-800' 
-                                : 'bg-emerald-100 border-emerald-300 text-emerald-800'
-                            }`}>
-                              {isHitam ? 'ZONA HITAM' : 'NON ZONA HITAM'}
-                            </span>
-                          </td>
-                          <td className="p-3 text-slate-700 font-semibold">{st.korlap || '-'}</td>
-                          <td className="p-3 font-mono font-bold text-slate-900 text-right">{formattedSaldo}</td>
-                        </tr>
-                      );
-                    })}
+                        return (
+                          <tr key={st.id || idx} className={`hover:bg-slate-50/80 transition ${isHitam ? 'bg-rose-50/30' : ''}`}>
+                            <td className="p-3 text-slate-400 font-mono">{idx + 1}</td>
+                            <td className="p-3 font-mono font-bold text-amber-900">{st.code}</td>
+                            <td className="p-3 font-extrabold text-slate-900">{st.name}</td>
+                            <td className="p-3 text-slate-700 font-semibold">{st.kabupaten || st.city || '-'}</td>
+                            <td className="p-3">
+                              <span className="px-2 py-0.5 bg-slate-100 text-slate-800 font-black rounded border border-slate-300 text-[10px]">
+                                {st.qm || st.typeSo || 'Q'}
+                              </span>
+                            </td>
+                            <td className="p-3">
+                              <span className={`px-2 py-0.5 rounded font-extrabold text-[10px] border ${
+                                isHitam 
+                                  ? 'bg-rose-100 border-rose-300 text-rose-800' 
+                                  : 'bg-emerald-100 border-emerald-300 text-emerald-800'
+                              }`}>
+                                {isHitam ? 'ZONA HITAM' : 'NON ZONA HITAM'}
+                              </span>
+                            </td>
+                            <td className="p-3 text-slate-700 font-semibold">{st.korlap || '-'}</td>
+                            <td className="p-3 font-mono font-bold text-slate-900 text-right">{formattedSaldo}</td>
+                          </tr>
+                        );
+                      });
+                  })()}
                 </tbody>
               </table>
             </div>

@@ -9,6 +9,7 @@ import {
   saveSchedules, 
   saveMasterTokoDatasets, 
   getStoredMasterTokoDatasets, 
+  getStoredStores,
   STORAGE_KEYS,
   notifyDataChanged,
   untrackDeletedIdsForItems,
@@ -412,6 +413,8 @@ export interface SpreadsheetSyncResult {
   error?: string;
 }
 
+let isSpreadsheetSyncRunning = false;
+
 /**
  * Main execution function: Pulls data from Google Spreadsheet,
  * parses with Master Toko Bali layout, extracts schedules,
@@ -431,8 +434,25 @@ export async function syncMasterStoresFromSpreadsheet(
   const targetYear = options.targetYear || '2026';
   const preferredSheetName = options.preferredSheetName || 'MASTER TOKO BALI';
 
+  if (isSpreadsheetSyncRunning) {
+    const localStores = getStoredStores();
+    return {
+      success: true,
+      storesCount: localStores.length,
+      schedulesCount: 0,
+      sheetName: preferredSheetName,
+      allSheetNames: [],
+      sourceMethod: 'In-Flight Throttled',
+      periodOrQuarter: `September ${targetYear}`,
+      message: 'Sinkronisasi Google Spreadsheet sedang berjalan...'
+    };
+  }
+
+  isSpreadsheetSyncRunning = true;
+
   const { spreadsheetId, valid } = extractSpreadsheetInfo(urlOrId);
   if (!valid) {
+    isSpreadsheetSyncRunning = false;
     const errorMsg = 'URL atau ID Google Spreadsheet tidak valid.';
     saveSpreadsheetConfig({ lastError: errorMsg, lastSyncStatus: 'Gagal' });
     return {
@@ -574,6 +594,8 @@ export async function syncMasterStoresFromSpreadsheet(
       message: errorMsg,
       error: errorMsg
     };
+  } finally {
+    isSpreadsheetSyncRunning = false;
   }
 }
 
