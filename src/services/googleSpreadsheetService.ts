@@ -202,116 +202,9 @@ export async function deactivateSpreadsheetSync(): Promise<GoogleSpreadsheetConf
 }
 
 /**
- * High-speed Fetch for Google Spreadsheet using GViz JSONP callback (CORS-free, direct from Google CDN).
- * Responds in 200-500ms without server conversion overhead.
- */
-async function fetchSheetViaGVizJSONP(
-  spreadsheetId: string, 
-  sheetName = 'MASTER TOKO BALI',
-  timeoutMs = 4500
-): Promise<any[][]> {
-  return new Promise((resolve, reject) => {
-    const callbackName = `gvizCallback_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
-    const script = document.createElement('script');
-    
-    // Strict fast timeout to prevent waiting
-    const timeoutId = setTimeout(() => {
-      cleanup();
-      reject(new Error(`Timeout (${timeoutMs}ms) saat mengambil data Google Spreadsheet (${sheetName || 'default'}).`));
-    }, timeoutMs);
-
-    const cleanup = () => {
-      clearTimeout(timeoutId);
-      if ((window as any)[callbackName]) {
-        delete (window as any)[callbackName];
-      }
-      if (script.parentNode) {
-        script.parentNode.removeChild(script);
-      }
-    };
-
-    (window as any)[callbackName] = (response: any) => {
-      cleanup();
-
-      if (!response) {
-        reject(new Error('Format respons Google Sheets kosong'));
-        return;
-      }
-
-      // Detect Google API errors immediately (e.g. Sheet not found, access denied)
-      if (response.status === 'error') {
-        const errorDetail = response.errors?.[0]?.message || response.errors?.[0]?.detailed_message || 'Sheet tidak ditemukan atau belum dipublikasikan';
-        reject(new Error(`Google Sheets: ${errorDetail}`));
-        return;
-      }
-
-      if (!response.table) {
-        reject(new Error('Tabel Google Sheets tidak ditemukan'));
-        return;
-      }
-
-      const table = response.table;
-      const rows: any[][] = [];
-
-      // 1. Extract rows with priority for formatted values (cell.f preserves dates e.g. "15-Sep-26" and codes "0042")
-      if (Array.isArray(table.rows)) {
-        for (const r of table.rows) {
-          if (!r || !Array.isArray(r.c)) continue;
-          const rowData = r.c.map((cell: any) => {
-            if (!cell) return '';
-            // cell.f is the human-readable string formatted as shown in Google Sheets
-            if (cell.f !== undefined && cell.f !== null && String(cell.f).trim() !== '') {
-              return String(cell.f).trim();
-            }
-            if (cell.v !== undefined && cell.v !== null) {
-              return cell.v;
-            }
-            return '';
-          });
-          rows.push(rowData);
-        }
-      }
-
-      // 2. Check if table.cols has meaningful column headers
-      const headerRow: any[] = [];
-      if (Array.isArray(table.cols)) {
-        table.cols.forEach((col: any) => {
-          headerRow.push(col?.label || '');
-        });
-      }
-
-      const hasMeaningfulLabels = headerRow.some((lbl: string) => {
-        const u = String(lbl || '').trim().toUpperCase();
-        return u && !/^[A-Z]{1,3}$/.test(u); // Bukan sekadar huruf kolom A, B, C
-      });
-
-      // If cols has meaningful labels (like KDTK, NAMA TOKO) and rows does not already have them at row 0:
-      if (hasMeaningfulLabels && rows.length > 0) {
-        const firstRowStr = rows.slice(0, 3).map(r => r.join(' ')).join(' ').toUpperCase();
-        const containsHeadersAlready = headerRow.some(h => h && h.length > 2 && firstRowStr.includes(String(h).toUpperCase()));
-        if (!containsHeadersAlready) {
-          rows.unshift(headerRow);
-        }
-      }
-
-      resolve(rows);
-    };
-
-    script.onerror = () => {
-      cleanup();
-      reject(new Error(`Gagal memuat Google Spreadsheet. Pastikan link dapat diakses publik (Viewer).`));
-    };
-
-    // If sheetName is empty, Google returns the first / active sheet
-    const sheetParam = sheetName ? `&sheet=${encodeURIComponent(sheetName)}` : '';
-    script.src = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=responseHandler:${callbackName}${sheetParam}`;
-    document.body.appendChild(script);
-  });
-}
-
-/**
  * Downloads Google Spreadsheet data and constructs an in-memory XLSX Workbook.
- * Uses high-speed GViz direct streaming first (< 500ms), with transparent server proxy fallback.
+ * Uses server proxy fetch (/api/fetch-spreadsheet) to download full .xlsx workbook or CSV stream,
+ * without cross-origin DOM script tags.
  */
 export async function fetchGoogleSpreadsheetWorkbook(
   urlOrId: string,
@@ -322,93 +215,75 @@ export async function fetchGoogleSpreadsheetWorkbook(
     throw new Error('URL atau ID Google Spreadsheet tidak valid.');
   }
 
-  // METHOD 1 (LIGHTNING FAST - 200 to 500ms): Direct GViz JSONP straight from Google CDN
-  try {
-    const wb = XLSX.utils.book_new();
-    let primarySheetLoaded = false;
-    let loadedSheetName = preferredSheetName;
-
-    // Step 1: Attempt the preferred sheet name (e.g. 'MASTER TOKO BALI')
-    try {
-      const matrix = await fetchSheetViaGVizJSONP(spreadsheetId, preferredSheetName, 4000);
-      if (matrix && matrix.length > 1) {
-        const ws = XLSX.utils.aoa_to_sheet(matrix);
-        XLSX.utils.book_append_sheet(wb, ws, preferredSheetName);
-        primarySheetLoaded = true;
-        loadedSheetName = preferredSheetName;
-      }
-    } catch {
-      // Step 2: If preferred sheet name is not found (e.g. user has sheet named 'ALL TOKO' or default sheet 0),
-      // fetch default first sheet (Google returns sheet 0 when sheet parameter is omitted)
-      try {
-        const defaultMatrix = await fetchSheetViaGVizJSONP(spreadsheetId, '', 3500);
-        if (defaultMatrix && defaultMatrix.length > 1) {
-          const ws = XLSX.utils.aoa_to_sheet(defaultMatrix);
-          const fallbackName = preferredSheetName || 'MASTER TOKO';
-          XLSX.utils.book_append_sheet(wb, ws, fallbackName);
-          primarySheetLoaded = true;
-          loadedSheetName = fallbackName;
-        }
-      } catch {
-        // Step 3: Fast check for 'ALL TOKO'
-        try {
-          const allTokoMatrix = await fetchSheetViaGVizJSONP(spreadsheetId, 'ALL TOKO', 3000);
-          if (allTokoMatrix && allTokoMatrix.length > 1) {
-            const ws = XLSX.utils.aoa_to_sheet(allTokoMatrix);
-            XLSX.utils.book_append_sheet(wb, ws, 'ALL TOKO');
-            primarySheetLoaded = true;
-            loadedSheetName = 'ALL TOKO';
-          }
-        } catch {}
-      }
-    }
-
-    if (primarySheetLoaded) {
-      // Step 4: Concurrently fetch auxiliary sheets for Korlap mapping (e.g. 'ALL TOKO (2)', 'JADWAL')
-      // Non-blocking parallel with strict 2.5s timeout
-      const auxCandidateSheets = ['ALL TOKO (2)', 'JADWAL'].filter(
-        s => s.toUpperCase() !== loadedSheetName.toUpperCase()
-      );
-
-      const auxPromises = auxCandidateSheets.map(sName => 
-        fetchSheetViaGVizJSONP(spreadsheetId, sName, 2500)
-          .then(matrix => ({ sheetName: sName, matrix }))
-          .catch(() => null)
-      );
-
-      const auxResults = await Promise.allSettled(auxPromises);
-      auxResults.forEach(res => {
-        if (res.status === 'fulfilled' && res.value && res.value.matrix && res.value.matrix.length > 1) {
-          const ws = XLSX.utils.aoa_to_sheet(res.value.matrix);
-          XLSX.utils.book_append_sheet(wb, ws, res.value.sheetName);
-        }
-      });
-
-      return { workbook: wb, sourceMethod: 'Google Sheets Direct (Fast GViz)' };
-    }
-  } catch (gvizError) {
-    console.warn('Direct GViz fetch notice, checking fallback proxy:', gvizError);
-  }
-
-  // METHOD 2: Server Proxy Fallback (/api/fetch-spreadsheet) with strict 5-second abort
+  // METHOD 1: Server Proxy Fallback (/api/fetch-spreadsheet) for full .xlsx workbook
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
+    const timer = setTimeout(() => controller.abort(), 12000);
     const proxyUrl = `/api/fetch-spreadsheet?id=${encodeURIComponent(spreadsheetId)}`;
     const res = await fetch(proxyUrl, { signal: controller.signal });
     clearTimeout(timer);
 
     if (res.ok) {
       const buffer = await res.arrayBuffer();
-      if (buffer.byteLength > 1000) {
+      if (buffer.byteLength > 200) {
         const wb = XLSX.read(buffer, { type: 'array' });
         if (wb && wb.SheetNames && wb.SheetNames.length > 0) {
-          return { workbook: wb, sourceMethod: 'Server Proxy (.xlsx)' };
+          return { workbook: wb, sourceMethod: 'Google Spreadsheet Server Sync (.xlsx)' };
+        }
+      }
+    } else {
+      // If server returned a friendly error (e.g. 403 unshared), extract it
+      try {
+        const errJson = await res.json();
+        if (errJson?.error) {
+          throw new Error(errJson.error);
+        }
+      } catch (parseErr: any) {
+        if (parseErr.message && !parseErr.message.includes('JSON')) {
+          throw parseErr;
         }
       }
     }
-  } catch (proxyErr) {
-    console.warn('Server proxy fallback notice:', proxyErr);
+  } catch (proxyErr: any) {
+    if (proxyErr.message && (proxyErr.message.includes('Viewer') || proxyErr.message.includes('publik'))) {
+      throw proxyErr;
+    }
+    console.warn('XLSX proxy sync notice, attempting CSV stream fallback:', proxyErr);
+  }
+
+  // METHOD 2: Fast CSV Stream Fallback via Server Proxy for target sheet
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    const csvUrl = `/api/fetch-spreadsheet?id=${encodeURIComponent(spreadsheetId)}&format=csv&sheet=${encodeURIComponent(preferredSheetName)}`;
+    const res = await fetch(csvUrl, { signal: controller.signal });
+    clearTimeout(timer);
+
+    if (res.ok) {
+      const csvText = await res.text();
+      if (csvText && csvText.length > 30) {
+        const wb = XLSX.read(csvText, { type: 'string' });
+        if (wb && wb.SheetNames && wb.SheetNames.length > 0) {
+          return { workbook: wb, sourceMethod: 'Google Spreadsheet Fast CSV Sync' };
+        }
+      }
+    } else {
+      try {
+        const errJson = await res.json();
+        if (errJson?.error) {
+          throw new Error(errJson.error);
+        }
+      } catch (parseErr: any) {
+        if (parseErr.message && !parseErr.message.includes('JSON')) {
+          throw parseErr;
+        }
+      }
+    }
+  } catch (csvErr: any) {
+    if (csvErr.message && (csvErr.message.includes('Viewer') || csvErr.message.includes('publik'))) {
+      throw csvErr;
+    }
+    console.warn('CSV fallback notice:', csvErr);
   }
 
   throw new Error(

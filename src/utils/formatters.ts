@@ -1,6 +1,8 @@
-export function formatRupiah(value: number): string {
-  const isNegative = value < 0;
-  const absValue = Math.abs(value);
+export function formatRupiah(value: number | string | null | undefined): string {
+  if (value === null || value === undefined) return 'Rp 0';
+  const numVal = typeof value === 'number' ? value : (parseFloat(String(value).replace(/[^\d.-]/g, '')) || 0);
+  const isNegative = numVal < 0;
+  const absValue = Math.abs(numVal);
   const formatted = new Intl.NumberFormat('id-ID', {
     style: 'currency',
     currency: 'IDR',

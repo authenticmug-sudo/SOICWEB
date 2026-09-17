@@ -9,6 +9,8 @@ function spreadsheetProxyPlugin(): Plugin {
       const host = req.headers.host || 'localhost:3000';
       const urlObj = new URL(req.url, `http://${host}`);
       const rawParam = urlObj.searchParams.get('url') || urlObj.searchParams.get('id') || '';
+      const requestedFormat = urlObj.searchParams.get('format') || 'xlsx';
+      const requestedSheet = urlObj.searchParams.get('sheet') || '';
       
       if (!rawParam) {
         res.statusCode = 400;
@@ -17,21 +19,36 @@ function spreadsheetProxyPlugin(): Plugin {
         return;
       }
 
-      let fetchUrl = decodeURIComponent(rawParam);
-      const match = fetchUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+      let spreadsheetId = '';
+      const rawDecoded = decodeURIComponent(rawParam);
+      const match = rawDecoded.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
       if (match) {
-        fetchUrl = `https://docs.google.com/spreadsheets/d/${match[1]}/export?format=xlsx`;
-      } else if (/^[a-zA-Z0-9-_]{20,}$/.test(fetchUrl)) {
-        fetchUrl = `https://docs.google.com/spreadsheets/d/${fetchUrl}/export?format=xlsx`;
+        spreadsheetId = match[1];
+      } else if (/^[a-zA-Z0-9-_]{15,}$/.test(rawDecoded)) {
+        spreadsheetId = rawDecoded;
+      } else {
+        res.statusCode = 400;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'Format URL atau ID Google Spreadsheet tidak valid' }));
+        return;
+      }
+
+      let fetchUrl = '';
+      if (requestedFormat === 'csv') {
+        const sheetParam = requestedSheet ? `&sheet=${encodeURIComponent(requestedSheet)}` : '';
+        fetchUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv${sheetParam}`;
+      } else {
+        fetchUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=xlsx`;
       }
 
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 6500);
+      const timer = setTimeout(() => controller.abort(), 12000);
 
       const response = await fetch(fetchUrl, {
         signal: controller.signal,
+        redirect: 'follow',
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
       });
       clearTimeout(timer);
@@ -40,7 +57,18 @@ function spreadsheetProxyPlugin(): Plugin {
         res.statusCode = response.status;
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify({ 
-          error: `Gagal mengakses Google Spreadsheet (${response.status}: ${response.statusText}). Pastikan link dibagikan dengan akses 'Viewer / Siapa saja yang memiliki link dapat melihat'.` 
+          error: `Gagal mengakses Google Spreadsheet (${response.status}: ${response.statusText}). Pastikan link dibagikan dengan hak akses 'Viewer / Siapa saja yang memiliki link dapat melihat'.` 
+        }));
+        return;
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('text/html')) {
+        // Google returned HTML login redirect instead of spreadsheet data
+        res.statusCode = 403;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ 
+          error: 'Spreadsheet belum dibuka untuk publik. Silakan buka file di Google Sheets, klik tombol "Bagikan" -> pilih "Siapa saja yang memiliki link" -> "Pelihat (Viewer)".' 
         }));
         return;
       }
@@ -48,13 +76,18 @@ function spreadsheetProxyPlugin(): Plugin {
       const arrayBuf = await response.arrayBuffer();
       res.statusCode = 200;
       res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.setHeader('Content-Disposition', 'attachment; filename="master_toko_spreadsheet.xlsx"');
+      if (requestedFormat === 'csv') {
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', 'attachment; filename="sheet.csv"');
+      } else {
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', 'attachment; filename="master_toko_spreadsheet.xlsx"');
+      }
       res.end(Buffer.from(arrayBuf));
     } catch (err: any) {
       res.statusCode = 500;
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ error: err?.message || 'Server error saat mengambil spreadsheet' }));
+      res.end(JSON.stringify({ error: err?.name === 'AbortError' ? 'Koneksi ke Google Sheets timeout (12 detik). Pastikan link aktif.' : (err?.message || 'Server error saat mengambil spreadsheet') }));
     }
   };
 

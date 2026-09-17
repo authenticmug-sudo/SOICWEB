@@ -13,9 +13,29 @@ export type RegionArea =
 
 export type StoreType = 'Flagship Supermarket' | 'Regular Minimarket' | 'Express Outlet' | 'Distribution Hub Center';
 
-export type ScheduleStatus = 'Terjadwal' | 'Proses SO' | 'Menunggu Rekapan' | 'Selesai' | 'Dibatalkan' | 'Ditunda' | 'Gagal SO' | 'Pindah Toko';
+export type ScheduleStatus = 
+  | 'Terjadwal' 
+  | 'Proses SO' 
+  | 'Menunggu Rekapan' 
+  | 'Selesai' 
+  | 'Dibatalkan' 
+  | 'Ditunda' 
+  | 'Gagal SO' 
+  | 'Pindah Toko'
+  | 'Batal'
+  | 'COMPLETED'
+  | 'IN_PROGRESS'
+  | 'CANCELLED'
+  | string;
 
-export type ApprovalStatus = 'Menunggu Approval SPV' | 'Disetujui' | 'Perlu Audit Ulang' | 'Ditolak';
+export type ApprovalStatus = 
+  | 'Menunggu Approval SPV' 
+  | 'Disetujui' 
+  | 'Perlu Audit Ulang' 
+  | 'Ditolak'
+  | 'Disetujui SPV'
+  | 'Approved'
+  | string;
 
 export interface CategoryVariance {
   category: string;
@@ -28,7 +48,7 @@ export interface CategoryVariance {
   mainCause?: string;
 }
 
-export type RiskLevel = 'Tinggi' | 'Sedang' | 'Rendah';
+export type RiskLevel = 'Tinggi' | 'Sedang' | 'Rendah' | 'HIGH' | 'MEDIUM' | 'LOW' | string;
 
 export interface Store {
   id: string;
@@ -43,6 +63,7 @@ export interface Store {
   koordinat?: string; // Raw KOORDINAT string e.g. S8 48 05.7 E115 13 01.6
   am?: string; // AM
   as?: string; // AS
+  assignedOfficerName?: string;
   saldoToko?: number | string; // SALDO TOKO (e.g. 346801712)
   kasToko?: number; // KAS TOKO e.g. 2500000
   kecamatan?: string; // KECAMATAN
@@ -197,6 +218,7 @@ export interface SOSchedule {
   soAktiva?: string; // SO_AKTIVA
   status: ScheduleStatus;
   notes?: string;
+  assignedTeamName?: string;
   troubleNote?: string; // Kendala H-Day
   isRescheduled?: boolean;
   originalDate?: string;
@@ -305,6 +327,8 @@ export interface BrankasAuditReport {
   
   // Total Nett Hasil SO Brankas = Selisih Kas Toko + Selisih Sales + Nota & Lainnya
   nettSOBrankasRp: number;
+  selisihBrankasRp?: number;
+  notes?: string;
 }
 
 export interface SOResult {
@@ -314,9 +338,15 @@ export interface SOResult {
   storeCode: string;
   storeName: string;
   region: RegionArea;
+  wilayah?: string;
   soDate: string;
+  auditDate?: string;
   executedByTeam: string;
   spvApprover: string;
+  officerInCharge?: string;
+  notes?: string;
+  totalVarianceRp?: number;
+  accuracyRate?: number;
 
   // Management & Personnel
   namaAM?: string;

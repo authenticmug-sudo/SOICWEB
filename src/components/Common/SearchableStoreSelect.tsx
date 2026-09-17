@@ -276,7 +276,7 @@ export const SearchableStoreSelect: React.FC<SearchableStoreSelectProps> = ({
     } else if (e.key === 'Enter') {
       e.preventDefault();
       if (filteredStores[highlightedIndex]) {
-        handleSelect(filteredStores[highlightedIndex]);
+        handleSelect(filteredStores[highlightedIndex].store);
       }
     } else if (e.key === 'Escape') {
       e.preventDefault();

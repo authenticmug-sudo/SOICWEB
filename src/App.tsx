@@ -429,10 +429,10 @@ export default function App() {
       // 3. Reconcile any pending Excel backup records in Firestore
       reconcilePendingExcelBackups().catch(() => {});
 
-      // 4. Sync Google Spreadsheet configuration and trigger auto-sync if configured
+      // 4. Sync Google Spreadsheet configuration and trigger auto-sync if configured and active
       syncSpreadsheetConfigFromFirestore()
         .then(gsheetConfig => {
-          if (gsheetConfig?.autoSyncOnLoad && gsheetConfig.url) {
+          if (gsheetConfig?.autoSyncOnLoad && gsheetConfig.url && gsheetConfig.isActive !== false) {
             syncMasterStoresFromSpreadsheet(gsheetConfig.url, {
               preferredSheetName: gsheetConfig.sheetName || 'MASTER TOKO BALI'
             }).catch(err => console.warn('Background auto spreadsheet sync notice:', err));
@@ -1868,7 +1868,7 @@ export default function App() {
           {activeTab === 'results' && (
             <ResultsManager
               results={results}
-              onOpenInputModal={(schedOrId) => handleOpenInputResultModal(schedOrId)}
+              onOpenInputModal={() => handleOpenInputResultModal()}
               onSelectResultDetail={(res) => setSelectedResultDetail(res)}
               onApproveResult={handleApproveResult}
               onRequestRecount={handleRequestRecount}
