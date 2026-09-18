@@ -859,20 +859,35 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
     });
   });
 
-  // Prioritize "MASTER TOKO BALI" sheet if present!
-  let masterBaliSheet = sheetResults.find(s => 
-    s.sheetName.toUpperCase().includes('MASTER TOKO BALI') || 
-    s.sheetName.toUpperCase().includes('MASTER TOKO') ||
-    s.sheetName.toUpperCase().includes('MASTER')
-  );
+  // Prioritize comprehensive master store sheet (e.g. "ALL TOKO (2)", "MASTER TOKO BALI", "DATA TOKO")
+  const sheetWithMaxStores = sheetResults.reduce<SheetParseResult | null>((best, current) => {
+    if (!best) return current;
+    return current.stores.length > best.stores.length ? current : best;
+  }, null);
 
-  // Fallback: Pick best sheet with the most parsed stores
-  let bestSheet = masterBaliSheet && masterBaliSheet.stores.length > 0
-    ? masterBaliSheet
-    : sheetResults.reduce<SheetParseResult | null>((best, current) => {
-        if (!best) return current;
-        return current.stores.length > best.stores.length ? current : best;
-      }, null);
+  // Look for sheets explicitly indicating master/all store database
+  const masterCandidates = sheetResults.filter(s => {
+    const u = s.sheetName.toUpperCase();
+    return u.includes('MASTER') || u.includes('ALL TOKO') || u.includes('DATA TOKO') || u.includes('TOKO');
+  });
+
+  const bestMasterCandidate = masterCandidates.reduce<SheetParseResult | null>((best, current) => {
+    if (!best) return current;
+    return current.stores.length > best.stores.length ? current : best;
+  }, null);
+
+  // If the sheet with max stores has significantly more stores (e.g. 700 vs 182),
+  // pick the comprehensive master sheet to prevent dropping hundreds of stores
+  let bestSheet: SheetParseResult | null = null;
+  if (sheetWithMaxStores && bestMasterCandidate) {
+    if (sheetWithMaxStores.stores.length > bestMasterCandidate.stores.length * 1.3) {
+      bestSheet = sheetWithMaxStores;
+    } else {
+      bestSheet = bestMasterCandidate;
+    }
+  } else {
+    bestSheet = bestMasterCandidate || sheetWithMaxStores;
+  }
 
   if (bestSheet && extractedSchedules.length > 0) {
     bestSheet.extractedSchedules = extractedSchedules;

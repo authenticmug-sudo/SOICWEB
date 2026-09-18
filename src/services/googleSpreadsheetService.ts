@@ -325,45 +325,44 @@ export async function fetchGoogleSpreadsheetWorkbook(
     throw new Error('URL atau ID Google Spreadsheet tidak valid.');
   }
 
-  // METHOD 1: Direct Google Cloud CDN Streaming (Takes ~300ms, zero server proxy lag)
+  // METHOD 1: Direct Google Cloud CDN Streaming with Multi-Sheet Auto-Discovery
   try {
-    const mainCsvPromise = fetchSheetCsvDirect(spreadsheetId, preferredSheetName, 3500);
-    
-    // Also fetch auxiliary sheets in parallel
-    const auxSheets = ['ALL TOKO (2)', 'JADWAL'].filter(s => s !== preferredSheetName);
-    const auxPromises = auxSheets.map(s => fetchSheetCsvDirect(spreadsheetId, s, 3000));
+    const candidateSheets = Array.from(new Set([
+      preferredSheetName,
+      'MASTER TOKO BALI',
+      'ALL TOKO (2)',
+      'ALL TOKO',
+      'DATA TOKO',
+      'MASTER TOKO',
+      'MASTER',
+      'JADWAL'
+    ]));
 
-    const [mainCsvResult, ...auxResults] = await Promise.all([mainCsvPromise, ...auxPromises]);
+    const fetchPromises = candidateSheets.map(async (sheet) => {
+      const text = await fetchSheetCsvDirect(spreadsheetId, sheet, 4000);
+      return { sheet, text };
+    });
 
-    if (mainCsvResult && mainCsvResult.length > 50) {
-      const wb = XLSX.utils.book_new();
-      
-      // Parse main sheet
-      const parsedMain = XLSX.read(mainCsvResult, { type: 'string', raw: true });
-      const firstSheetKey = parsedMain.SheetNames[0];
-      if (parsedMain.Sheets[firstSheetKey]) {
-        XLSX.utils.book_append_sheet(wb, parsedMain.Sheets[firstSheetKey], preferredSheetName);
+    const results = await Promise.allSettled(fetchPromises);
+    const wb = XLSX.utils.book_new();
+
+    for (const r of results) {
+      if (r.status === 'fulfilled' && r.value.text && r.value.text.length > 50) {
+        try {
+          const parsed = XLSX.read(r.value.text, { type: 'string', raw: true });
+          const firstKey = parsed.SheetNames[0];
+          if (parsed.Sheets[firstKey]) {
+            XLSX.utils.book_append_sheet(wb, parsed.Sheets[firstKey], r.value.sheet);
+          }
+        } catch {}
       }
+    }
 
-      // Append any auxiliary sheets that resolved successfully
-      auxResults.forEach((res, idx) => {
-        if (res && res.length > 50) {
-          try {
-            const parsedAux = XLSX.read(res, { type: 'string', raw: true });
-            const auxKey = parsedAux.SheetNames[0];
-            if (parsedAux.Sheets[auxKey]) {
-              XLSX.utils.book_append_sheet(wb, parsedAux.Sheets[auxKey], auxSheets[idx]);
-            }
-          } catch {}
-        }
-      });
-
-      if (wb.SheetNames.length > 0) {
-        return { 
-          workbook: wb, 
-          sourceMethod: 'Direct Google Cloud CDN (Ultra-Fast ⚡)' 
-        };
-      }
+    if (wb.SheetNames.length > 0) {
+      return { 
+        workbook: wb, 
+        sourceMethod: 'Direct Google Cloud CDN (Multi-Sheet ⚡)' 
+      };
     }
   } catch (directErr: any) {
     if (directErr.message && directErr.message.includes('terkunci')) {
@@ -398,7 +397,7 @@ export async function fetchGoogleSpreadsheetWorkbook(
   // METHOD 3: Server Proxy Fallback (/api/fetch-spreadsheet) for restricted browser policies
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 4000);
+    const timer = setTimeout(() => controller.abort(), 8000);
     const proxyUrl = `/api/fetch-spreadsheet?id=${encodeURIComponent(spreadsheetId)}`;
     const res = await fetch(proxyUrl, { signal: controller.signal });
     clearTimeout(timer);
@@ -504,10 +503,40 @@ export async function syncMasterStoresFromSpreadsheet(
 
     const parsedStores = activeSheet.stores;
 
+    // Smart Master Preservation:
+    // If incoming parsed sheet is a partial schedule sheet (< 350 stores, e.g. 182 stores from JADWAL),
+    // and the system already has a comprehensive master list (> 500 stores, e.g. 700 stores),
+    // cross-enrich the 700 master stores with the incoming schedule attributes instead of truncating down to 182.
+    let finalStores = parsedStores;
+    const existingStores = (options.existingStores && options.existingStores.length > 0)
+      ? options.existingStores
+      : getStoredStores();
+
+    if (parsedStores.length < 350 && existingStores.length > 500) {
+      const incomingMap = new Map(parsedStores.map(s => [s.code.toUpperCase().trim(), s]));
+      finalStores = existingStores.map(orig => {
+        const incoming = incomingMap.get(orig.code.toUpperCase().trim());
+        if (!incoming) return orig;
+        return {
+          ...orig,
+          ...incoming,
+          // Preserve essential geographic master attributes if incoming is empty
+          kabupaten: incoming.kabupaten || orig.kabupaten,
+          region: incoming.region || orig.region,
+          coverage: incoming.coverage || orig.coverage,
+          saldoToko: incoming.saldoToko !== undefined && incoming.saldoToko !== null ? incoming.saldoToko : orig.saldoToko,
+          korlap: incoming.korlap || orig.korlap,
+          latitude: incoming.latitude || orig.latitude,
+          longitude: incoming.longitude || orig.longitude,
+          koordinat: incoming.koordinat || orig.koordinat
+        };
+      });
+    }
+
     // 3. Extract and synchronize operational schedules from Master Stores for target period
     const existingScheds = options.existingSchedules || [];
     const scheduleSyncResult = syncSchedulesFromMasterStores(
-      parsedStores,
+      finalStores,
       existingScheds,
       targetMonth,
       targetYear,
@@ -518,9 +547,9 @@ export async function syncMasterStoresFromSpreadsheet(
 
     // 4. INSTANT OPTIMISTIC LOCAL PERSISTENCE (< 10ms)
     // Write directly to LocalStorage and broadcast events so the UI updates in real-time
-    untrackDeletedIdsForItems(STORAGE_KEYS.STORES, parsedStores.map(s => s.id));
-    localStorage.setItem(STORAGE_KEYS.STORES, JSON.stringify(parsedStores));
-    notifyDataChanged(STORAGE_KEYS.STORES, parsedStores);
+    untrackDeletedIdsForItems(STORAGE_KEYS.STORES, finalStores.map(s => s.id));
+    localStorage.setItem(STORAGE_KEYS.STORES, JSON.stringify(finalStores));
+    notifyDataChanged(STORAGE_KEYS.STORES, finalStores);
 
     untrackDeletedIdsForItems(STORAGE_KEYS.SCHEDULES, updatedSchedules.map(s => s.id));
     localStorage.setItem(STORAGE_KEYS.SCHEDULES, JSON.stringify(updatedSchedules));
@@ -533,12 +562,12 @@ export async function syncMasterStoresFromSpreadsheet(
       title: `Google Spreadsheet (${activeSheet.sheetName})`,
       filename: `Google Sheet [${spreadsheetId.slice(0, 8)}...]`,
       uploadDate: new Date().toISOString(),
-      storesCount: parsedStores.length,
+      storesCount: finalStores.length,
       isActiveForScheduling: true,
       periodOrQuarter: `September ${targetYear}`,
       indicatorList: activeSheet.indicators || ['Type SO', 'KORLAP/OFFICER SO', 'NKL'],
       notes: `Disinkronkan otomatis dari Google Spreadsheet (${sourceMethod}) pada ${new Date().toLocaleTimeString('id-ID')}.`,
-      stores: parsedStores
+      stores: finalStores
     };
 
     untrackDeletedMasterDataset(newDataset);
@@ -557,7 +586,7 @@ export async function syncMasterStoresFromSpreadsheet(
     notifyDataChanged(STORAGE_KEYS.MASTER_TOKO_DATASETS, updatedDatasets);
 
     // 6. Update spreadsheet configuration record in LocalStorage
-    const statusMsg = `Berhasil membaca ${parsedStores.length} toko dan ${updatedSchedules.length} jadwal SO dari sheet '${activeSheet.sheetName}' (${sourceMethod}).`;
+    const statusMsg = `Berhasil membaca ${finalStores.length} toko dan ${updatedSchedules.length} jadwal SO dari sheet '${activeSheet.sheetName}' (${sourceMethod}).`;
     const prevConfig = getLocalSpreadsheetConfig();
     const newConfig: GoogleSpreadsheetConfig = {
       ...prevConfig,
@@ -567,7 +596,7 @@ export async function syncMasterStoresFromSpreadsheet(
       autoSyncOnLoad: prevConfig.autoSyncOnLoad ?? false,
       isActive: true,
       lastSyncedAt: new Date().toISOString(),
-      lastSyncCount: parsedStores.length,
+      lastSyncCount: finalStores.length,
       lastSyncSchedulesCount: updatedSchedules.length,
       lastSyncStatus: statusMsg,
       lastError: ''
@@ -580,7 +609,7 @@ export async function syncMasterStoresFromSpreadsheet(
     // 7. Non-blocking Firestore & Cloudinary persistence in background!
     // This allows the user to see the result instantly (< 1 second) without waiting for sequential network batch commits
     Promise.allSettled([
-      saveStores(parsedStores, false),
+      saveStores(finalStores, false),
       saveSchedules(updatedSchedules, false),
       saveMasterTokoDatasets(updatedDatasets),
       saveSpreadsheetConfig(newConfig)
@@ -588,7 +617,7 @@ export async function syncMasterStoresFromSpreadsheet(
 
     return {
       success: true,
-      storesCount: parsedStores.length,
+      storesCount: finalStores.length,
       schedulesCount: updatedSchedules.length,
       sheetName: activeSheet.sheetName,
       allSheetNames: workbook.SheetNames,

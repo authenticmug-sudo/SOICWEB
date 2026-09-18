@@ -22,7 +22,9 @@ import {
   X,
   Settings2,
   CheckCircle2,
-  Clock
+  Clock,
+  RefreshCw,
+  FileSpreadsheet
 } from 'lucide-react';
 import { Store, SOSchedule, SOResult, RegionArea, StoreType } from '../../types/stockOpname';
 import { REGIONS } from '../../data/initialData';
@@ -33,6 +35,12 @@ import { getStoreSOApprovalStatus, isStoreZonaHitam } from '../../utils/storeSyn
 import { normalizeKorlapName } from '../../utils/korlapUtils';
 import { ConfirmDeleteModal } from '../Common/ConfirmDeleteModal';
 import { ToastNotification } from '../Common/ToastNotification';
+import { SpreadsheetSyncModal } from './SpreadsheetSyncModal';
+import { 
+  getLocalSpreadsheetConfig, 
+  syncMasterStoresFromSpreadsheet, 
+  GoogleSpreadsheetConfig 
+} from '../../services/googleSpreadsheetService';
 
 interface StoreDirectoryProps {
   stores: Store[];
@@ -140,6 +148,57 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
   const [resetError, setResetError] = useState('');
   const [resetSuccess, setResetSuccess] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Google Spreadsheet Sync State
+  const [isSpreadsheetModalOpen, setIsSpreadsheetModalOpen] = useState(false);
+  const [isSyncingSpreadsheet, setIsSyncingSpreadsheet] = useState(false);
+  const [spreadsheetConfig, setSpreadsheetConfig] = useState<GoogleSpreadsheetConfig>(getLocalSpreadsheetConfig());
+
+  useEffect(() => {
+    const handleConfigUpdated = (e: any) => {
+      if (e?.detail) {
+        setSpreadsheetConfig(e.detail);
+      } else {
+        setSpreadsheetConfig(getLocalSpreadsheetConfig());
+      }
+    };
+    window.addEventListener('spreadsheet_config_updated', handleConfigUpdated);
+    return () => window.removeEventListener('spreadsheet_config_updated', handleConfigUpdated);
+  }, []);
+
+  const handleQuickSpreadsheetSync = async () => {
+    const config = getLocalSpreadsheetConfig();
+    if (!config.url || !config.spreadsheetId) {
+      // Jika belum ada link tersimpan, buka modal konfigurasi
+      setIsSpreadsheetModalOpen(true);
+      return;
+    }
+
+    setIsSyncingSpreadsheet(true);
+    setSyncNotice('Sedang membaca & menyinkronkan data master toko dari Google Spreadsheet...');
+    try {
+      const res = await syncMasterStoresFromSpreadsheet(config.url, {
+        preferredSheetName: config.sheetName || 'MASTER TOKO BALI',
+        existingStores: stores,
+        existingSchedules: schedules
+      });
+
+      if (res.success) {
+        const msg = `✅ Berhasil sinkron: ${res.storesCount} toko master & ${res.schedulesCount} jadwal SO terupdate (${res.sourceMethod})`;
+        setSyncNotice(msg);
+        setToastMessage(`Sinkronisasi Spreadsheet berhasil: ${res.storesCount} toko`);
+        setTimeout(() => setSyncNotice(null), 6000);
+      } else {
+        setSyncNotice(`❌ Gagal sinkron: ${res.error || res.message}`);
+        setIsSpreadsheetModalOpen(true);
+      }
+    } catch (err: any) {
+      setSyncNotice(`❌ Kendala sinkronisasi: ${err?.message || 'Gagal membaca spreadsheet'}`);
+      setIsSpreadsheetModalOpen(true);
+    } finally {
+      setIsSyncingSpreadsheet(false);
+    }
+  };
 
   const handleConfirmResetMasterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -376,14 +435,46 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
 
         <div className="flex flex-wrap items-center gap-2">
           
+          {/* Tombol Sinkron Google Spreadsheet */}
+          <div className="flex items-center rounded-lg shadow-xs overflow-hidden border border-emerald-700/40 bg-emerald-600">
+            <button
+              type="button"
+              onClick={handleQuickSpreadsheetSync}
+              disabled={isSyncingSpreadsheet}
+              className={`px-3 py-2 text-white text-xs font-black transition flex items-center gap-1.5 active:scale-95 cursor-pointer ${
+                isSyncingSpreadsheet 
+                  ? 'bg-emerald-700 cursor-wait opacity-90' 
+                  : 'hover:bg-emerald-700'
+              }`}
+              title={spreadsheetConfig.url 
+                ? `Sinkronkan langsung dari Google Spreadsheet (${spreadsheetConfig.sheetName || 'MASTER TOKO BALI'})` 
+                : 'Hubungkan & Sinkronkan Google Spreadsheet Master Toko'}
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncingSpreadsheet ? 'animate-spin text-emerald-200' : 'text-white'}`} />
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-200" />
+              <span>{isSyncingSpreadsheet ? 'Menyinkronkan...' : 'Sinkron Spreadsheet'}</span>
+              {spreadsheetConfig.isActive && spreadsheetConfig.url && (
+                <span className="w-2 h-2 rounded-full bg-emerald-300 ring-2 ring-emerald-500 animate-pulse ml-0.5" title="Tautan Spreadsheet Aktif" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsSpreadsheetModalOpen(true)}
+              className="px-2 py-2 bg-emerald-700 hover:bg-emerald-800 text-emerald-100 hover:text-white transition border-l border-emerald-500/40 cursor-pointer"
+              title="Buka Pengaturan & Ganti Tautan Google Spreadsheet"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
           {/* Smart Auto-Sync Button */}
           <button
             type="button"
             onClick={handleSyncLocations}
-            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-black shadow-xs transition flex items-center gap-1.5 active:scale-95"
+            className="px-3.5 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-black shadow-xs transition flex items-center gap-1.5 active:scale-95"
             title="Sinkronkan Kolom Kabupaten & Region Secara Cerdas Berdasarkan Koordinat GPS"
           >
-            <Sparkles className="w-4 h-4 text-emerald-200 animate-pulse" />
+            <Sparkles className="w-4 h-4 text-teal-200 animate-pulse" />
             <span>Sinkron Wilayah</span>
           </button>
 
@@ -1220,6 +1311,21 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({
           onClose={() => setToastMessage(null)}
         />
       )}
+
+      {/* Google Spreadsheet Sync & Setup Modal */}
+      <SpreadsheetSyncModal
+        isOpen={isSpreadsheetModalOpen}
+        onClose={() => setIsSpreadsheetModalOpen(false)}
+        existingStores={stores}
+        existingSchedules={schedules}
+        onSyncComplete={(res) => {
+          if (res.success) {
+            setSyncNotice(`✅ Berhasil sinkron: ${res.storesCount} toko master & ${res.schedulesCount} jadwal SO terupdate (${res.sourceMethod})`);
+            setToastMessage(`Sinkronisasi berhasil: ${res.storesCount} toko`);
+            setTimeout(() => setSyncNotice(null), 6000);
+          }
+        }}
+      />
 
     </div>
   );
