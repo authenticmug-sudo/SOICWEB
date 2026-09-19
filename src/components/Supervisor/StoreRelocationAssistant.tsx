@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   ArrowLeftRight, 
   MapPin, 
@@ -26,7 +26,7 @@ import {
   Info
 } from 'lucide-react';
 import { Store, SOSchedule, AuditorPersonnel } from '../../types/stockOpname';
-import { calculateHaversineDistance } from '../../utils/geoUtils';
+import { calculateHaversineDistance, calculateHaversineDistanceBetweenStores, resolveStoreCoordinates } from '../../utils/geoUtils';
 import { formatRupiah, formatDateIndo, formatSmartSODate, formatZoneText } from '../../utils/formatters';
 import { isStoreZonaHitam } from '../../utils/storeSyncUtils';
 
@@ -101,6 +101,7 @@ export const StoreRelocationAssistant: React.FC<StoreRelocationAssistantProps> =
   const [sourceSearchQuery, setSourceSearchQuery] = useState<string>('');
   const [sourceFilterDate, setSourceFilterDate] = useState<string>('ALL');
   const [sourceFilterKabupaten, setSourceFilterKabupaten] = useState<string>('ALL');
+  const [sourceFilterStatus, setSourceFilterStatus] = useState<'ALL' | 'NEED_RELOCATION' | 'ACTIVE'>('ALL');
   
   // Step 2: Reason & Date Configuration
   const [reasonCategory, setReasonCategory] = useState<string>('Akses Jalan / Cuaca Ekstrem');
@@ -108,9 +109,10 @@ export const StoreRelocationAssistant: React.FC<StoreRelocationAssistantProps> =
   const [targetDateForReplacement, setTargetDateForReplacement] = useState<string>('');
   const [targetTimeForReplacement, setTargetTimeForReplacement] = useState<string>('21:00');
 
-  // Step 3: Recommendation Filters
+  // Step 3: Recommendation Filters & Sort Mode
   const [candidateSearchQuery, setCandidateSearchQuery] = useState<string>('');
   const [filterScheduleType, setFilterScheduleType] = useState<'ALL' | 'BELUM_TERJADWAL' | 'TERJADWAL_LAIN'>('ALL');
+  const [candidateSortMode, setCandidateSortMode] = useState<'NEAREST_GPS' | 'PRIORITY_UNASSIGNED' | 'HIGHEST_SALDO'>('NEAREST_GPS');
   const [filterKabupaten, setFilterKabupaten] = useState<string>('ALL');
   const [filterKecamatan, setFilterKecamatan] = useState<string>('ALL');
   const [filterTypeSo, setFilterTypeSo] = useState<string>('ALL');
@@ -127,9 +129,9 @@ export const StoreRelocationAssistant: React.FC<StoreRelocationAssistantProps> =
     reason: string;
   } | null>(null);
 
-  // Active schedules eligible for relocation (scheduled or in progress)
+  // All non-archived schedules eligible for relocation
   const eligibleSourceSchedules = useMemo(() => {
-    return schedules.filter(s => s.status === 'Terjadwal' || s.status === 'Proses SO' || s.status === 'Menunggu Rekapan');
+    return schedules.filter(s => s.status !== 'Dibatalkan');
   }, [schedules]);
 
   // Unique dates from active schedules
@@ -144,6 +146,14 @@ export const StoreRelocationAssistant: React.FC<StoreRelocationAssistantProps> =
   // Filtered source schedules
   const filteredSourceSchedules = useMemo(() => {
     return eligibleSourceSchedules.filter(s => {
+      if (sourceFilterStatus === 'NEED_RELOCATION') {
+        const isNeed = s.status === 'Pindah Toko' || s.status === 'Gagal SO';
+        if (!isNeed) return false;
+      } else if (sourceFilterStatus === 'ACTIVE') {
+        const isActive = s.status === 'Terjadwal' || s.status === 'Proses SO' || s.status === 'Menunggu Rekapan';
+        if (!isActive) return false;
+      }
+
       if (sourceFilterDate !== 'ALL' && s.scheduledDate !== sourceFilterDate) return false;
       
       if (sourceFilterKabupaten !== 'ALL') {
@@ -164,7 +174,24 @@ export const StoreRelocationAssistant: React.FC<StoreRelocationAssistantProps> =
       }
       return true;
     });
-  }, [eligibleSourceSchedules, sourceFilterDate, sourceFilterKabupaten, sourceSearchQuery, stores]);
+  }, [eligibleSourceSchedules, sourceFilterStatus, sourceFilterDate, sourceFilterKabupaten, sourceSearchQuery, stores]);
+
+  // Count schedules that specifically requested relocation
+  const needRelocationCount = useMemo(() => {
+    return eligibleSourceSchedules.filter(s => s.status === 'Pindah Toko' || s.status === 'Gagal SO').length;
+  }, [eligibleSourceSchedules]);
+
+  // Auto-select first schedule, prioritizing ones marked Pindah Toko or Gagal SO
+  useEffect(() => {
+    if (!selectedSourceScheduleId && eligibleSourceSchedules.length > 0) {
+      const urgent = eligibleSourceSchedules.find(s => s.status === 'Pindah Toko' || s.status === 'Gagal SO');
+      if (urgent) {
+        setSelectedSourceScheduleId(urgent.id);
+      } else if (eligibleSourceSchedules[0]) {
+        setSelectedSourceScheduleId(eligibleSourceSchedules[0].id);
+      }
+    }
+  }, [eligibleSourceSchedules, selectedSourceScheduleId]);
 
   // Currently Selected Source Schedule & Store
   const selectedSchedule = useMemo(() => {
@@ -188,8 +215,6 @@ export const StoreRelocationAssistant: React.FC<StoreRelocationAssistantProps> =
   const candidateRecommendations = useMemo<CandidateStoreRecommendation[]>(() => {
     if (!selectedSourceStore) return [];
 
-    const sourceLat = selectedSourceStore.latitude;
-    const sourceLng = selectedSourceStore.longitude;
     const currentDate = selectedSchedule?.scheduledDate || '';
 
     // Create lookup for schedules by store code
@@ -206,12 +231,10 @@ export const StoreRelocationAssistant: React.FC<StoreRelocationAssistantProps> =
       // Exclude source store itself
       if (st.id === selectedSourceStore.id || st.code === selectedSourceStore.code) return;
 
-      // Distance calculation
-      const dist = (sourceLat !== undefined && sourceLng !== undefined && st.latitude !== undefined && st.longitude !== undefined)
-        ? calculateHaversineDistance(sourceLat, sourceLng, st.latitude, st.longitude)
-        : 999;
-
-      const hasCoordinates = st.latitude !== undefined && st.longitude !== undefined;
+      // Accurate Haversine Distance calculation between stores
+      const dist = calculateHaversineDistanceBetweenStores(selectedSourceStore, st);
+      const coordInfo = resolveStoreCoordinates(st);
+      const hasCoordinates = !coordInfo.isEstimated || coordInfo.precision === 'KECAMATAN';
 
       // Determine schedule status in master & schedule table
       const activeSched = scheduleByStoreCode.get(st.code);
@@ -261,14 +284,27 @@ export const StoreRelocationAssistant: React.FC<StoreRelocationAssistantProps> =
       });
     });
 
-    // Sort by: 1. Belum Terjadwal (Priority), 2. Shortest Distance
+    // Flexible Candidate Sorting
     return list.sort((a, b) => {
-      // Prioritize unassigned blank stores first if in same distance tier
-      if (a.scheduleStatusType === 'BELUM_TERJADWAL' && b.scheduleStatusType !== 'BELUM_TERJADWAL') return -1;
-      if (b.scheduleStatusType === 'BELUM_TERJADWAL' && a.scheduleStatusType !== 'BELUM_TERJADWAL') return 1;
+      // 1. Strict Nearest Distance first (Default & primary user expectation)
+      if (candidateSortMode === 'NEAREST_GPS') {
+        return a.distanceKm - b.distanceKm;
+      }
+      // 2. Unassigned (Blank) priority, then distance
+      if (candidateSortMode === 'PRIORITY_UNASSIGNED') {
+        if (a.scheduleStatusType === 'BELUM_TERJADWAL' && b.scheduleStatusType !== 'BELUM_TERJADWAL') return -1;
+        if (b.scheduleStatusType === 'BELUM_TERJADWAL' && a.scheduleStatusType !== 'BELUM_TERJADWAL') return 1;
+        return a.distanceKm - b.distanceKm;
+      }
+      // 3. Highest Saldo first
+      if (candidateSortMode === 'HIGHEST_SALDO') {
+        const saldoA = typeof a.saldoToko === 'number' ? a.saldoToko : parseFloat(String(a.saldoToko).replace(/[^0-9.-]/g, '')) || 0;
+        const saldoB = typeof b.saldoToko === 'number' ? b.saldoToko : parseFloat(String(b.saldoToko).replace(/[^0-9.-]/g, '')) || 0;
+        return saldoB - saldoA;
+      }
       return a.distanceKm - b.distanceKm;
     });
-  }, [selectedSourceStore, stores, schedules, selectedSchedule]);
+  }, [selectedSourceStore, stores, schedules, selectedSchedule, candidateSortMode]);
 
   // Extract available Kabupatens with store counts from master stores
   const availableKabupatens = useMemo(() => {
@@ -551,6 +587,40 @@ _Master Toko Bali & Jadwal telah disinkronkan otomatis oleh SPV._`;
               </span>
             </div>
 
+            {/* Quick Status Tab Switcher for Source Schedules */}
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-[11px] font-bold">
+              <button
+                type="button"
+                onClick={() => setSourceFilterStatus('ALL')}
+                className={`flex-1 py-1 rounded-lg transition text-center ${
+                  sourceFilterStatus === 'ALL' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Semua ({eligibleSourceSchedules.length})
+              </button>
+              {needRelocationCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSourceFilterStatus('NEED_RELOCATION')}
+                  className={`flex-1 py-1 rounded-lg transition flex items-center justify-center gap-1 ${
+                    sourceFilterStatus === 'NEED_RELOCATION' ? 'bg-rose-600 text-white shadow-2xs' : 'text-rose-700 hover:bg-rose-50'
+                  }`}
+                >
+                  <span>🚨 Butuh Relokasi</span>
+                  <span className="bg-white text-rose-700 text-[10px] px-1 rounded-full font-black">{needRelocationCount}</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setSourceFilterStatus('ACTIVE')}
+                className={`flex-1 py-1 rounded-lg transition text-center ${
+                  sourceFilterStatus === 'ACTIVE' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Jadwal Aktif
+              </button>
+            </div>
+
             {/* Date & Kabupaten Quick Filter */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs">
               <div className="flex items-center gap-1">
@@ -623,6 +693,16 @@ _Master Toko Bali & Jadwal telah disinkronkan otomatis oleh SPV._`;
                           {isHitam && (
                             <span className="text-[9px] font-black bg-rose-600 text-white px-1.5 py-0.2 rounded-full">
                               ZONA HITAM
+                            </span>
+                          )}
+                          {sch.status === 'Pindah Toko' && (
+                            <span className="text-[9px] font-black bg-amber-500 text-white px-1.5 py-0.2 rounded-full">
+                              🚨 LAPOR PINDAH
+                            </span>
+                          )}
+                          {sch.status === 'Gagal SO' && (
+                            <span className="text-[9px] font-black bg-rose-600 text-white px-1.5 py-0.2 rounded-full">
+                              🚨 GAGAL SO
                             </span>
                           )}
                         </div>
@@ -773,36 +853,74 @@ _Master Toko Bali & Jadwal telah disinkronkan otomatis oleh SPV._`;
               </div>
 
               {/* Quick Status Tab Switcher */}
-              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold">
-                <button
-                  type="button"
-                  onClick={() => setFilterScheduleType('ALL')}
-                  className={`px-2.5 py-1 rounded-lg transition ${
-                    filterScheduleType === 'ALL' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Semua ({candidateRecommendations.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterScheduleType('BELUM_TERJADWAL')}
-                  className={`px-2.5 py-1 rounded-lg transition flex items-center gap-1 ${
-                    filterScheduleType === 'BELUM_TERJADWAL' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-300" />
-                  <span>Belum Terjadwal ({candidateRecommendations.filter(c => c.scheduleStatusType === 'BELUM_TERJADWAL').length})</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterScheduleType('TERJADWAL_LAIN')}
-                  className={`px-2.5 py-1 rounded-lg transition flex items-center gap-1 ${
-                    filterScheduleType === 'TERJADWAL_LAIN' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-300" />
-                  <span>Tukar Jadwal ({candidateRecommendations.filter(c => c.scheduleStatusType === 'TERJADWAL_LAIN').length})</span>
-                </button>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setFilterScheduleType('ALL')}
+                    className={`px-2.5 py-1 rounded-lg transition ${
+                      filterScheduleType === 'ALL' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Semua ({candidateRecommendations.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFilterScheduleType('BELUM_TERJADWAL')}
+                    className={`px-2.5 py-1 rounded-lg transition flex items-center gap-1 ${
+                      filterScheduleType === 'BELUM_TERJADWAL' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-300" />
+                    <span>Belum Terjadwal ({candidateRecommendations.filter(c => c.scheduleStatusType === 'BELUM_TERJADWAL').length})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFilterScheduleType('TERJADWAL_LAIN')}
+                    className={`px-2.5 py-1 rounded-lg transition flex items-center gap-1 ${
+                      filterScheduleType === 'TERJADWAL_LAIN' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-300" />
+                    <span>Tukar Jadwal ({candidateRecommendations.filter(c => c.scheduleStatusType === 'TERJADWAL_LAIN').length})</span>
+                  </button>
+                </div>
+
+                {/* Sorting Mode Selector */}
+                <div className="flex items-center gap-1 bg-indigo-50 border border-indigo-100 p-1 rounded-xl text-[11px] font-bold text-indigo-900">
+                  <span className="px-1 text-[10px] text-indigo-500 uppercase tracking-wider font-extrabold hidden sm:inline">Urutan:</span>
+                  <button
+                    type="button"
+                    onClick={() => setCandidateSortMode('NEAREST_GPS')}
+                    className={`px-2 py-0.5 rounded-lg transition flex items-center gap-1 cursor-pointer ${
+                      candidateSortMode === 'NEAREST_GPS' ? 'bg-indigo-600 text-white shadow-2xs' : 'text-indigo-700 hover:bg-indigo-100/70'
+                    }`}
+                    title="Urutkan dari jarak GPS terdekat ke terjauh"
+                  >
+                    <Navigation className="w-3 h-3" />
+                    <span>Jarak Terdekat</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCandidateSortMode('PRIORITY_UNASSIGNED')}
+                    className={`px-2 py-0.5 rounded-lg transition cursor-pointer ${
+                      candidateSortMode === 'PRIORITY_UNASSIGNED' ? 'bg-indigo-600 text-white shadow-2xs' : 'text-indigo-700 hover:bg-indigo-100/70'
+                    }`}
+                    title="Prioritaskan toko belum terjadwal, lalu jarak terdekat"
+                  >
+                    <span>⭐ Belum Terjadwal</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCandidateSortMode('HIGHEST_SALDO')}
+                    className={`px-2 py-0.5 rounded-lg transition cursor-pointer ${
+                      candidateSortMode === 'HIGHEST_SALDO' ? 'bg-indigo-600 text-white shadow-2xs' : 'text-indigo-700 hover:bg-indigo-100/70'
+                    }`}
+                    title="Urutkan dari nilai saldo toko terbesar"
+                  >
+                    <span>Saldo Terbesar</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -966,12 +1084,28 @@ _Master Toko Bali & Jadwal telah disinkronkan otomatis oleh SPV._`;
             {/* Candidates Card List (Scrollable, mobile responsive) */}
             <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
               {filteredCandidates.length === 0 ? (
-                <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-300 space-y-2">
+                <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-300 space-y-3">
                   <Navigation className="w-8 h-8 text-slate-400 mx-auto" />
-                  <p className="text-sm font-bold text-slate-700">Tidak ada toko rekomendasi yang cocok</p>
+                  <p className="text-sm font-bold text-slate-700">Tidak ada toko rekomendasi yang cocok dengan filter aktif</p>
                   <p className="text-xs text-slate-500 max-w-md mx-auto">
-                    Coba sesuaikan filter Kabupaten, Kecamatan, atau perluas radius pencarian.
+                    Mungkin radius {maxRadiusKm > 0 ? `${maxRadiusKm} km` : ''} terlalu sempit atau filter wilayah terlalu spesifik.
                   </p>
+                  <div className="flex flex-wrap justify-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setMaxRadiusKm(0)}
+                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+                    >
+                      Buka Semua Radius Jarak
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleResetCandidateFilters}
+                      className="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+                    >
+                      Reset Semua Filter
+                    </button>
+                  </div>
                 </div>
               ) : (
                 filteredCandidates.map((cand) => {
@@ -1027,7 +1161,7 @@ _Master Toko Bali & Jadwal telah disinkronkan otomatis oleh SPV._`;
                         {/* Distance Badge */}
                         <div className="flex items-center gap-1.5 bg-slate-900 text-white px-2.5 py-1 rounded-xl font-mono text-xs font-bold">
                           <Navigation className="w-3 h-3 text-indigo-400" />
-                          <span>{cand.distanceKm < 900 ? `${cand.distanceKm} km` : 'Wilayah Sama'}</span>
+                          <span>{cand.distanceKm < 1 ? `${Math.round(cand.distanceKm * 1000)} m` : `${cand.distanceKm.toFixed(1)} km`}</span>
                         </div>
                       </div>
 

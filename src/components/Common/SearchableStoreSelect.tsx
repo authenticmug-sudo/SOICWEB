@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Search, Building2, Check, ChevronDown, X, Sparkles, MapPin, ShieldAlert, Navigation, Compass, Filter, RefreshCw } from 'lucide-react';
 import { Store } from '../../types/stockOpname';
-import { calculateHaversineDistance, extractKabupatenKecamatanMap, normalizeKabupaten, normalizeKecamatan } from '../../utils/geoUtils';
+import { calculateHaversineDistance, calculateHaversineDistanceBetweenStores, extractKabupatenKecamatanMap, normalizeKabupaten, normalizeKecamatan } from '../../utils/geoUtils';
 import { isStoreZonaHitam } from '../../utils/storeSyncUtils';
 
 interface SearchableStoreSelectProps {
@@ -46,7 +46,14 @@ export const SearchableStoreSelect: React.FC<SearchableStoreSelectProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [highlightedIndex, setHighlightedIndex] = useState(0);
-  const [sortByDistance, setSortByDistance] = useState(false);
+  const [sortByDistance, setSortByDistance] = useState(Boolean(referenceStore));
+
+  // If reference store is provided or changes, turn on distance sorting by default
+  useEffect(() => {
+    if (referenceStore) {
+      setSortByDistance(true);
+    }
+  }, [referenceStore]);
   
   // Local filter states if not controlled from parent
   const [localKabupaten, setLocalKabupaten] = useState<string>('ALL');
@@ -104,18 +111,13 @@ export const SearchableStoreSelect: React.FC<SearchableStoreSelectProps> = ({
 
   // Calculate distance for a store from the referenceStore
   const getStoreDistance = (store: Store): number | null => {
-    if (!referenceStore || !referenceStore.latitude || !referenceStore.longitude || !store.latitude || !store.longitude) {
+    if (!referenceStore) {
       return null;
     }
-    if (referenceStore.id === store.id || referenceStore.code === store.code) {
+    if (referenceStore.id === store.id || (referenceStore.code && referenceStore.code === store.code)) {
       return 0;
     }
-    return calculateHaversineDistance(
-      referenceStore.latitude,
-      referenceStore.longitude,
-      store.latitude,
-      store.longitude
-    );
+    return calculateHaversineDistanceBetweenStores(referenceStore, store);
   };
 
   // Selected store distance from referenceStore

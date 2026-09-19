@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { X, AlertTriangle, ArrowRight, Building2, Calendar, Clock, FileText, CheckCircle2, Search } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { X, AlertTriangle, ArrowRight, Building2, Calendar, Clock, FileText, CheckCircle2, Search, Compass, MapPin, Sparkles, Navigation } from 'lucide-react';
 import { SOSchedule, Store } from '../../types/stockOpname';
 import { SearchableStoreSelect } from '../Common/SearchableStoreSelect';
+import { calculateHaversineDistanceBetweenStores } from '../../utils/geoUtils';
+import { isStoreZonaHitam } from '../../utils/storeSyncUtils';
 
 interface GagalAtauPindahTokoModalProps {
   isOpen: boolean;
@@ -31,50 +33,69 @@ export const GagalAtauPindahTokoModal: React.FC<GagalAtauPindahTokoModalProps> =
   const [reason, setReason] = useState('');
   const [selectedReplacementStoreId, setSelectedReplacementStoreId] = useState('');
   const [storeSearchQuery, setStoreSearchQuery] = useState('');
-  const [isStoreDropdownOpen, setIsStoreDropdownOpen] = useState(false);
   const [newDate, setNewDate] = useState('');
   const [newTime, setNewTime] = useState('21:00');
 
+  // Find original store being audited
+  const sourceStore = useMemo(() => {
+    if (!schedule) return null;
+    return stores.find(s => s.id === schedule.storeId || s.code === schedule.storeCode) || null;
+  }, [schedule, stores]);
+
+  // Available stores excluding the current store
+  const availableStores = useMemo(() => {
+    if (!schedule) return [];
+    return stores.filter(s => s.id !== schedule.storeId && s.code !== schedule.storeCode);
+  }, [stores, schedule]);
+
+  // Compute nearest recommendations with Haversine GPS distance
+  const nearestRecommendations = useMemo(() => {
+    if (!sourceStore || availableStores.length === 0) return [];
+
+    return availableStores
+      .map(store => {
+        const dist = calculateHaversineDistanceBetweenStores(sourceStore, store);
+        const masterSepDate = String(store.soSeptember || '').trim();
+        const isBelum = !masterSepDate || masterSepDate === '-' || masterSepDate === '0' || masterSepDate.toLowerCase().includes('belum');
+        const isHitam = isStoreZonaHitam(store);
+
+        return {
+          store,
+          distanceKm: dist,
+          isBelumTerjadwal: isBelum,
+          soSeptember: store.soSeptember,
+          isZonaHitam: isHitam
+        };
+      })
+      .sort((a, b) => a.distanceKm - b.distanceKm)
+      .slice(0, 4);
+  }, [sourceStore, availableStores]);
+
   useEffect(() => {
     if (isOpen && schedule) {
-      const avail = stores.filter(s => s.id !== schedule.storeId && s.code !== schedule.storeCode);
-      const firstStore = avail[0] || stores[0];
-      if (firstStore) {
-        setSelectedReplacementStoreId(firstStore.id);
-        setStoreSearchQuery(`[${firstStore.code}] ${firstStore.name}`);
+      if (nearestRecommendations.length > 0) {
+        const topCandidate = nearestRecommendations[0].store;
+        setSelectedReplacementStoreId(topCandidate.id);
+        setStoreSearchQuery(`[${topCandidate.code}] ${topCandidate.name}`);
       } else {
-        setSelectedReplacementStoreId('');
-        setStoreSearchQuery('');
+        const firstStore = availableStores[0] || stores[0];
+        if (firstStore) {
+          setSelectedReplacementStoreId(firstStore.id);
+          setStoreSearchQuery(`[${firstStore.code}] ${firstStore.name}`);
+        }
       }
       setNewDate(schedule.scheduledDate || '');
       setNewTime(schedule.scheduledTime || '21:00');
       setReason('');
       setActionType('Pindah Toko');
-      setIsStoreDropdownOpen(false);
     }
-  }, [isOpen, schedule, stores]);
+  }, [isOpen, schedule, nearestRecommendations, availableStores, stores]);
 
   if (!isOpen || !schedule) return null;
-
-  const availableStores = stores.filter(s => s.id !== schedule.storeId && s.code !== schedule.storeCode);
-
-  const filteredStores = availableStores.filter(s => {
-    if (!storeSearchQuery.trim()) return true;
-    const q = storeSearchQuery.toLowerCase().trim();
-    return (
-      s.code.toLowerCase().includes(q) ||
-      s.name.toLowerCase().includes(q) ||
-      (s.region && s.region.toLowerCase().includes(q)) ||
-      (s.city && s.city.toLowerCase().includes(q))
-    );
-  });
-
-  const selectedStoreObj = stores.find(s => s.id === selectedReplacementStoreId);
 
   const handleSelectStore = (store: Store) => {
     setSelectedReplacementStoreId(store.id);
     setStoreSearchQuery(`[${store.code}] ${store.name}`);
-    setIsStoreDropdownOpen(false);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -195,12 +216,78 @@ export const GagalAtauPindahTokoModal: React.FC<GagalAtauPindahTokoModalProps> =
           {/* If Pindah Toko: Replacement Store details */}
           {actionType === 'Pindah Toko' && (
             <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-4 space-y-3">
-              <h4 className="font-extrabold text-amber-900 text-xs flex items-center gap-1.5">
-                <Building2 className="w-4 h-4 text-amber-700" />
-                Data Toko Pengganti (Auto-Sync ke SPV & Dashboard General)
-              </h4>
+              <div className="flex items-center justify-between">
+                <h4 className="font-extrabold text-amber-900 text-xs flex items-center gap-1.5">
+                  <Building2 className="w-4 h-4 text-amber-700" />
+                  Data Toko Pengganti (Auto-Sync ke SPV & Dashboard General)
+                </h4>
+                {sourceStore && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200/70 text-amber-900 flex items-center gap-1">
+                    <Compass className="w-3 h-3 text-amber-800" />
+                    GPS Acuan: [{sourceStore.code}] {sourceStore.name}
+                  </span>
+                )}
+              </div>
 
-              {/* Store Autocomplete & Search Input */}
+              {/* Quick Nearest Store Recommendations Cards */}
+              {nearestRecommendations.length > 0 && (
+                <div className="bg-white border border-amber-200/90 rounded-xl p-3 shadow-xs">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                      Rekomendasi Toko Terdekat (Jarak GPS):
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-medium">Klik untuk memilih langsung</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {nearestRecommendations.map((item, idx) => {
+                      const isSelected = selectedReplacementStoreId === item.store.id;
+                      return (
+                        <button
+                          key={item.store.id}
+                          type="button"
+                          onClick={() => handleSelectStore(item.store)}
+                          className={`text-left p-2.5 rounded-lg border transition-all text-xs flex flex-col justify-between gap-1.5 ${
+                            isSelected
+                              ? 'bg-amber-50 border-amber-500 ring-2 ring-amber-400/40 shadow-xs'
+                              : 'bg-slate-50/70 hover:bg-amber-50/40 border-slate-200 hover:border-amber-300'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-1">
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className={`text-[10px] font-black px-1.5 py-0.2 rounded ${
+                                  idx === 0 ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-700'
+                                }`}>
+                                  #{idx + 1} Terdekat
+                                </span>
+                                <span className="font-mono font-bold text-slate-900">[{item.store.code}]</span>
+                              </div>
+                              <div className="font-bold text-slate-800 text-[11px] line-clamp-1 mt-0.5">
+                                {item.store.name}
+                              </div>
+                            </div>
+
+                            <span className="text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-200/60 px-1.5 py-0.5 rounded-md whitespace-nowrap shrink-0 flex items-center gap-0.5">
+                              <MapPin className="w-3 h-3 text-indigo-600" />
+                              {item.distanceKm} km
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[10px] text-slate-500 pt-0.5 border-t border-slate-100">
+                            <span className="truncate max-w-[140px]">{item.store.kabupaten || item.store.city || 'Bali'}</span>
+                            <span className={`font-semibold ${item.isBelumTerjadwal ? 'text-emerald-700 font-bold' : 'text-slate-600'}`}>
+                              {item.isBelumTerjadwal ? '⭐ Belum Terjadwal' : `Tgl ${item.soSeptember}`}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Searchable Store Select */}
               <SearchableStoreSelect
                 stores={availableStores}
@@ -209,7 +296,9 @@ export const GagalAtauPindahTokoModal: React.FC<GagalAtauPindahTokoModalProps> =
                   setSelectedReplacementStoreId(store.id);
                   setStoreSearchQuery(`[${store.code}] ${store.name}`);
                 }}
-                label="Pilih Toko Tujuan Pindah"
+                referenceStore={sourceStore}
+                referenceStoreLabel={sourceStore ? `Toko Asal (${sourceStore.code})` : 'Toko Asal'}
+                label="Pilih / Cari Toko Tujuan Pindah (Otomatis Diurutkan Jarak Terdekat)"
                 placeholder="Ketik kode toko (misal: TDVX) atau nama toko..."
                 required
               />
