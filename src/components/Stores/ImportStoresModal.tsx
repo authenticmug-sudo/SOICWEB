@@ -388,13 +388,13 @@ export const ImportStoresModal: React.FC<ImportStoresModalProps> = ({
         }
       }
 
-      // Parse SO AKTIVA column strictly (Ya vs Tidak)
-      const soAktivaRaw = getVal(['so akti', 'so aktiva', 'so_aktiva', 'aktiva', 'so aktiva tetap', 'aktiva so', 'status aktiva'], '');
-      let soAktivaVal: string = 'Tidak';
+      // Parse SO AKTIVA column: 'SO AKTIVA' if cell has content, else blank '' (NON SO AKTIVA)
+      const soAktivaRaw = getVal(['so aktiva', 'so_aktiva', 'so akti', 'aktiva', 'so aktiva tetap', 'aktiva so', 'status aktiva'], '');
+      let soAktivaVal: string = '';
       if (soAktivaRaw) {
         const aUpper = soAktivaRaw.toUpperCase().trim();
-        if (aUpper === 'YA' || aUpper === 'Y' || aUpper === 'TRUE' || aUpper === '1' || aUpper.includes('AKTIVA') || aUpper.includes('ADA') || aUpper.includes('YA')) {
-          soAktivaVal = 'Ya';
+        if (aUpper.includes('AKTIVA') || aUpper === 'YA' || aUpper === 'Y' || aUpper === 'TRUE' || aUpper === '1' || aUpper.includes('ADA')) {
+          soAktivaVal = 'SO AKTIVA';
         }
       }
 

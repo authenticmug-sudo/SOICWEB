@@ -90,6 +90,55 @@ export function isStoreZonaHitam(store: Partial<Store> | any): boolean {
 }
 
 /**
+ * Check if a store or schedule requires SO AKTIVA based on column SO Aktiva in Master Toko Bali.
+ * If the cell contains "SO AKTIVA", "AKTIVA", "YA", "Y", "TRUE", "1", etc. -> true.
+ * If blank, "-", "NON", "TIDAK", or empty -> false.
+ */
+export function isStoreSOAktiva(storeOrSchedule: Partial<Store | SOSchedule> | any): boolean {
+  if (!storeOrSchedule) return false;
+  
+  const raw = String(
+    storeOrSchedule.soAktiva || 
+    storeOrSchedule['SO AKTIVA'] || 
+    storeOrSchedule['SO_AKTIVA'] || 
+    storeOrSchedule['AKTIVA'] || 
+    ''
+  ).trim().toUpperCase();
+
+  if (!raw || raw === '-' || raw === '0' || raw === 'TIDAK' || raw === 'NON' || raw === 'FALSE' || raw === 'NON SO AKTIVA' || raw === 'BUKAN') {
+    return false;
+  }
+
+  return raw.includes('AKTIVA') || raw === 'YA' || raw === 'Y' || raw === 'TRUE' || raw === '1' || raw.includes('ADA');
+}
+
+/**
+ * Returns clean standard label for SO Aktiva: 'SO AKTIVA' or 'NON SO AKTIVA'.
+ * As requested: If column has "SO AKTIVA" then show "SO AKTIVA", if blank give "NON SO AKTIVA".
+ */
+export function getSOAktivaLabel(storeOrSchedule: Partial<Store | SOSchedule> | any): 'SO AKTIVA' | 'NON SO AKTIVA' {
+  return isStoreSOAktiva(storeOrSchedule) ? 'SO AKTIVA' : 'NON SO AKTIVA';
+}
+
+/**
+ * Clean and normalize Type SO from Master Toko Bali (e.g. M, Q3, Q1, Q2, etc.)
+ */
+export function getCleanTypeSo(storeOrSchedule: Partial<Store | SOSchedule> | any): string {
+  if (!storeOrSchedule) return '';
+  const raw = String(
+    storeOrSchedule.typeSo || 
+    storeOrSchedule.qm || 
+    storeOrSchedule['TYPE SO'] || 
+    storeOrSchedule['TYPE_SO'] || 
+    storeOrSchedule['Q/M'] || 
+    ''
+  ).trim();
+
+  if (!raw || raw === '-' || raw === '0') return '';
+  return raw.toUpperCase();
+}
+
+/**
  * Get the unified SPV Approval Status for a Store
  * Values: 'Sudah Approve' | 'Belum Terapprove' | 'Belum SO'
  */

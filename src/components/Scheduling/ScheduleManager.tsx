@@ -32,12 +32,13 @@ import {
   AlertTriangle,
   Flame,
   ArrowUpDown,
-  PowerOff
+  PowerOff,
+  Tag
 } from 'lucide-react';
 import { SOSchedule, Store, SOTeam, RegionArea, UserRole, AuditorPersonnel, SOResult } from '../../types/stockOpname';
 import { REGIONS } from '../../data/initialData';
 import { getStatusBadgeClass, formatDateIndo, formatRupiah, parseSmartDate, parseSmartDateWithContext, formatDateISO } from '../../utils/formatters';
-import { getDayNameIndo } from '../../utils/storeSyncUtils';
+import { getDayNameIndo, isStoreSOAktiva, getSOAktivaLabel } from '../../utils/storeSyncUtils';
 import { exportToCSV } from '../../services/storageService';
 import { KorlapDashboard } from './KorlapDashboard';
 import { KorlapAvatarBar } from './KorlapAvatarBar';
@@ -140,6 +141,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
   const [selectedRegion, setSelectedRegion] = useState<string>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
   const [selectedGroupKorlap, setSelectedGroupKorlap] = useState<string>('ALL');
+  const [selectedSOAktivaFilter, setSelectedSOAktivaFilter] = useState<'ALL' | 'SO_AKTIVA' | 'NON_SO_AKTIVA'>('ALL');
   const [tableLayoutMode, setTableLayoutMode] = useState<'SHEET_JADWAL' | 'COMPACT'>('SHEET_JADWAL');
 
   // Date, Month, Year Filter States
@@ -372,9 +374,20 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
         matchesDayOfWeek = scheduleDay.trim().toUpperCase() === selectedDayOfWeek.trim().toUpperCase();
       }
 
-      return matchesSearch && matchesRegion && matchesStatus && matchesGroup && matchesDate && matchesDayOfWeek;
+      let matchesSOAktiva = true;
+      if (selectedSOAktivaFilter !== 'ALL') {
+        const matchingStore = stores.find(st => 
+          (st.code && s.storeCode && st.code.trim().toUpperCase() === s.storeCode.trim().toUpperCase()) || 
+          (st.id && s.storeId && st.id.trim().toUpperCase() === s.storeId.trim().toUpperCase())
+        );
+        const isAktiva = isStoreSOAktiva(matchingStore || s);
+        if (selectedSOAktivaFilter === 'SO_AKTIVA' && !isAktiva) matchesSOAktiva = false;
+        if (selectedSOAktivaFilter === 'NON_SO_AKTIVA' && isAktiva) matchesSOAktiva = false;
+      }
+
+      return matchesSearch && matchesRegion && matchesStatus && matchesGroup && matchesDate && matchesDayOfWeek && matchesSOAktiva;
     });
-  }, [schedules, searchQuery, selectedRegion, selectedStatus, selectedGroupKorlap, selectedYear, selectedMonth, selectedDay, selectedDayOfWeek, selectedSpecificDate, stores, getEffectiveKorlapForSchedule, getScheduleDayName]);
+  }, [schedules, searchQuery, selectedRegion, selectedStatus, selectedGroupKorlap, selectedSOAktivaFilter, selectedYear, selectedMonth, selectedDay, selectedDayOfWeek, selectedSpecificDate, stores, getEffectiveKorlapForSchedule, getScheduleDayName]);
 
   // Dashboard Stats Calculations
   const dashboardStats = useMemo(() => {
@@ -937,6 +950,13 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
               </span>
             )}
 
+            {selectedSOAktivaFilter !== 'ALL' && (
+              <span className="bg-purple-100 border border-purple-300 text-purple-900 font-bold px-2 py-0.5 rounded-lg flex items-center gap-1">
+                SO Aktiva: {selectedSOAktivaFilter === 'SO_AKTIVA' ? 'SO AKTIVA' : 'NON SO AKTIVA'}
+                <button type="button" onClick={() => setSelectedSOAktivaFilter('ALL')} className="hover:text-rose-600 font-black">×</button>
+              </span>
+            )}
+
             {isDateFilterActive && (
               <span className="bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold px-2 py-0.5 rounded-lg flex items-center gap-1">
                 <CalendarDays className="w-3 h-3 text-indigo-600" />
@@ -957,7 +977,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
           <div className="pt-3 border-t border-slate-100 space-y-3 animate-fadeIn">
             
             {/* Dropdown Filters Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
               
               {/* Group Korlap Dropdown */}
               <div>
@@ -1010,6 +1030,23 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                   <option value="Selesai">Selesai</option>
                   <option value="Gagal SO">Gagal SO</option>
                   <option value="Pindah Toko">Pindah Toko</option>
+                </select>
+              </div>
+
+              {/* SO Aktiva Filter */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 mb-1 flex items-center gap-1">
+                  <Tag className="w-3 h-3 text-purple-600" />
+                  <span>SO Aktiva:</span>
+                </label>
+                <select
+                  value={selectedSOAktivaFilter}
+                  onChange={(e) => setSelectedSOAktivaFilter(e.target.value as any)}
+                  className="w-full bg-slate-50 border border-purple-200 hover:border-purple-400 text-xs font-bold rounded-xl px-3 py-2 text-purple-950 focus:outline-none focus:border-purple-500 cursor-pointer transition"
+                >
+                  <option value="ALL">Semua SO Aktiva</option>
+                  <option value="SO_AKTIVA">🏷️ Perlu SO Aktiva (SO AKTIVA)</option>
+                  <option value="NON_SO_AKTIVA">NON SO AKTIVA</option>
                 </select>
               </div>
 
@@ -1444,8 +1481,17 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                             {s.storeCode}
                           </span>
                           <span className="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded">
-                            SO {s.typeSo || 'M'}
+                            Type {s.typeSo || matchingStore?.typeSo || 'M'}
                           </span>
+                          {isStoreSOAktiva(matchingStore || s) ? (
+                            <span className="text-[10px] font-black px-1.5 py-0.5 rounded-lg bg-purple-100 text-purple-800 border border-purple-300 flex items-center gap-0.5 shadow-2xs">
+                              🏷️ SO AKTIVA
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-lg bg-slate-100 text-slate-500 border border-slate-200">
+                              NON SO AKTIVA
+                            </span>
+                          )}
                           {isBlackZone && (
                             <span className="text-[10px] font-black bg-slate-900 text-rose-300 border border-rose-500 px-1.5 py-0.5 rounded-full flex items-center gap-1">
                               <Flame className="w-3 h-3 text-rose-400" />
@@ -1614,8 +1660,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                       const matchingStore = stores.find(st => st.code === s.storeCode || st.id === s.storeId);
                       const zVal = (s.zona || matchingStore?.zona || '').toUpperCase();
                       const isBlackZone = !zVal.includes('NON') && !zVal.includes('BUKAN') && !zVal.includes('TIDAK') && (zVal.includes('HITAM') || matchingStore?.isZonaHitam === true);
-                      const aktivaVal = (s.soAktiva || matchingStore?.soAktiva || '').toUpperCase();
-                      const isAktiva = aktivaVal === 'YA' || aktivaVal === 'Y' || aktivaVal === 'TRUE' || aktivaVal === '1' || aktivaVal.includes('AKTIVA') || (s.soAktiva === 'Ya' || matchingStore?.soAktiva === 'Ya');
+                      const isAktiva = isStoreSOAktiva(matchingStore || s);
                       const assignedMembers = s.assignedPersonnelNames || [];
                       const personilLeaderText = s.personilLeader || (assignedMembers.length > 0 ? assignedMembers[0] : '-');
 
@@ -1668,7 +1713,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
 
                           <td className="py-3 px-3 text-center whitespace-nowrap">
                             <span className="px-2 py-0.5 rounded font-bold text-[10px] bg-blue-50 text-blue-700 border border-blue-200">
-                              {s.typeSo || 'M'}
+                              {s.typeSo || matchingStore?.typeSo || 'M'}
                             </span>
                           </td>
 
@@ -1687,13 +1732,15 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                           </td>
 
                           <td className="py-3 px-3 whitespace-nowrap text-center">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              isAktiva
-                                ? 'bg-purple-100 text-purple-800 border border-purple-300'
-                                : 'bg-slate-100 text-slate-600 border border-slate-200'
-                            }`}>
-                              {isAktiva ? 'Ya' : 'Tidak'}
-                            </span>
+                            {isAktiva ? (
+                              <span className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-purple-100 text-purple-800 border border-purple-300 inline-flex items-center gap-1 shadow-2xs">
+                                🏷️ SO AKTIVA
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200">
+                                NON SO AKTIVA
+                              </span>
+                            )}
                           </td>
 
                           <td className="py-3 px-3 whitespace-nowrap">
@@ -1796,13 +1843,29 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredSchedules.length > 0 ? (
-                    filteredSchedules.map((s) => (
+                    filteredSchedules.map((s) => {
+                      const matchingStore = stores.find(st => st.code === s.storeCode || st.id === s.storeId);
+                      return (
                       <tr key={s.id} className="hover:bg-slate-50/80 transition">
                         
                         <td className="py-3 px-4">
                           <div className="font-bold text-slate-900">{s.storeName}</div>
-                          <div className="text-[11px] font-mono text-slate-500 flex items-center gap-1">
-                            <Building2 className="w-3 h-3 text-slate-400" /> {s.storeCode}
+                          <div className="text-[11px] font-mono text-slate-500 flex items-center gap-1.5 flex-wrap mt-0.5">
+                            <span className="flex items-center gap-1">
+                              <Building2 className="w-3 h-3 text-slate-400" /> {s.storeCode}
+                            </span>
+                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-50 text-amber-900 border border-amber-200">
+                              Type {s.typeSo || matchingStore?.typeSo || 'M'}
+                            </span>
+                            {isStoreSOAktiva(matchingStore || s) ? (
+                              <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-purple-100 text-purple-800 border border-purple-300">
+                                SO AKTIVA
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-500 border border-slate-200">
+                                NON SO AKTIVA
+                              </span>
+                            )}
                           </div>
                         </td>
 
@@ -1874,7 +1937,8 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                         </td>
 
                       </tr>
-                    ))
+                    );
+                  })
                   ) : (
                     <tr>
                       <td colSpan={6} className="py-12 text-center">

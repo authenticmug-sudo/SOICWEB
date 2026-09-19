@@ -27,7 +27,7 @@ import { Store, MasterTokoDataset } from '../../types/stockOpname';
 import { ConfirmDeleteModal } from '../Common/ConfirmDeleteModal';
 import { ToastNotification } from '../Common/ToastNotification';
 import { parseSmartWorkbook, SheetParseResult } from '../../utils/excelParser';
-import { isStoreZonaHitam } from '../../utils/storeSyncUtils';
+import { isStoreZonaHitam, isStoreSOAktiva } from '../../utils/storeSyncUtils';
 import { trackDeletedMasterDataset, normalizeSingleActiveDataset, getStoredStores } from '../../services/storageService';
 import { SpreadsheetSyncModal } from './SpreadsheetSyncModal';
 import { 
@@ -887,6 +887,7 @@ export const MasterTokoManager: React.FC<MasterTokoManagerProps> = ({
                     <th className="p-3">Kabupaten</th>
                     <th className="p-3">Type SO</th>
                     <th className="p-3">Zona Toko</th>
+                    <th className="p-3">SO Aktiva</th>
                     <th className="p-3">Korlap</th>
                     <th className="p-3 text-right">Saldo Toko</th>
                   </tr>
@@ -906,6 +907,7 @@ export const MasterTokoManager: React.FC<MasterTokoManagerProps> = ({
                       .slice(0, 150)
                       .map((st, idx) => {
                         const isHitam = isStoreZonaHitam(st);
+                        const isAktiva = isStoreSOAktiva(st);
 
                         const formattedSaldo = typeof st.saldoToko === 'number' 
                           ? `Rp ${st.saldoToko.toLocaleString('id-ID')}` 
@@ -918,8 +920,8 @@ export const MasterTokoManager: React.FC<MasterTokoManagerProps> = ({
                             <td className="p-3 font-extrabold text-slate-900">{st.name}</td>
                             <td className="p-3 text-slate-700 font-semibold">{st.kabupaten || st.city || '-'}</td>
                             <td className="p-3">
-                              <span className="px-2 py-0.5 bg-slate-100 text-slate-800 font-black rounded border border-slate-300 text-[10px]">
-                                {st.qm || st.typeSo || 'Q'}
+                              <span className="px-2 py-0.5 bg-amber-50 text-amber-900 font-black rounded border border-amber-200 text-[10px]">
+                                {st.typeSo || st.qm || 'M'}
                               </span>
                             </td>
                             <td className="p-3">
@@ -930,6 +932,17 @@ export const MasterTokoManager: React.FC<MasterTokoManagerProps> = ({
                               }`}>
                                 {isHitam ? 'ZONA HITAM' : 'NON ZONA HITAM'}
                               </span>
+                            </td>
+                            <td className="p-3">
+                              {isAktiva ? (
+                                <span className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-purple-100 text-purple-800 border border-purple-300">
+                                  SO AKTIVA
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200">
+                                  NON SO AKTIVA
+                                </span>
+                              )}
                             </td>
                             <td className="p-3 text-slate-700 font-semibold">{st.korlap || '-'}</td>
                             <td className="p-3 font-mono font-bold text-slate-900 text-right">{formattedSaldo}</td>

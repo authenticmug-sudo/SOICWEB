@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Search, Building2, Check, ChevronDown, X, Sparkles, MapPin, ShieldAlert, Navigation, Compass, Filter, RefreshCw } from 'lucide-react';
 import { Store } from '../../types/stockOpname';
 import { calculateHaversineDistance, calculateHaversineDistanceBetweenStores, extractKabupatenKecamatanMap, normalizeKabupaten, normalizeKecamatan } from '../../utils/geoUtils';
-import { isStoreZonaHitam } from '../../utils/storeSyncUtils';
+import { isStoreZonaHitam, isStoreSOAktiva } from '../../utils/storeSyncUtils';
 
 interface SearchableStoreSelectProps {
   stores: Store[];
@@ -608,6 +608,9 @@ export const SearchableStoreSelect: React.FC<SearchableStoreSelectProps> = ({
                       <div className="truncate">
                         <div className="text-xs text-slate-900 font-bold truncate flex items-center gap-1.5 flex-wrap">
                           <span>{highlightMatch(store.name, searchQuery)}</span>
+                          <span className="text-[9px] px-1.5 py-0.2 rounded font-bold bg-amber-50 text-amber-900 border border-amber-200">
+                            Type {store.typeSo || 'M'}
+                          </span>
                           {store.storeType && (
                             <span className="text-[9px] px-1 py-0.2 rounded bg-slate-100 text-slate-600 font-normal border border-slate-200">
                               {store.storeType}
@@ -618,15 +621,15 @@ export const SearchableStoreSelect: React.FC<SearchableStoreSelectProps> = ({
                           }`}>
                             {isStoreZonaHitam(store) ? 'ZONA HITAM' : 'NON ZONA'}
                           </span>
-                          {(() => {
-                            const a = (store.soAktiva || '').toUpperCase();
-                            const isAkt = a === 'YA' || a === 'Y' || a === 'TRUE' || a === '1' || a.includes('AKTIVA');
-                            return isAkt ? (
-                              <span className="text-[9px] px-1.5 py-0.2 rounded font-bold uppercase bg-purple-100 text-purple-800 border border-purple-300">
-                                Aktiva: Ya
-                              </span>
-                            ) : null;
-                          })()}
+                          {isStoreSOAktiva(store) ? (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded font-black uppercase bg-purple-100 text-purple-800 border border-purple-300">
+                              SO AKTIVA
+                            </span>
+                          ) : (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded font-bold uppercase bg-slate-100 text-slate-500 border border-slate-200">
+                              NON SO AKTIVA
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-0.5">
                           <span className="flex items-center gap-0.5">

@@ -349,7 +349,7 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
       const asVal = findVal(['as', 'assistant manager']);
       const region = findVal(['wilaya', 'wilayah', 'cabang', 'region', 'area']) || 'BALI';
       const coverageVal = findVal(['covera', 'coverage', 'dc/igr', 'dc / igr', 'distribusi']);
-      const typeSoVal = findVal(['type so', 'status so', 'type_so', 'type', 'tipe', 'q/m', 'qm']);
+      const typeSoVal = findVal(['type so', 'status so', 'type_so', 'tipe so', 'tipe_so', 'type', 'tipe', 'q/m', 'q / m', 'qm', 'periode so', 'jenis so', 'kategori so']);
       const korlapRaw = findVal([
         'korlap/officer so',
         'korlap / officer so',
@@ -445,15 +445,13 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
 
       const jenisTokoVal = findVal(['jenis toko', 'jenis_toko', 'tipetoko', 'tipe toko', 'storetype']);
       
-      // Parse SO AKTIVA column strictly (Ya vs Tidak)
-      const soAktivaRaw = findVal(['so akti', 'so aktiva', 'so_aktiva', 'aktiva', 'so aktiva tetap', 'aktiva so', 'status aktiva']);
-      let soAktivaVal: string = 'Tidak';
+      // Parse SO AKTIVA column: if cell contains SO AKTIVA/AKTIVA/YA/1 -> 'SO AKTIVA', else blank '' (NON SO AKTIVA)
+      const soAktivaRaw = findVal(['so aktiva', 'so_aktiva', 'so akti', 'aktiva', 'so aktiva tetap', 'aktiva so', 'status aktiva']);
+      let soAktivaVal: string = '';
       if (soAktivaRaw) {
         const aUpper = soAktivaRaw.toUpperCase().trim();
-        if (aUpper === 'YA' || aUpper === 'Y' || aUpper === 'TRUE' || aUpper === '1' || aUpper.includes('AKTIVA') || aUpper.includes('ADA') || aUpper.includes('YA')) {
-          soAktivaVal = 'Ya';
-        } else {
-          soAktivaVal = 'Tidak';
+        if (aUpper.includes('AKTIVA') || aUpper === 'YA' || aUpper === 'Y' || aUpper === 'TRUE' || aUpper === '1' || aUpper.includes('ADA')) {
+          soAktivaVal = 'SO AKTIVA';
         }
       }
 
@@ -787,7 +785,7 @@ export function parseSmartWorkbook(wb: XLSX.WorkBook): WorkbookParseResult {
       const cleanStock = typeof stockRaw === 'number' ? stockRaw : (parseFloat(String(stockRaw || '').replace(/[^0-9.-]/g, '')) || 0);
       const cleanKas = typeof kasRaw === 'number' ? kasRaw : (parseFloat(String(kasRaw || '').replace(/[^0-9.-]/g, '')) || 0);
       const cleanZona = zonaRaw.toUpperCase().includes('HITAM') && !zonaRaw.toUpperCase().includes('NON') ? 'ZONA HITAM' : 'NON ZONA HITAM';
-      const cleanAktiva = aktivaRaw.toUpperCase().includes('YA') || aktivaRaw.toUpperCase().includes('AKTIVA') ? 'Ya' : 'Tidak';
+      const cleanAktiva = aktivaRaw.toUpperCase().includes('YA') || aktivaRaw.toUpperCase().includes('AKTIVA') ? 'SO AKTIVA' : '';
       const cleanTeam = team || 'TEAM 1';
 
       const schedItem: SOSchedule = {

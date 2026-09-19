@@ -3,7 +3,7 @@ import { X, AlertTriangle, ArrowRight, Building2, Calendar, Clock, FileText, Che
 import { SOSchedule, Store } from '../../types/stockOpname';
 import { SearchableStoreSelect } from '../Common/SearchableStoreSelect';
 import { calculateHaversineDistanceBetweenStores } from '../../utils/geoUtils';
-import { isStoreZonaHitam } from '../../utils/storeSyncUtils';
+import { isStoreZonaHitam, isStoreSOAktiva } from '../../utils/storeSyncUtils';
 
 interface GagalAtauPindahTokoModalProps {
   isOpen: boolean;
@@ -256,13 +256,25 @@ export const GagalAtauPindahTokoModal: React.FC<GagalAtauPindahTokoModalProps> =
                         >
                           <div className="flex items-start justify-between gap-1">
                             <div>
-                              <div className="flex items-center gap-1.5">
+                              <div className="flex items-center gap-1.5 flex-wrap">
                                 <span className={`text-[10px] font-black px-1.5 py-0.2 rounded ${
                                   idx === 0 ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-700'
                                 }`}>
                                   #{idx + 1} Terdekat
                                 </span>
                                 <span className="font-mono font-bold text-slate-900">[{item.store.code}]</span>
+                                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-50 text-amber-900 border border-amber-200">
+                                  Type {item.store.typeSo || 'M'}
+                                </span>
+                                {isStoreSOAktiva(item.store) ? (
+                                  <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-purple-100 text-purple-800 border border-purple-300">
+                                    SO AKTIVA
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-500 border border-slate-200">
+                                    NON SO AKTIVA
+                                  </span>
+                                )}
                               </div>
                               <div className="font-bold text-slate-800 text-[11px] line-clamp-1 mt-0.5">
                                 {item.store.name}

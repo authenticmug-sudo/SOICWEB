@@ -23,12 +23,13 @@ import {
   RotateCcw,
   X,
   ChevronRight,
-  Info
+  Info,
+  Tag
 } from 'lucide-react';
 import { Store, SOSchedule, AuditorPersonnel } from '../../types/stockOpname';
 import { calculateHaversineDistance, calculateHaversineDistanceBetweenStores, resolveStoreCoordinates } from '../../utils/geoUtils';
 import { formatRupiah, formatDateIndo, formatSmartSODate, formatZoneText } from '../../utils/formatters';
-import { isStoreZonaHitam } from '../../utils/storeSyncUtils';
+import { isStoreZonaHitam, isStoreSOAktiva, getSOAktivaLabel, getCleanTypeSo } from '../../utils/storeSyncUtils';
 
 interface StoreRelocationAssistantProps {
   stores: Store[];
@@ -116,6 +117,7 @@ export const StoreRelocationAssistant: React.FC<StoreRelocationAssistantProps> =
   const [filterKabupaten, setFilterKabupaten] = useState<string>('ALL');
   const [filterKecamatan, setFilterKecamatan] = useState<string>('ALL');
   const [filterTypeSo, setFilterTypeSo] = useState<string>('ALL');
+  const [filterSoAktiva, setFilterSoAktiva] = useState<'ALL' | 'SO_AKTIVA' | 'NON_SO_AKTIVA'>('ALL');
   const [filterZonaOnly, setFilterZonaOnly] = useState<boolean>(false);
   const [maxRadiusKm, setMaxRadiusKm] = useState<number>(35);
   const [selectedCandidateStoreId, setSelectedCandidateStoreId] = useState<string>('');
@@ -339,6 +341,24 @@ export const StoreRelocationAssistant: React.FC<StoreRelocationAssistantProps> =
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [stores, filterKabupaten]);
 
+  // Dynamic list of Type SO strictly from Master Toko Bali data
+  const availableTypeSos = useMemo(() => {
+    const counts = new Map<string, number>();
+    stores.forEach(st => {
+      const raw = (st.typeSo || st.qm || '').trim().toUpperCase();
+      const key = raw && raw !== '-' ? raw : 'BLANK';
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+
+    return Array.from(counts.entries())
+      .map(([key, count]) => ({
+        key,
+        label: key === 'BLANK' ? `Tanpa Type / Blank (${count})` : `Type ${key} (${count})`,
+        count
+      }))
+      .sort((a, b) => b.count - a.count);
+  }, [stores]);
+
   // Cascading Kabupaten Selection Handler
   const handleKabupatenChange = (newKab: string) => {
     setFilterKabupaten(newKab);
@@ -365,6 +385,7 @@ export const StoreRelocationAssistant: React.FC<StoreRelocationAssistantProps> =
     filterKabupaten !== 'ALL' || 
     filterKecamatan !== 'ALL' || 
     filterTypeSo !== 'ALL' || 
+    filterSoAktiva !== 'ALL' ||
     filterZonaOnly || 
     maxRadiusKm !== 35 || 
     filterScheduleType !== 'ALL';
@@ -374,6 +395,7 @@ export const StoreRelocationAssistant: React.FC<StoreRelocationAssistantProps> =
     setFilterKabupaten('ALL');
     setFilterKecamatan('ALL');
     setFilterTypeSo('ALL');
+    setFilterSoAktiva('ALL');
     setFilterZonaOnly(false);
     setMaxRadiusKm(35);
     setFilterScheduleType('ALL');
@@ -403,8 +425,22 @@ export const StoreRelocationAssistant: React.FC<StoreRelocationAssistantProps> =
         if (!matchesKec) return false;
       }
 
-      // Filter by Type SO
-      if (filterTypeSo !== 'ALL' && c.typeSo.toUpperCase() !== filterTypeSo.toUpperCase()) return false;
+      // Filter by Type SO (Strictly synced with Master Toko Bali data)
+      if (filterTypeSo !== 'ALL') {
+        const rawCandType = (c.typeSo || c.store.typeSo || c.store.qm || '').trim().toUpperCase();
+        if (filterTypeSo === 'BLANK') {
+          if (rawCandType !== '' && rawCandType !== '-') return false;
+        } else {
+          if (rawCandType !== filterTypeSo.toUpperCase()) return false;
+        }
+      }
+
+      // Filter by SO Aktiva (Perlu SO Aktiva vs Non SO Aktiva)
+      if (filterSoAktiva !== 'ALL') {
+        const isAktiva = isStoreSOAktiva(c.store) || isStoreSOAktiva({ soAktiva: c.soAktiva });
+        if (filterSoAktiva === 'SO_AKTIVA' && !isAktiva) return false;
+        if (filterSoAktiva === 'NON_SO_AKTIVA' && isAktiva) return false;
+      }
 
       // Filter Zona Hitam Only
       if (filterZonaOnly && !c.isZonaHitam) return false;
@@ -428,7 +464,7 @@ export const StoreRelocationAssistant: React.FC<StoreRelocationAssistantProps> =
 
       return true;
     });
-  }, [candidateRecommendations, filterScheduleType, filterKabupaten, filterKecamatan, filterTypeSo, filterZonaOnly, maxRadiusKm, candidateSearchQuery]);
+  }, [candidateRecommendations, filterScheduleType, filterKabupaten, filterKecamatan, filterTypeSo, filterSoAktiva, filterZonaOnly, maxRadiusKm, candidateSearchQuery]);
 
   // Selected replacement store object
   const selectedCandidateObj = useMemo(() => {
@@ -489,7 +525,7 @@ export const StoreRelocationAssistant: React.FC<StoreRelocationAssistantProps> =
 • *Kode/Nama:* [${selectedCandidateObj.code}] ${selectedCandidateObj.name}
 • *Wilayah/Kec:* ${selectedCandidateObj.kabupaten || selectedCandidateObj.region} (${selectedCandidateObj.district || ''})
 • *Jarak dari Toko Asal:* ${candDetail ? `${candDetail.distanceKm} km` : '-'}
-• *Type SO:* ${selectedCandidateObj.typeSo || selectedCandidateObj.qm || 'M'} | *Zona:* ${selectedCandidateObj.zona || 'REGULER'}
+• *Type SO:* ${selectedCandidateObj.typeSo || selectedCandidateObj.qm || 'M'} | *SO Aktiva:* ${getSOAktivaLabel(selectedCandidateObj)} | *Zona:* ${selectedCandidateObj.zona || 'REGULER'}
 • *Saldo Toko / Stock:* ${typeof selectedCandidateObj.saldoToko === 'number' ? formatRupiah(selectedCandidateObj.saldoToko) : (selectedCandidateObj.saldoToko || '-')}
 • *Status Jadwal Awal:* ${candDetail?.scheduleStatusType === 'BELUM_TERJADWAL' ? 'Belum Terjadwal (Kolom Blank Master)' : `Terjadwal (${candDetail?.scheduledDateMaster || '-'})`}
 
@@ -705,6 +741,11 @@ _Master Toko Bali & Jadwal telah disinkronkan otomatis oleh SPV._`;
                               🚨 GAGAL SO
                             </span>
                           )}
+                          {isStoreSOAktiva(stObj || sch) && (
+                            <span className="text-[9px] font-black bg-purple-100 text-purple-800 border border-purple-300 px-1.5 py-0.2 rounded-full">
+                              SO AKTIVA
+                            </span>
+                          )}
                         </div>
                         <p className="font-extrabold text-slate-900 text-xs mt-0.5 line-clamp-1">
                           {sch.storeName}
@@ -736,10 +777,10 @@ _Master Toko Bali & Jadwal telah disinkronkan otomatis oleh SPV._`;
                 <div className="grid grid-cols-2 gap-1.5 text-[11px] text-slate-300 pt-1 border-t border-slate-800">
                   <div>Wilayah: <strong className="text-white">{selectedSourceStore.kabupaten || selectedSourceStore.city || selectedSourceStore.region}</strong></div>
                   <div>Type SO: <strong className="text-amber-300">{selectedSourceStore.typeSo || selectedSourceStore.qm || 'M'}</strong></div>
-                  <div>Stock: <strong className="text-emerald-300">{typeof selectedSourceStore.saldoToko === 'number' ? formatRupiah(selectedSourceStore.saldoToko) : (selectedSourceStore.saldoToko || '-')}</strong></div>
+                  <div>SO Aktiva: <strong className={isStoreSOAktiva(selectedSourceStore) ? 'text-purple-300 font-black' : 'text-slate-300'}>{getSOAktivaLabel(selectedSourceStore)}</strong></div>
                   <div>Zona: <strong className={selectedSourceStore.isZonaHitam ? 'text-rose-400' : 'text-slate-200'}>{selectedSourceStore.zona || 'NON ZONA HITAM'}</strong></div>
-                  <div>AM: <strong className="text-white">{selectedSourceStore.am || '-'}</strong></div>
-                  <div>AS: <strong className="text-white">{selectedSourceStore.as || '-'}</strong></div>
+                  <div>Stock: <strong className="text-emerald-300">{typeof selectedSourceStore.saldoToko === 'number' ? formatRupiah(selectedSourceStore.saldoToko) : (selectedSourceStore.saldoToko || '-')}</strong></div>
+                  <div>AM / AS: <strong className="text-white">{selectedSourceStore.am || '-'} / {selectedSourceStore.as || '-'}</strong></div>
                   <div className="col-span-2">Korlap: <strong className="text-indigo-300">{selectedSchedule?.officerInCharge || selectedSourceStore.korlap || '-'}</strong></div>
                 </div>
 
@@ -961,7 +1002,7 @@ _Master Toko Bali & Jadwal telah disinkronkan otomatis oleh SPV._`;
               </div>
 
               {/* Filter Dropdowns Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2 text-xs">
                 
                 {/* Filter Kabupaten */}
                 <div>
@@ -1016,7 +1057,7 @@ _Master Toko Bali & Jadwal telah disinkronkan otomatis oleh SPV._`;
                   </select>
                 </div>
 
-                {/* Type SO Filter */}
+                {/* Type SO Filter (Synced directly with Master Toko Bali) */}
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 mb-1 flex items-center gap-1">
                     <Layers className="w-3 h-3 text-indigo-600" />
@@ -1032,10 +1073,32 @@ _Master Toko Bali & Jadwal telah disinkronkan otomatis oleh SPV._`;
                     }`}
                   >
                     <option value="ALL">Semua Type SO</option>
-                    <option value="M">Type M (Monthly)</option>
-                    <option value="Q3">Type Q3 (Quarterly 3)</option>
-                    <option value="Q1">Type Q1</option>
-                    <option value="Q2">Type Q2</option>
+                    {availableTypeSos.map(t => (
+                      <option key={t.key} value={t.key}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Filter SO Aktiva */}
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 mb-1 flex items-center gap-1">
+                    <Tag className="w-3 h-3 text-purple-600" />
+                    <span>SO Aktiva:</span>
+                  </label>
+                  <select
+                    value={filterSoAktiva}
+                    onChange={(e) => setFilterSoAktiva(e.target.value as any)}
+                    className={`w-full bg-slate-50 border rounded-xl px-2.5 py-1.5 font-bold text-xs transition ${
+                      filterSoAktiva !== 'ALL'
+                        ? 'border-purple-500 bg-purple-50/50 text-purple-900 ring-1 ring-purple-500'
+                        : 'border-slate-200 text-slate-800'
+                    }`}
+                  >
+                    <option value="ALL">Semua SO Aktiva</option>
+                    <option value="SO_AKTIVA">🏷️ Perlu SO Aktiva (SO AKTIVA)</option>
+                    <option value="NON_SO_AKTIVA">NON SO AKTIVA</option>
                   </select>
                 </div>
 
@@ -1146,13 +1209,30 @@ _Master Toko Bali & Jadwal telah disinkronkan otomatis oleh SPV._`;
                           )}
 
                           {/* Type SO Badge */}
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200">
-                            Type {cand.typeSo}
-                          </span>
+                          {cand.typeSo ? (
+                            <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-lg bg-amber-100 text-amber-900 border border-amber-300">
+                              Type {cand.typeSo}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-medium px-2 py-0.5 rounded-lg bg-slate-100 text-slate-500 border border-slate-200">
+                              Type -
+                            </span>
+                          )}
+
+                          {/* SO Aktiva Badge */}
+                          {isStoreSOAktiva(cand.store) || isStoreSOAktiva({ soAktiva: cand.soAktiva }) ? (
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-purple-100 text-purple-800 border border-purple-300 flex items-center gap-1 shadow-2xs">
+                              🏷️ SO AKTIVA
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-slate-100 text-slate-500 border border-slate-200">
+                              NON SO AKTIVA
+                            </span>
+                          )}
 
                           {/* Zona Hitam Badge */}
                           {cand.isZonaHitam && (
-                            <span className="text-[10px] font-black px-2 py-0.5 rounded bg-rose-600 text-white flex items-center gap-1">
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-rose-600 text-white flex items-center gap-1">
                               <ShieldAlert className="w-3 h-3" /> ZONA HITAM
                             </span>
                           )}
